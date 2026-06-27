@@ -123,6 +123,26 @@ case "$PHASE" in
     fi
     ;;
 
+  2)
+    step "project list" HULY project list
+    # idempotent create (may not be enforced on all servers)
+    PROJ_ID=$(HULY project create --name "smoke-p2-$(date +%s)" --identifier "P2S$(date +%s)" --json 2>/dev/null \
+      | sed -n '/^{/,$p' | jq -r '._id // empty')
+    if [[ -z "$PROJ_ID" ]]; then
+      echo "  FAIL: project create returned no _id" >&2
+      exit 1
+    fi
+    echo "  ✓ created $PROJ_ID"
+    step "project get" HULY project get "$PROJ_ID" --json
+    step "project statuses" HULY project statuses --project "$PROJ_ID" --json
+    # clear-via-null
+    step "project update --set description=… " HULY project update "$PROJ_ID" --set description="smoke"
+    step "project update --set description=null (clear)" HULY project update "$PROJ_ID" --set description=null
+    step "project target-preferences list" HULY project target-preferences --project "$PROJ_ID" --json
+    step "project delete" HULY project delete "$PROJ_ID" --yes
+    cleanup_count "projects" "smoke-p2-" "HULY project list --json 2>/dev/null | sed -n '/^\[/,\$p'"
+    ;;
+
   all)
     for p in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18; do
       bash "$0" "$p" || { echo "phase $p failed" >&2; exit 1; }

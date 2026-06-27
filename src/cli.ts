@@ -10,7 +10,8 @@ import { whoamiCommand } from './commands/whoami.js'
 import { listWorkspaces, currentWorkspace, useWorkspace, createWorkspace, deleteWorkspace, listMembers, updateMemberRole, workspaceInfo, updateWorkspaceName, workspaceGuests, createAccessLink, listRegions } from './resources/workspace.js'
 import { getUser, updateUser, findUser } from './resources/user.js'
 import {
-  listProjects, getProject, createProject, updateProject, deleteProjects
+  listProjects, getProject, createProject, updateProject, deleteProjects,
+  listStatuses, listTargetPreferences, upsertTargetPreference
 } from './resources/project.js'
 import {
   listIssues, getIssue, createIssue, updateIssue, deleteIssues
@@ -224,6 +225,28 @@ export async function run(argv: string[] = process.argv): Promise<void> {
   project.command('delete <ref...>').description('Delete projects').action(async (refs, opts, cmd) => {
     try { await deleteProjects(refs, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
   })
+  project.command('statuses').description('List issue statuses for a project (defaults to $HULY_PROJECT)')
+    .option('--project <ref>')
+    .action(async (opts, cmd) => {
+      try { await listStatuses({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  project.command('target-preferences').description('List project target preferences (alias for `target-preference list`)')
+    .option('--project <ref>')
+    .action(async (opts, cmd) => {
+      try { await listTargetPreferences({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  const tgtPref = project.command('target-preference').description('Manage project target preferences')
+  tgtPref.command('list').description('List project target preferences')
+    .option('--project <ref>')
+    .action(async (opts, cmd) => {
+      try { await listTargetPreferences({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  tgtPref.command('upsert').description('Create or merge a project target preference')
+    .option('--project <ref>')
+    .option('--props <kv...>', 'key=value (repeatable)')
+    .action(async (opts, cmd) => {
+      try { await upsertTargetPreference({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
 
   const issue = program.command('issue').description('Manage tracker issues'); withGlobalHelp(issue)
   issue
