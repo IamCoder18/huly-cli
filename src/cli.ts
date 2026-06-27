@@ -31,6 +31,9 @@ import {
   addTemplateChild, removeTemplateChild
 } from './resources/issue-template.js'
 import {
+  listComments, addComment, updateComment, deleteComments
+} from './resources/comment.js'
+import {
   listCards, getCard, createCard, deleteCards,
   listActions, createAction, deleteActions,
   listDocuments, createDocument, deleteDocuments,
@@ -483,6 +486,32 @@ export async function run(argv: string[] = process.argv): Promise<void> {
     .requiredOption('--child <ref>')
     .action(async (template, opts, cmd) => {
       try { await removeTemplateChild(template, opts.child, globalsFrom(cmd)) } catch (e) { handleError(e) }
+    })
+
+  const comment = program.command('comment').description('Manage comments (issue comments are ChatMessages)'); withGlobalHelp(comment)
+  comment.command('list').description('List comments on an issue')
+    .requiredOption('--issue <ref>')
+    .option('--limit <n>', 'limit', (v) => parseInt(v, 10))
+    .option('--offset <n>', 'offset', (v) => parseInt(v, 10))
+    .action(async (opts, cmd) => {
+      try { await listComments({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  comment.command('add').description('Add a comment to an issue')
+    .requiredOption('--issue <ref>')
+    .option('--body <md>')
+    .option('--body-file <path>')
+    .action(async (opts, cmd) => {
+      try { await addComment({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  comment.command('update <ref>').description('Update a comment\'s body')
+    .option('--body <md>')
+    .option('--body-file <path>')
+    .action(async (ref, opts, cmd) => {
+      try { await updateComment(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  comment.command('delete <ref...>').description('Delete comments')
+    .action(async (refs, opts, cmd) => {
+      try { await deleteComments(refs, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
 
   const card = program.command('card').description('Manage board cards'); withGlobalHelp(card)

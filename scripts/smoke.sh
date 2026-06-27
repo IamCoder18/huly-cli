@@ -173,6 +173,27 @@ case "$PHASE" in
     echo "  ✓ --status-category rejects unknown values"
     ;;
 
+  5)
+    # comment list with bogus issue ref must error (NotFound, exit != 0)
+    if HULY comment list --issue "bogus-issue-ref" >/dev/null 2>&1; then
+      echo "  FAIL: comment list on bogus issue should error" >&2
+      exit 1
+    fi
+    echo "  ✓ comment list errors on bogus issue"
+    # comment add requires --body
+    if HULY comment add --issue "bogus-issue-ref" >/dev/null 2>&1; then
+      echo "  FAIL: comment add should require --body" >&2
+      exit 1
+    fi
+    echo "  ✓ comment add rejects missing --body"
+    # comment add requires --issue
+    if HULY comment add --body "hi" >/dev/null 2>&1; then
+      echo "  FAIL: comment add should require --issue" >&2
+      exit 1
+    fi
+    echo "  ✓ comment add rejects missing --issue"
+    ;;
+
   all)
     for p in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18; do
       bash "$0" "$p" || { echo "phase $p failed" >&2; exit 1; }
