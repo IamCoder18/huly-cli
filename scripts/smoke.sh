@@ -221,6 +221,21 @@ case "$PHASE" in
     cleanup_count "events" "smoke-rec-" "HULY calendar recurring --json 2>/dev/null | sed -n '/^\[/,\$p'"
     ;;
 
+  10)
+    # Validation: missing --minutes / --hours
+    if HULY time log --issue "bogus" >/dev/null 2>&1; then
+      echo "  FAIL: time log should require --minutes or --hours" >&2
+      exit 1
+    fi
+    echo "  ✓ time log rejects missing --minutes/--hours"
+    # Validation: missing --issue
+    if HULY time log --minutes 15 >/dev/null 2>&1; then
+      echo "  FAIL: time log should require --issue" >&2
+      exit 1
+    fi
+    echo "  ✓ time log rejects missing --issue"
+    ;;
+
   all)
     for p in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18; do
       bash "$0" "$p" || { echo "phase $p failed" >&2; exit 1; }

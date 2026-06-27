@@ -40,6 +40,9 @@ import {
   listRecurringEvents, listRecurringInstances
 } from './resources/calendar.js'
 import {
+  listTimeEntries, logTime, deleteTimeEntries, timeReport
+} from './resources/time.js'
+import {
   listCards, getCard, createCard, deleteCards,
   listActions, createAction, deleteActions,
   listDocuments, createDocument, deleteDocuments
@@ -676,6 +679,34 @@ export async function run(argv: string[] = process.argv): Promise<void> {
   schedule.command('delete <ref...>').description('Delete schedules')
     .action(async (refs, opts, cmd) => {
       try { await deleteSchedules(refs, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+
+  const time = program.command('time').description('Time tracking on issues'); withGlobalHelp(time)
+  time.command('list').description('List time entries')
+    .option('--issue <ref>')
+    .option('--start <iso>')
+    .option('--end <iso>')
+    .option('--limit <n>', 'limit', (v) => parseInt(v, 10))
+    .option('--offset <n>', 'offset', (v) => parseInt(v, 10))
+    .action(async (opts, cmd) => {
+      try { await listTimeEntries({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  time.command('log').description('Log time on an issue')
+    .requiredOption('--issue <ref>')
+    .option('--minutes <n>', 'minutes spent', (v) => parseInt(v, 10))
+    .option('--hours <n>', 'hours spent (decimal ok)', (v) => Number(v))
+    .option('--description <text>')
+    .option('--date <iso>', 'default now')
+    .action(async (opts, cmd) => {
+      try { await logTime({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  time.command('report <issue>').description('Time report for a single issue')
+    .action(async (issue, opts, cmd) => {
+      try { await timeReport(issue, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  time.command('delete <ref...>').description('Delete time entries')
+    .action(async (refs, opts, cmd) => {
+      try { await deleteTimeEntries(refs, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
 
   const raw = program.command('api').description('Raw HTTP escape hatch')
