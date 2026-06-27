@@ -108,3 +108,131 @@ export function kv(rows: Array<[string, string | undefined | null]>): void {
 export function shouldJson(opts: { json?: boolean; ci?: boolean }): boolean {
   return Boolean(opts.json || opts.ci || process.env.CI)
 }
+
+function shortId(id: unknown): string {
+  return String(id ?? '').slice(-12)
+}
+
+function trim(s: unknown, n: number): string {
+  return String(s ?? '').slice(0, n)
+}
+
+function isoDate(ms: unknown): string {
+  if (ms == null) return ''
+  return new Date(Number(ms)).toISOString().slice(0, 16)
+}
+
+function isoDay(ms: unknown): string {
+  if (ms == null) return ''
+  return new Date(Number(ms)).toISOString().slice(0, 10)
+}
+
+// Resource-specific column presets. Each preset returns TableColumn[] compatible
+// with table<T> in this module.
+
+export const COLUMNS = {
+  idShort: <T>(): TableColumn<T>[] => [
+    { key: '_id', header: '_ID', format: (r) => shortId((r as Record<string, unknown>)._id) }
+  ],
+  issue: <T>(): TableColumn<T>[] => [
+    { key: 'identifier', header: 'ID' },
+    { key: 'title', header: 'TITLE', format: (r) => trim((r as Record<string, unknown>).title, 60) },
+    { key: 'status', header: 'STATUS' },
+    { key: 'priority', header: 'PRIORITY' },
+    { key: '_id', header: '_ID', format: (r) => shortId((r as Record<string, unknown>)._id) }
+  ],
+  issueTemplate: <T>(): TableColumn<T>[] => [
+    { key: 'title', header: 'TITLE' },
+    { key: '_id', header: '_ID', format: (r) => shortId((r as Record<string, unknown>)._id) }
+  ],
+  project: <T>(): TableColumn<T>[] => [
+    { key: 'identifier', header: 'ID' },
+    { key: 'name', header: 'NAME' },
+    { key: 'description', header: 'DESCRIPTION', format: (r) => trim((r as Record<string, unknown>).description, 60) },
+    { key: '_id', header: '_ID', format: (r) => shortId((r as Record<string, unknown>)._id) }
+  ],
+  card: <T>(): TableColumn<T>[] => [
+    { key: 'title', header: 'TITLE', format: (r) => trim((r as Record<string, unknown>).title, 60) },
+    { key: 'status', header: 'STATUS' },
+    { key: '_id', header: '_ID', format: (r) => shortId((r as Record<string, unknown>)._id) }
+  ],
+  task: <T>(): TableColumn<T>[] => [
+    { key: 'title', header: 'TITLE', format: (r) => trim((r as Record<string, unknown>).title, 60) },
+    { key: 'status', header: 'STATUS' },
+    { key: 'assignee', header: 'ASSIGNEE' },
+    { key: '_id', header: '_ID', format: (r) => shortId((r as Record<string, unknown>)._id) }
+  ],
+  document: <T>(): TableColumn<T>[] => [
+    { key: 'title', header: 'TITLE', format: (r) => trim((r as Record<string, unknown>).title, 60) },
+    { key: '_id', header: '_ID', format: (r) => shortId((r as Record<string, unknown>)._id) }
+  ],
+  event: <T>(): TableColumn<T>[] => [
+    { key: 'title', header: 'TITLE', format: (r) => trim((r as Record<string, unknown>).title, 60) },
+    { key: 'startDate', header: 'START', format: (r) => isoDate((r as Record<string, unknown>).startDate) },
+    { key: 'dueDate', header: 'END', format: (r) => isoDate((r as Record<string, unknown>).dueDate) },
+    { key: 'location', header: 'LOCATION' }
+  ],
+  comment: <T>(): TableColumn<T>[] => [
+    { key: 'message', header: 'MESSAGE', format: (r) => trim((r as Record<string, unknown>).message, 60) },
+    { key: 'createOn', header: 'CREATED', format: (r) => isoDay((r as Record<string, unknown>).createOn) },
+    { key: '_id', header: '_ID', format: (r) => shortId((r as Record<string, unknown>)._id) }
+  ],
+  channel: <T>(): TableColumn<T>[] => [
+    { key: 'name', header: 'NAME' },
+    { key: 'topic', header: 'TOPIC', format: (r) => trim((r as Record<string, unknown>).topic, 60) },
+    { key: '_id', header: '_ID', format: (r) => shortId((r as Record<string, unknown>)._id) }
+  ],
+  channelMessage: <T>(): TableColumn<T>[] => [
+    { key: 'message', header: 'MESSAGE', format: (r) => trim((r as Record<string, unknown>).message, 80) },
+    { key: 'createOn', header: 'CREATED', format: (r) => isoDay((r as Record<string, unknown>).createOn) },
+    { key: '_id', header: '_ID', format: (r) => shortId((r as Record<string, unknown>)._id) }
+  ],
+  timeReport: <T>(): TableColumn<T>[] => [
+    { key: 'value', header: 'MINUTES' },
+    { key: 'description', header: 'DESCRIPTION', format: (r) => trim((r as Record<string, unknown>).description, 50) },
+    { key: 'date', header: 'DATE', format: (r) => isoDay((r as Record<string, unknown>).date) },
+    { key: '_id', header: '_ID', format: (r) => shortId((r as Record<string, unknown>)._id) }
+  ],
+  notification: <T>(): TableColumn<T>[] => [
+    { key: 'type', header: 'TYPE' },
+    { key: 'title', header: 'TITLE', format: (r) => trim((r as Record<string, unknown>).title, 60) },
+    { key: 'isRead', header: 'READ' },
+    { key: '_id', header: '_ID', format: (r) => shortId((r as Record<string, unknown>)._id) }
+  ],
+  activity: <T>(): TableColumn<T>[] => [
+    { key: 'message', header: 'MESSAGE', format: (r) => trim((r as Record<string, unknown>).message, 80) },
+    { key: 'createOn', header: 'CREATED', format: (r) => isoDay((r as Record<string, unknown>).createOn) },
+    { key: '_id', header: '_ID', format: (r) => shortId((r as Record<string, unknown>)._id) }
+  ],
+  approval: <T>(): TableColumn<T>[] => [
+    { key: 'status', header: 'STATUS' },
+    { key: 'title', header: 'TITLE', format: (r) => trim((r as Record<string, unknown>).title, 60) },
+    { key: 'createOn', header: 'CREATED', format: (r) => isoDay((r as Record<string, unknown>).createOn) },
+    { key: '_id', header: '_ID', format: (r) => shortId((r as Record<string, unknown>)._id) }
+  ],
+  component: <T>(): TableColumn<T>[] => [
+    { key: 'label', header: 'LABEL' },
+    { key: '_id', header: '_ID', format: (r) => shortId((r as Record<string, unknown>)._id) }
+  ],
+  milestone: <T>(): TableColumn<T>[] => [
+    { key: 'label', header: 'LABEL' },
+    { key: 'targetDate', header: 'TARGET', format: (r) => isoDay((r as Record<string, unknown>).targetDate) },
+    { key: '_id', header: '_ID', format: (r) => shortId((r as Record<string, unknown>)._id) }
+  ],
+  label: <T>(): TableColumn<T>[] => [
+    { key: 'title', header: 'LABEL' },
+    { key: 'color', header: 'COLOR' },
+    { key: '_id', header: '_ID', format: (r) => shortId((r as Record<string, unknown>)._id) }
+  ],
+  member: <T>(): TableColumn<T>[] => [
+    { key: 'name', header: 'NAME' },
+    { key: 'role', header: 'ROLE' },
+    { key: 'email', header: 'EMAIL' }
+  ],
+  workspace: <T>(): TableColumn<T>[] => [
+    { key: 'name', header: 'NAME' },
+    { key: 'url', header: 'URL' },
+    { key: 'uuid', header: 'UUID', format: (r) => trim((r as Record<string, unknown>).uuid, 12) + '…' },
+    { key: 'mode', header: 'MODE' }
+  ]
+}

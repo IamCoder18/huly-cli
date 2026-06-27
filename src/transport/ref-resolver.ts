@@ -16,27 +16,54 @@ function looksLikePrefixed(s: string): boolean {
   return /^[A-Z][A-Z0-9]+-\d+$/.test(s)
 }
 
+export interface IndexEntry {
+  id: Ref<Doc>
+  title?: string
+}
+
+export interface BuildIndexOpts<T extends Doc> {
+  client: PlatformClient
+  classId: Ref<Class<T>>
+  workspaceId: string
+  identifierField?: keyof T
+  titleField?: keyof T
+}
+
 export async function buildIndex<T extends Doc>(
   client: PlatformClient,
   classId: Ref<Class<T>>,
   workspaceId: string,
-  identifierField: keyof T = 'identifier' as keyof T
+  identifierField: keyof T | string = 'identifier'
 ): Promise<Map<string, Ref<Doc>>> {
   const key = cacheKey(workspaceId, classId)
   const cached = REFS.get(key)
   if (cached) return cached
 
-  const docs = await client.findAll(classId, {})
+  const docs = (await client.findAll(classId, {})) as unknown as T[]
   const map = new Map<string, Ref<Doc>>()
   for (const d of docs) {
     const id = d._id
-    if ((d as Record<string, unknown>)[identifierField as string]) {
-      map.set(String((d as Record<string, unknown>)[identifierField as string]), id)
-    }
+    const rec = d as Record<string, unknown>
+    const ident = identifierField as string
+    if (rec[ident] != null) map.set(String(rec[ident]), id)
+    if (rec.title != null) map.set(`title:${String(rec.title).toLowerCase()}`, id)
     map.set(id, id)
   }
   REFS.set(key, map)
   return map
+}
+
+/** Force a rebuild on next access — useful after writes. */
+export function invalidateIndex(workspaceId?: string, classId?: string): void {
+  if (workspaceId === undefined) {
+    REFS.clear()
+    return
+  }
+  if (classId === undefined) {
+    for (const k of [...REFS.keys()]) if (k.startsWith(`${workspaceId}|`)) REFS.delete(k)
+    return
+  }
+  REFS.delete(cacheKey(workspaceId, classId))
 }
 
 export interface ResolveOpts {
@@ -44,6 +71,7 @@ export interface ResolveOpts {
   classId: Ref<Class<Doc>>
   workspaceId: string
   identifierField?: string
+  titleField?: string
   defaultProjectIdentifier?: string
   fallbackId?: string
 }
@@ -57,7 +85,7 @@ export async function resolveRef(ref: string, opts: ResolveOpts): Promise<Ref<Do
   if (looksLikeId(trimmed)) return trimmed as Ref<Doc>
 
   const ident = opts.identifierField ?? 'identifier'
-  const idx = await buildIndex(opts.client, opts.classId, opts.workspaceId, ident as never)
+  const idx = await buildIndex(opts.client, opts.classId, opts.workspaceId, ident)
 
   if (idx.has(trimmed)) return idx.get(trimmed)!
 
@@ -72,6 +100,10 @@ export async function resolveRef(ref: string, opts: ResolveOpts): Promise<Ref<Do
       if (idx.has(candidate)) return idx.get(candidate)!
     }
   }
+
+  // Title-based lookup
+  const titleKey = `title:${trimmed.toLowerCase()}`
+  if (idx.has(titleKey)) return idx.get(titleKey)!
 
   throw new CliError(
     ExitCode.NotFound,
