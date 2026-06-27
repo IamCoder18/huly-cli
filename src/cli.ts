@@ -14,8 +14,22 @@ import {
   listStatuses, listTargetPreferences, upsertTargetPreference
 } from './resources/project.js'
 import {
-  listIssues, getIssue, createIssue, updateIssue, deleteIssues
+  listIssues, getIssue, createIssue, updateIssue, deleteIssues,
+  addIssueLabel, removeIssueLabel,
+  addIssueRelation, removeIssueRelation, listIssueRelations,
+  linkDocument, unlinkDocument, moveIssue, previewDelete,
+  relatedTargets, setRelatedTarget
 } from './resources/issue.js'
+import {
+  listComponents, getComponent, createComponent, updateComponent, deleteComponents
+} from './resources/component.js'
+import {
+  listMilestones, getMilestone, createMilestone, updateMilestone, deleteMilestones
+} from './resources/milestone.js'
+import {
+  listIssueTemplates, getIssueTemplate, createIssueTemplate, updateIssueTemplate, deleteIssueTemplates,
+  addTemplateChild, removeTemplateChild
+} from './resources/issue-template.js'
 import {
   listCards, getCard, createCard, deleteCards,
   listActions, createAction, deleteActions,
@@ -298,6 +312,172 @@ export async function run(argv: string[] = process.argv): Promise<void> {
   issue.command('delete <ref...>').description('Delete issues').action(async (refs, opts, cmd) => {
     try { await deleteIssues(refs, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
   })
+  const issueLabel = issue.command('label <ref>').description('Manage labels on an issue')
+  issueLabel.command('add <ref>').description('Add a label to an issue').action(async (ref, _opts, cmd) => {
+    const o = cmd.optsWithGlobals() as { label?: string }
+    if (!o.label) {
+      console.error('error: missing --label')
+      process.exit(2)
+    }
+    try { await addIssueLabel(ref, o.label, globalsFrom(cmd)) } catch (e) { handleError(e) }
+  })
+  issueLabel.command('remove <ref>').description('Remove a label from an issue').action(async (ref, _opts, cmd) => {
+    const o = cmd.optsWithGlobals() as { label?: string }
+    if (!o.label) {
+      console.error('error: missing --label')
+      process.exit(2)
+    }
+    try { await removeIssueLabel(ref, o.label, globalsFrom(cmd)) } catch (e) { handleError(e) }
+  })
+  issueLabel.option('--label <name>', 'label name (required for add/remove)')
+  issueLabel.hook('preAction', (thisCmd) => {
+    const o = thisCmd.opts() as Record<string, unknown>
+    const parent = thisCmd.parent
+    if (parent) Object.assign(o, parent.opts())
+  })
+  const issueRel = issue.command('relation').description('Manage relations on an issue')
+  issueRel.command('add <ref>').description('Add a relation')
+    .requiredOption('--type <t>', 'blocks|isBlockedBy|relatesTo')
+    .requiredOption('--target <ref>')
+    .action(async (ref, opts, cmd) => {
+      try { await addIssueRelation(ref, opts.type as 'blocks' | 'isBlockedBy' | 'relatesTo', opts.target, globalsFrom(cmd)) } catch (e) { handleError(e) }
+    })
+  issueRel.command('remove <ref>').description('Remove a relation')
+    .requiredOption('--type <t>', 'blocks|isBlockedBy|relatesTo')
+    .requiredOption('--target <ref>')
+    .action(async (ref, opts, cmd) => {
+      try { await removeIssueRelation(ref, opts.type as 'blocks' | 'isBlockedBy' | 'relatesTo', opts.target, globalsFrom(cmd)) } catch (e) { handleError(e) }
+    })
+  issueRel.command('list <ref>').description('List relations on an issue')
+    .action(async (ref, _opts, cmd) => {
+      try { await listIssueRelations(ref, globalsFrom(cmd)) } catch (e) { handleError(e) }
+    })
+  issue.command('link-document <ref>').description('Link a document to an issue')
+    .requiredOption('--document <ref>')
+    .action(async (ref, opts, cmd) => {
+      try { await linkDocument(ref, opts.document, globalsFrom(cmd)) } catch (e) { handleError(e) }
+    })
+  issue.command('unlink-document <ref>').description('Unlink a document from an issue')
+    .requiredOption('--document <ref>')
+    .action(async (ref, opts, cmd) => {
+      try { await unlinkDocument(ref, opts.document, globalsFrom(cmd)) } catch (e) { handleError(e) }
+    })
+  issue.command('move <ref>').description('Move an issue (set/drop parent)')
+    .option('--parent <ref|null>', 'new parent ref, or literal "null" to drop')
+    .action(async (ref, opts, cmd) => {
+      try { await moveIssue(ref, opts.parent ?? null, globalsFrom(cmd)) } catch (e) { handleError(e) }
+    })
+  issue.command('preview-delete <ref...>').description('Preview the impact of deleting issues')
+    .action(async (refs, _opts, cmd) => {
+      try { await previewDelete(refs, globalsFrom(cmd)) } catch (e) { handleError(e) }
+    })
+  issue.command('related-targets').description('List related-issue-targets for a project')
+    .option('--project <ref>')
+    .action(async (opts, cmd) => {
+      try { await relatedTargets('', { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  issue.command('related-target set').description('Create a related-issue-target for a project')
+    .option('--project <ref>')
+    .requiredOption('--source <name>')
+    .requiredOption('--target <name>')
+    .action(async (opts, cmd) => {
+      try { await setRelatedTarget({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+
+  const component = program.command('component').description('Manage tracker components'); withGlobalHelp(component)
+  component.command('list').description('List components')
+    .option('--project <ref>')
+    .action(async (opts, cmd) => {
+      try { await listComponents({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  component.command('get <ref>').description('Get a component').action(async (ref, opts, cmd) => {
+    try { await getComponent(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+  })
+  component.command('create').description('Create a component')
+    .option('--project <ref>')
+    .requiredOption('--label <name>')
+    .option('--description <text>')
+    .action(async (opts, cmd) => {
+      try { await createComponent({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  component.command('update <ref>').description('Update a component')
+    .option('--label <name>')
+    .option('--description <text>')
+    .action(async (ref, opts, cmd) => {
+      try { await updateComponent(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  component.command('delete <ref...>').description('Delete components').action(async (refs, opts, cmd) => {
+    try { await deleteComponents(refs, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+  })
+
+  const milestone = program.command('milestone').description('Manage tracker milestones'); withGlobalHelp(milestone)
+  milestone.command('list').description('List milestones')
+    .option('--project <ref>')
+    .action(async (opts, cmd) => {
+      try { await listMilestones({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  milestone.command('get <ref>').description('Get a milestone').action(async (ref, opts, cmd) => {
+    try { await getMilestone(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+  })
+  milestone.command('create').description('Create a milestone')
+    .option('--project <ref>')
+    .requiredOption('--label <name>')
+    .option('--description <text>')
+    .option('--target-date <iso>')
+    .action(async (opts, cmd) => {
+      try { await createMilestone({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  milestone.command('update <ref>').description('Update a milestone')
+    .option('--label <name>')
+    .option('--description <text>')
+    .option('--target-date <iso>')
+    .option('--status <s>')
+    .action(async (ref, opts, cmd) => {
+      try { await updateMilestone(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  milestone.command('delete <ref...>').description('Delete milestones').action(async (refs, opts, cmd) => {
+    try { await deleteMilestones(refs, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+  })
+
+  const tmpl = program.command('issue-template').description('Manage issue templates'); withGlobalHelp(tmpl)
+  tmpl.command('list').description('List templates')
+    .option('--project <ref>')
+    .action(async (opts, cmd) => {
+      try { await listIssueTemplates({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  tmpl.command('get <ref>').description('Get a template')
+    .action(async (ref, opts, cmd) => {
+      try { await getIssueTemplate(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  tmpl.command('create').description('Create a template')
+    .option('--project <ref>')
+    .requiredOption('--title <t>')
+    .option('--description <text>')
+    .option('--body <md>')
+    .option('--body-file <path>')
+    .action(async (opts, cmd) => {
+      try { await createIssueTemplate({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  tmpl.command('update <ref>').description('Update a template')
+    .option('--title <t>')
+    .option('--description <text>')
+    .option('--body <md>')
+    .action(async (ref, opts, cmd) => {
+      try { await updateIssueTemplate(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  tmpl.command('delete <ref...>').description('Delete templates').action(async (refs, opts, cmd) => {
+    try { await deleteIssueTemplates(refs, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+  })
+  tmpl.command('add-child <template>').description('Add a child reference to a template')
+    .requiredOption('--child <ref>')
+    .action(async (template, opts, cmd) => {
+      try { await addTemplateChild(template, opts.child, globalsFrom(cmd)) } catch (e) { handleError(e) }
+    })
+  tmpl.command('remove-child <template>').description('Remove a child reference from a template')
+    .requiredOption('--child <ref>')
+    .action(async (template, opts, cmd) => {
+      try { await removeTemplateChild(template, opts.child, globalsFrom(cmd)) } catch (e) { handleError(e) }
+    })
 
   const card = program.command('card').description('Manage board cards'); withGlobalHelp(card)
   card.command('list').description('List cards').option('--space <id>').option('--limit <n>', 'limit', (v) => parseInt(v, 10)).action(async (opts, cmd) => {

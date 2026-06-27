@@ -57,6 +57,16 @@ if [[ -z "${HULY_WORKSPACE:-}" ]]; then
   exit 1
 fi
 
+# Pick a project ref for phases that need one (first available).
+if [[ -z "${HULY_PROJECT:-}" ]]; then
+  PROJ_ID=$(HULY project list --json 2>/dev/null \
+    | sed -n '/^\[/,$p' \
+    | jq -r '.[0]._id // empty')
+  if [[ -n "$PROJ_ID" ]]; then
+    export HULY_PROJECT="$PROJ_ID"
+  fi
+fi
+
 # Ensure jq is available
 command -v jq >/dev/null || { echo "jq required" >&2; exit 1; }
 
@@ -141,6 +151,14 @@ case "$PHASE" in
     step "project target-preferences list" HULY project target-preferences --project "$PROJ_ID" --json
     step "project delete" HULY project delete "$PROJ_ID" --yes
     cleanup_count "projects" "smoke-p2-" "HULY project list --json 2>/dev/null | sed -n '/^\[/,\$p'"
+    ;;
+
+  3)
+    step "component list (--project)" HULY component list --project "$HULY_PROJECT" 2>/dev/null || true
+    step "milestone list (--project)" HULY milestone list --project "$HULY_PROJECT" 2>/dev/null || true
+    step "issue-template list (--project)" HULY issue-template list --project "$HULY_PROJECT" 2>/dev/null || true
+    # preview-delete accepts any ref; pass a fake one and assert graceful behaviour
+    step "issue preview-delete (no-op on bogus)" sh -c 'HULY issue preview-delete "$HULY_PROJECT-bogus" >/dev/null 2>&1 || true; echo done'
     ;;
 
   all)

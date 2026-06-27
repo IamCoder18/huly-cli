@@ -11,6 +11,7 @@ import { pickProject } from '../auth/prompts.js'
 import { readEnv } from '../auth/env.js'
 import type { GlobalOpts } from '../cli.js'
 import { parseSet } from './project.parse.js'
+import { resolveProjectForCommand } from './_project-resolve.js'
 
 type Project = Doc & {
   name: string
@@ -355,22 +356,7 @@ export async function upsertTargetPreference(opts: {
 }
 
 // ---- helpers ----
-
-async function resolveProjectForCommand(client: PlatformClient, ref?: string): Promise<Project> {
-  const env = readEnv()
-  const candidate = ref ?? env.project
-  if (candidate) {
-    const account = await client.getAccount()
-    const idx = await buildIndex<Project>(client, CLASS.Project as Ref<Class<Project>>, account.uuid)
-    const hit = idx.get(candidate)
-    if (hit) {
-      const doc = await client.findOne(CLASS.Project as Ref<Class<Project>>, { _id: hit as Ref<Project> })
-      if (doc) return doc
-    }
-  }
-  const all = (await client.findAll(CLASS.Project as Ref<Class<Project>>, {})) as Project[]
-  return await pickProject<Project>(all, 'Project:')
-}
+// resolveProjectForCommand lives in _project-resolve.ts and is imported above.
 
 // Re-export for backwards compatibility
 export { parseSet }
