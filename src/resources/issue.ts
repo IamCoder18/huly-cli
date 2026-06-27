@@ -42,6 +42,7 @@ interface IssueCreateOpts {
   label?: string[]
   due?: string
   parent?: string
+  taskType?: string
   minimal?: boolean
   dryRun?: boolean
   json?: boolean
@@ -114,9 +115,27 @@ async function resolvePriority(client: PlatformClient, name?: string): Promise<R
   return all[0]._id
 }
 
+async function resolveTaskType(client: PlatformClient, name: string, project: Project): Promise<Ref<Doc>> {
+  const taskTypes = (await client.findAll(CLASS.TaskType as Ref<Class<Doc>>, { space: project._id })) as Array<Doc & { label?: string; name?: string }>
+  const hit = taskTypes.find((t) =>
+    (t.label?.toLowerCase() === name.toLowerCase()) ||
+    (t.name?.toLowerCase() === name.toLowerCase()) ||
+    String(t._id) === name
+  )
+  if (!hit) {
+    throw new CliError(ExitCode.NotFound,
+      `task type ${name} not found in project ${project.identifier}`,
+      `available: ${taskTypes.map((t) => t.label ?? t.name ?? t._id).join(', ') || '(none)'}`)
+  }
+  return hit._id
+}
+
 export async function listIssues(opts: {
   project?: string
   status?: string
+  statusCategory?: string
+  descriptionSearch?: string
+  parent?: string
   assignee?: string
   label?: string[]
   limit?: number
@@ -131,9 +150,55 @@ export async function listIssues(opts: {
     const project = opts.project ? await resolveProject(client, opts.project) : null
     const query: Record<string, unknown> = {}
     if (project) query.space = project._id
-    if (opts.status) query.status = opts.status
     if (opts.assignee) query.assignee = opts.assignee
     if (opts.label && opts.label.length > 0) query.labels = { $in: opts.label }
+
+    // Status filter — either direct name or by category
+    if (opts.status) {
+      query.status = opts.status
+    } else if (opts.statusCategory) {
+      const wanted = String(opts.statusCategory)
+      const valid = ['UnStarted', 'ToDo', 'Active', 'Won', 'Lost']
+      if (!valid.includes(wanted)) {
+        throw new CliError(ExitCode.Validation, `invalid --status-category: ${wanted}`, `expected one of ${valid.join(' | ')}`)
+      }
+      const statusQuery: Record<string, unknown> = { space: project?._id }
+      const statuses = (await client.findAll(
+        CLASS.IssueStatus as Ref<Class<Doc>>,
+        statusQuery as any
+      )) as Array<Doc & { category?: string; label?: string; name?: string }>
+      const matchingIds = statuses
+        .filter((s) => String(s.category ?? '').toLowerCase() === wanted.toLowerCase())
+        .map((s) => s._id)
+      if (matchingIds.length === 0) {
+        console.log('(no statuses in that category)')
+        return
+      }
+      query.status = { $in: matchingIds }
+    }
+
+    // Description search — best-effort full-text via the REST API. The
+    // PlatformClient (websocket) doesn't expose searchFulltext, so we use
+    // a regex match on the description field (which is a markup blob) when
+    // possible. If the server doesn't support that pattern, results will be
+    // an empty set, which is no worse than not searching.
+    if (opts.descriptionSearch) {
+      query.description = { $regex: opts.descriptionSearch, $options: 'i' }
+    }
+
+    // Parent filter
+    if (opts.parent !== undefined) {
+      const parentRef = opts.parent === 'null' || opts.parent === '-'
+        ? null
+        : await resolveRef(opts.parent, {
+          client,
+          classId: CLASS.Issue as Ref<Class<Doc>>,
+          workspaceId: (await client.getAccount()).uuid,
+          defaultProjectIdentifier: readEnv().project
+        })
+      query.parent = parentRef
+    }
+
     const result = (await withSpinner('Loading issues…', () =>
       client.findAll(CLASS.Issue as Ref<Class<Issue>>, query as any), opts
     )) as unknown as Issue[]
@@ -197,8 +262,13 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
       status,
       priority,
       labels: opts.label ?? [],
-      dueDate,
-      kind: 'tracker:issue:default' as Ref<Doc>
+      dueDate
+    }
+
+    if (opts.taskType) {
+      data.kind = await resolveTaskType(client, opts.taskType, project)
+    } else {
+      data.kind = 'tracker:issue:default' as Ref<Doc>
     }
 
     if (opts.parent) {
@@ -225,12 +295,36 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
       return
     }
 
-    const id = await withSpinner('Creating issue…', () =>
-      client.createDoc(CLASS.Issue as Ref<Class<Issue>>, project._id as unknown as Ref<Space>, data as any)
-    )
+    let id: Ref<Doc>
+    try {
+      id = await withSpinner('Creating issue…', () =>
+        client.createDoc(CLASS.Issue as Ref<Class<Issue>>, project._id as unknown as Ref<Space>, data as any)
+      )
+    } catch (err: unknown) {
+      // Idempotency: if an issue with the same title already exists in this project, return it.
+      const msg = err instanceof Error ? err.message : String(err)
+      if (/duplicate|exists|already/i.test(msg)) {
+        const existing = (await client.findAll(CLASS.Issue as Ref<Class<Issue>>, {
+          space: project._id,
+          title
+        })) as Issue[]
+        if (existing.length > 0) {
+          const found = existing[0]
+          if (shouldJson({ json: opts.json, ci: opts.ci })) {
+            json({ _id: found._id, identifier: found.identifier, title, created: false })
+          } else {
+            console.log(`issue exists: ${found.identifier ?? found._id} (${found.title})`)
+          }
+          return
+        }
+      }
+      throw err
+    }
+
+    invalidateIndex((await client.getAccount()).uuid, CLASS.Issue)
 
     if (shouldJson({ json: opts.json, ci: opts.ci })) {
-      json({ _id: id, identifier: '?', title, ...data })
+      json({ _id: id, identifier: '?', title, created: true, ...data })
       return
     }
     console.log(`created issue: ${title} (${id})`)
@@ -246,6 +340,7 @@ export async function updateIssue(
     priority?: string
     assignee?: string
     title?: string
+    taskType?: string
     dryRun?: boolean
     minimal?: boolean
     workspace?: string
@@ -283,6 +378,7 @@ export async function updateIssue(
     if (opts.status) ops.status = await resolveStatus(client, project, opts.status)
     if (opts.priority) ops.priority = await resolvePriority(client, opts.priority)
     if (opts.title) ops.title = opts.title
+    if (opts.taskType) ops.kind = await resolveTaskType(client, opts.taskType, project)
 
     if (opts.dryRun) {
       console.log(`would update issue ${issue.identifier} (${issue._id}):`)

@@ -268,6 +268,9 @@ export async function run(argv: string[] = process.argv): Promise<void> {
     .description('List issues')
     .option('--project <id>')
     .option('--status <name>')
+    .option('--status-category <c>', 'UnStarted|ToDo|Active|Won|Lost')
+    .option('--description-search <q>')
+    .option('--parent <ref|null>', 'filter by parent ref (literal "null" for top-level)')
     .option('--assignee <email>')
     .option('--label <l...>')
     .option('--limit <n>', 'limit', (v) => parseInt(v, 10))
@@ -294,6 +297,8 @@ export async function run(argv: string[] = process.argv): Promise<void> {
     .option('--assignee <email>')
     .option('--label <l...>')
     .option('--due <iso>')
+    .option('--parent <ref>')
+    .option('--task-type <name|id>')
     .action(async (opts, cmd) => {
       try { await createIssue({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
@@ -306,6 +311,7 @@ export async function run(argv: string[] = process.argv): Promise<void> {
     .option('--priority <p>')
     .option('--assignee <email>')
     .option('--title <t>')
+    .option('--task-type <name|id>')
     .action(async (ref, opts, cmd) => {
       try { await updateIssue(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })

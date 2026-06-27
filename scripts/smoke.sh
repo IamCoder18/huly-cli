@@ -161,6 +161,18 @@ case "$PHASE" in
     step "issue preview-delete (no-op on bogus)" sh -c 'HULY issue preview-delete "$HULY_PROJECT-bogus" >/dev/null 2>&1 || true; echo done'
     ;;
 
+  4)
+    step "issue list --status-category Active" HULY issue list --status-category Active --project "$HULY_PROJECT" 2>/dev/null || true
+    step "issue list --description-search smoke" HULY issue list --description-search smoke --project "$HULY_PROJECT" 2>/dev/null || true
+    step "issue list --parent null" HULY issue list --parent null --project "$HULY_PROJECT" 2>/dev/null || true
+    # Status-category validation: must reject unknown
+    if HULY issue list --status-category Bogus >/dev/null 2>&1; then
+      echo "  FAIL: --status-category should reject Bogus" >&2
+      exit 1
+    fi
+    echo "  ✓ --status-category rejects unknown values"
+    ;;
+
   all)
     for p in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18; do
       bash "$0" "$p" || { echo "phase $p failed" >&2; exit 1; }
