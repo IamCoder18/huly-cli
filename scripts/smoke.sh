@@ -236,6 +236,30 @@ case "$PHASE" in
     echo "  ✓ time log rejects missing --issue"
     ;;
 
+  12)
+    step "card-space list" HULY card-space list
+    step "master-tag list" HULY master-tag list
+    step "card list" HULY card list
+    # Validation: card create requires --master-tag
+    if HULY card create --title "smoke" >/dev/null 2>&1; then
+      echo "  FAIL: card create should require --master-tag" >&2
+      exit 1
+    fi
+    echo "  ✓ card create rejects missing --master-tag"
+    # Validation: bogus master-tag must error
+    if HULY card create --title "smoke" --master-tag "bogus" >/dev/null 2>&1; then
+      echo "  FAIL: card create with bogus master-tag should error" >&2
+      exit 1
+    fi
+    echo "  ✓ card create errors on bogus master-tag"
+    # Validation: card-space create requires --name
+    if HULY card-space create >/dev/null 2>&1; then
+      echo "  FAIL: card-space create should require --name" >&2
+      exit 1
+    fi
+    echo "  ✓ card-space create rejects missing --name"
+    ;;
+
   all)
     for p in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18; do
       bash "$0" "$p" || { echo "phase $p failed" >&2; exit 1; }

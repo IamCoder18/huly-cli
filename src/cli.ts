@@ -43,9 +43,13 @@ import {
   listTimeEntries, logTime, deleteTimeEntries, timeReport
 } from './resources/time.js'
 import {
-  listCards, getCard, createCard, deleteCards,
-  listActions, createAction, deleteActions,
-  listDocuments, createDocument, deleteDocuments
+  listCards, getCard, createCard, updateCard, deleteCards,
+  listCardSpaces, getCardSpace, createCardSpace, deleteCardSpaces,
+  listMasterTags
+} from './resources/card.js'
+import {
+  listActions, getAction, createAction, deleteActions,
+  listDocuments, getDocument, createDocument, updateDocument, deleteDocuments
 } from './resources/misc.js'
 import { apiCommand } from './raw/api.js'
 import { wsCommand } from './raw/ws.js'
@@ -522,28 +526,75 @@ export async function run(argv: string[] = process.argv): Promise<void> {
       try { await deleteComments(refs, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
 
-  const card = program.command('card').description('Manage board cards'); withGlobalHelp(card)
-  card.command('list').description('List cards').option('--space <id>').option('--limit <n>', 'limit', (v) => parseInt(v, 10)).action(async (opts, cmd) => {
-    try { await listCards({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
-  })
-  card.command('get <ref>').description('Get a card').action(async (ref, opts, cmd) => {
-    try { await getCard(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
-  })
+  // Note: the old `board:class:Card` (board module) commands were removed —
+  // they're out of scope per the parity plan. The new `card:class:Card`
+  // commands live below under the `card` command (Phase 12).
+
+  const card = program.command('card').description('Manage Kanban cards (card module)'); withGlobalHelp(card)
+  card
+    .command('list')
+    .description('List cards')
+    .option('--card-space <ref>')
+    .option('--master-tag <ref>')
+    .option('--limit <n>', 'limit', (v) => parseInt(v, 10))
+    .option('--offset <n>', 'offset', (v) => parseInt(v, 10))
+    .action(async (opts, cmd) => {
+      try { await listCards({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  card.command('get <ref>').description('Get a card')
+    .action(async (ref, opts, cmd) => {
+      try { await getCard(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
   card
     .command('create')
-    .description('Create a card')
-    .option('--space <id>')
+    .description('Create a card (requires --master-tag)')
     .requiredOption('--title <t>')
+    .requiredOption('--master-tag <ref>')
+    .option('--card-space <ref>', 'defaults to card:space:Default')
     .option('--description <text>')
     .option('--body <md>')
     .option('--body-file <path>')
-    .option('--rank <r>')
     .action(async (opts, cmd) => {
       try { await createCard({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  card.command('update <ref>').description('Update a card')
+    .option('--title <t>')
+    .option('--description <text>')
+    .option('--body <md>')
+    .action(async (ref, opts, cmd) => {
+      try { await updateCard(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
   card.command('delete <ref...>').description('Delete cards').action(async (refs, opts, cmd) => {
     try { await deleteCards(refs, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
   })
+
+  const cardSpace = program.command('card-space').description('Manage card spaces'); withGlobalHelp(cardSpace)
+  cardSpace.command('list').description('List card spaces')
+    .option('--limit <n>', 'limit', (v) => parseInt(v, 10))
+    .action(async (opts, cmd) => {
+      try { await listCardSpaces({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  cardSpace.command('get <ref>').description('Get a card-space').action(async (ref, opts, cmd) => {
+    try { await getCardSpace(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+  })
+  cardSpace.command('create').description('Create a card-space')
+    .requiredOption('--name <name>')
+    .option('--description <text>')
+    .action(async (opts, cmd) => {
+      try { await createCardSpace({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  cardSpace.command('delete <ref...>').description('Delete card-spaces')
+    .action(async (refs, opts, cmd) => {
+      try { await deleteCardSpaces(refs, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+
+  const mt = program.command('master-tag').description('Manage card master tags'); withGlobalHelp(mt)
+  mt.command('list').description('List master tags')
+    .option('--card-space <ref>')
+    .option('--limit <n>', 'limit', (v) => parseInt(v, 10))
+    .action(async (opts, cmd) => {
+      try { await listMasterTags({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
 
   const action = program.command('action').description('Manage tasks (top-level todo)'); withGlobalHelp(action)
   action
@@ -555,11 +606,17 @@ export async function run(argv: string[] = process.argv): Promise<void> {
     .action(async (opts, cmd) => {
       try { await listActions({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
+  action.command('get <ref>').description('Get a task')
+    .action(async (ref, opts, cmd) => {
+      try { await getAction(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
   action
     .command('create')
     .description('Create a task')
     .requiredOption('--title <t>')
     .option('--description <text>')
+    .option('--body <md>')
+    .option('--body-file <path>')
     .option('--due <iso>')
     .option('--assignee <email>')
     .action(async (opts, cmd) => {
@@ -573,6 +630,10 @@ export async function run(argv: string[] = process.argv): Promise<void> {
   doc.command('list').description('List documents').option('--limit <n>', 'limit', (v) => parseInt(v, 10)).action(async (opts, cmd) => {
     try { await listDocuments({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
   })
+  doc.command('get <ref>').description('Get a document')
+    .action(async (ref, opts, cmd) => {
+      try { await getDocument(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
   doc
     .command('create')
     .description('Create a document')
@@ -582,6 +643,14 @@ export async function run(argv: string[] = process.argv): Promise<void> {
     .option('--parent <id>')
     .action(async (opts, cmd) => {
       try { await createDocument({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  doc.command('update <ref>').description('Update a document')
+    .option('--title <t>')
+    .option('--body <md>')
+    .option('--body-file <path>')
+    .option('--archived')
+    .action(async (ref, opts, cmd) => {
+      try { await updateDocument(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
   doc.command('delete <ref...>').description('Delete documents').action(async (refs, opts, cmd) => {
     try { await deleteDocuments(refs, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
