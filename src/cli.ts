@@ -48,9 +48,12 @@ import {
   listMasterTags
 } from './resources/card.js'
 import {
-  listActions, getAction, createAction, deleteActions,
   listDocuments, getDocument, createDocument, updateDocument, deleteDocuments
 } from './resources/misc.js'
+import {
+  listActions, getAction, createAction, updateAction, deleteActions,
+  completeAction, reopenAction, scheduleAction, unscheduleAction
+} from './resources/todo.js'
 import { apiCommand } from './raw/api.js'
 import { wsCommand } from './raw/ws.js'
 
@@ -596,13 +599,20 @@ export async function run(argv: string[] = process.argv): Promise<void> {
       try { await listMasterTags({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
 
-  const action = program.command('action').description('Manage tasks (top-level todo)'); withGlobalHelp(action)
+  const action = program.command('action').description('Manage tasks (Planner ToDos)'); withGlobalHelp(action)
   action
     .command('list')
     .description('List tasks')
-    .option('--assignee <email>')
-    .option('--status <s>')
+    .option('--owner <email>')
+    .option('--issue <ref>', 'filter to todos attached to an issue')
+    .option('--title <q>', 'regex match on title')
+    .option('--priority <p>', 'High|Medium|Low|NoPriority|Urgent')
+    .option('--visibility <v>', 'public|busy|private')
+    .option('--due-from <iso>')
+    .option('--due-to <iso>')
+    .option('--completed <bool>', 'true|false|all', (v) => v === 'all' ? 'all' : v !== 'false' && v !== '0')
     .option('--limit <n>', 'limit', (v) => parseInt(v, 10))
+    .option('--offset <n>', 'offset', (v) => parseInt(v, 10))
     .action(async (opts, cmd) => {
       try { await listActions({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
@@ -618,9 +628,45 @@ export async function run(argv: string[] = process.argv): Promise<void> {
     .option('--body <md>')
     .option('--body-file <path>')
     .option('--due <iso>')
-    .option('--assignee <email>')
+    .option('--priority <p>')
+    .option('--visibility <v>')
+    .option('--owner <email>')
+    .option('--attached-to <ref>')
+    .option('--attached-to-class <class>')
     .action(async (opts, cmd) => {
       try { await createAction({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  action.command('update <ref>').description('Update a task')
+    .option('--title <t>')
+    .option('--description <text>')
+    .option('--body <md>')
+    .option('--body-file <path>')
+    .option('--due <iso>')
+    .option('--priority <p>')
+    .option('--visibility <v>')
+    .option('--owner <email>')
+    .action(async (ref, opts, cmd) => {
+      try { await updateAction(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  action.command('complete <ref>').description('Mark a task done (sets doneOn=now)')
+    .action(async (ref, opts, cmd) => {
+      try { await completeAction(ref, globalsFrom(cmd)) } catch (e) { handleError(e) }
+    })
+  action.command('reopen <ref>').description('Reopen a task (clears doneOn)')
+    .action(async (ref, opts, cmd) => {
+      try { await reopenAction(ref, globalsFrom(cmd)) } catch (e) { handleError(e) }
+    })
+  action.command('schedule <ref>').description('Create a WorkSlot for the task')
+    .requiredOption('--start <iso>')
+    .requiredOption('--duration <minutes>', '', (v) => parseInt(v, 10))
+    .option('--all-day')
+    .action(async (ref, opts, cmd) => {
+      try { await scheduleAction(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  action.command('unschedule <ref>').description('Remove WorkSlots for the task')
+    .option('--slot-id <id>', 'remove a specific slot only')
+    .action(async (ref, opts, cmd) => {
+      try { await unscheduleAction(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
   action.command('delete <ref...>').description('Delete tasks').action(async (refs, opts, cmd) => {
     try { await deleteActions(refs, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }

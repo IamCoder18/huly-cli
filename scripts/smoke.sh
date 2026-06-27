@@ -260,6 +260,31 @@ case "$PHASE" in
     echo "  ✓ card-space create rejects missing --name"
     ;;
 
+  13)
+    step "action list" HULY action list
+    step "action list --completed all" HULY action list --completed all
+    step "action list --priority High" HULY action list --priority High
+    # Validation: action create requires --title
+    if HULY action create >/dev/null 2>&1; then
+      echo "  FAIL: action create should require --title" >&2
+      exit 1
+    fi
+    echo "  ✓ action create rejects missing --title"
+    # create + lifecycle + cleanup
+    TID=$(HULY action create --title "smoke-todo-$(date +%s)" --json 2>/dev/null \
+      | sed -n '/^{/,$p' | jq -r '._id // empty')
+    if [[ -n "$TID" ]]; then
+      echo "  ✓ created $TID"
+      HULY action complete "$TID" >/dev/null 2>&1 || true
+      HULY action reopen "$TID" >/dev/null 2>&1 || true
+      HULY action update "$TID" --title "smoke-todo-updated" >/dev/null 2>&1 || true
+      HULY action schedule "$TID" --start 2027-04-01T10:00:00Z --duration 30 >/dev/null 2>&1 || true
+      HULY action unschedule "$TID" >/dev/null 2>&1 || true
+      HULY action delete "$TID" --yes >/dev/null 2>&1 || true
+      echo "  ✓ action lifecycle + cleanup complete"
+    fi
+    ;;
+
   all)
     for p in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18; do
       bash "$0" "$p" || { echo "phase $p failed" >&2; exit 1; }
