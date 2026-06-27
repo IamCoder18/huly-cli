@@ -38,15 +38,18 @@ export async function loginCommand(opts: LoginOpts = {}): Promise<void> {
 
   let chosenUrl = env.workspace
   if (!chosenUrl) {
-    if (!forceInteractive) {
-      throw new CliError(
-        ExitCode.Validation,
-        'workspace required',
-        'set HULY_WORKSPACE or run without --headless / non-interactive'
-      )
+    if (workspaces.length === 1) {
+      chosenUrl = workspaces[0].url
+    } else if (!forceInteractive) {
+      console.log(`logged in as ${email}`)
+      console.log(`available workspaces:`)
+      for (const w of workspaces) console.log(`  ${w.url}\t${w.name}\t${w.uuid}`)
+      console.log(`hint: set HULY_WORKSPACE=<url> and re-run, or run \`huly login\` interactively`)
+      return
+    } else {
+      const ws = await pickWorkspace(workspaces, { forceInteractive })
+      chosenUrl = ws.url
     }
-    const ws = await pickWorkspace(workspaces, { forceInteractive })
-    chosenUrl = ws.url
   }
 
   const ws = workspaces.find((w) => w.url === chosenUrl)

@@ -1,13 +1,72 @@
 import pkg from '@hcengineering/api-client'
 import accountPkg from '@hcengineering/account-client'
+import type { PlatformClient, ConnectOptions } from '@hcengineering/api-client'
+import type { AccountClient } from '@hcengineering/account-client'
+import { createRequire } from 'node:module'
 import { readEnv } from './env.js'
 import { getCachedCreds, setCachedCreds, setCachedWorkspaceToken, findAnyCachedToken, writeActiveAccount } from './cache.js'
 
+const require = createRequire(import.meta.url)
+const wsModule = require('ws') as typeof import('ws')
+
+// `NodeWebSocketFactory` lives in `@hcengineering/api-client/lib/socket/node.js`
+// but the package's `exports` field does not expose it. We recreate the small
+// shim inline so we don't need to bypass the exports map.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyClientSocket = any
+const NodeWebSocketFactory = (url: string): AnyClientSocket => {
+  const ws = new wsModule.WebSocket(url)
+  const client: AnyClientSocket = {
+    get readyState (): number {
+      return ws.readyState
+    },
+    send: (data: string | ArrayBufferLike | Blob | ArrayBufferView): void => {
+      if (data instanceof Blob) {
+        void data.arrayBuffer().then((buffer) => { ws.send(buffer) })
+      } else {
+        ws.send(data as any)
+      }
+    },
+    close: (code?: number): void => {
+      ws.close(code)
+    }
+  }
+  ws.on('message', (data: any) => {
+    if (client.onmessage != null) {
+      let eventData: string | ArrayBuffer | SharedArrayBuffer = data
+      if (typeof Buffer !== 'undefined' && data instanceof Buffer) {
+        eventData = new Uint8Array(data).buffer
+      }
+      const event = { data: eventData, type: 'message', target: client }
+      client.onmessage(event)
+    }
+  })
+  ws.on('close', (code: number, _reason: string) => {
+    if (client.onclose != null) {
+      const evt = { code, reason: '', wasClean: code === 1000, type: 'close', target: client }
+      client.onclose(evt)
+    }
+  })
+  ws.on('open', () => {
+    if (client.onopen != null) {
+      const evt = { type: 'open', target: client }
+      client.onopen(evt)
+    }
+  })
+  ws.on('error', (err: Error) => {
+    if (client.onerror != null) {
+      const evt = { type: 'error', target: client, error: err }
+      client.onerror(evt)
+    }
+  })
+  return client
+}
+
+// Polyfills for `window` / `WebSocket` are installed in src/index.ts before
+// the SDK is loaded; no need to repeat here.
+
 const { connect } = pkg
 const { getClient } = accountPkg
-
-import type { PlatformClient, ConnectOptions } from '@hcengineering/api-client'
-import type { AccountClient } from '@hcengineering/account-client'
 
 export type { AccountClient, PlatformClient }
 
@@ -95,8 +154,8 @@ export async function connectPlatform(opts: ConnectArgs): Promise<PlatformClient
   }
 
   const connectOpts: ConnectOptions = token
-    ? { token, workspace }
-    : { email: email!, password: password!, workspace }
+    ? { token, workspace, socketFactory: NodeWebSocketFactory }
+    : { email: email!, password: password!, workspace, socketFactory: NodeWebSocketFactory }
 
   const client = await connect(url, connectOpts)
 
