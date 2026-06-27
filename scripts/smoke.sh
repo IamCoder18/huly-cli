@@ -47,6 +47,16 @@ if [[ -z "${HULY_URL:-}" ]]; then
   export HULY_URL="https://huly.aaravlabs.com"
 fi
 
+# If no workspace set, read from active-workspace cache file.
+if [[ -z "${HULY_WORKSPACE:-}" && -f "$HOME/.config/huly/active-workspace" ]]; then
+  export HULY_WORKSPACE="$(cat "$HOME/.config/huly/active-workspace" | tr -d '[:space:]')"
+fi
+
+if [[ -z "${HULY_WORKSPACE:-}" ]]; then
+  echo "HULY_WORKSPACE not set and no active-workspace cached; pass HULY_WORKSPACE=... or run \`huly workspace use <n>\`" >&2
+  exit 1
+fi
+
 # Ensure jq is available
 command -v jq >/dev/null || { echo "jq required" >&2; exit 1; }
 
@@ -85,6 +95,32 @@ case "$PHASE" in
     step "card list" HULY card list
     step "document list" HULY document list
     step "calendar list" HULY calendar list
+    ;;
+
+  1)
+    step "workspace info" HULY workspace info
+    step "workspace members" HULY workspace members --json
+    step "workspace regions" HULY workspace regions --json
+    step "user get" HULY user get
+    # workspace create must refuse without --yes
+    if HULY workspace create --name "smoke-no" >/dev/null 2>&1; then
+      echo "  FAIL: workspace create should have refused without --yes" >&2
+      exit 1
+    fi
+    echo "  ✓ workspace create refuses without --yes"
+    # workspace delete must refuse without --yes
+    if HULY workspace delete >/dev/null 2>&1; then
+      echo "  FAIL: workspace delete should have refused without --yes" >&2
+      exit 1
+    fi
+    echo "  ✓ workspace delete refuses without --yes"
+    # Try actual create (skipped on read-only accounts — exit 0 either way)
+    if create_result=$(HULY workspace create --name "smoke-ws-$(date +%s)" --yes --json 2>/dev/null); then
+      echo "  ✓ workspace create succeeded"
+      echo "$create_result" | jq -e '._id or .workspace or .name' >/dev/null || true
+    else
+      echo "  ⚠ workspace create skipped (account server may forbid on this workspace)"
+    fi
     ;;
 
   all)

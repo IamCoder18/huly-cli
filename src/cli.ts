@@ -7,7 +7,8 @@ import { handleError } from './output/errors.js'
 import { isNonInteractive, markNonInteractive } from './auth/env.js'
 import { loginCommand } from './commands/login.js'
 import { whoamiCommand } from './commands/whoami.js'
-import { listWorkspaces, currentWorkspace, useWorkspace } from './resources/workspace.js'
+import { listWorkspaces, currentWorkspace, useWorkspace, createWorkspace, deleteWorkspace, listMembers, updateMemberRole, workspaceInfo, updateWorkspaceName, workspaceGuests, createAccessLink, listRegions } from './resources/workspace.js'
+import { getUser, updateUser, findUser } from './resources/user.js'
 import {
   listProjects, getProject, createProject, updateProject, deleteProjects
 } from './resources/project.js'
@@ -124,6 +125,76 @@ export async function run(argv: string[] = process.argv): Promise<void> {
   ws.command('use <name>').description('Set active workspace').action(async (name, _o, cmd) => {
     try { await useWorkspace(name, globalsFrom(cmd)) } catch (e) { handleError(e) }
   })
+  ws.command('create').description('Create a new workspace (requires --yes)')
+    .requiredOption('--name <name>')
+    .option('--region <region>')
+    .action(async (opts, cmd) => {
+      try { await createWorkspace({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  ws.command('delete').description('Delete the current workspace (DESTRUCTIVE; requires --yes)')
+    .action(async (opts, cmd) => {
+      try { await deleteWorkspace({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  ws.command('members').description('List workspace members')
+    .option('--role <r>', 'filter by role (Owner|Admin|Guest|ReadOnlyGuest|DocGuest)')
+    .action(async (opts, cmd) => {
+      try { await listMembers({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  ws.command('member <account>').description('Update a member\'s role (account uuid or email)')
+    .requiredOption('--role <r>', 'Owner|Admin|Guest|ReadOnlyGuest|DocGuest')
+    .action(async (account, opts, cmd) => {
+      try { await updateMemberRole({ ...opts, target: account, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  ws.command('info').description('Show current workspace info (name, uuid, region, mode)')
+    .action(async (_o, cmd) => {
+      try { await workspaceInfo(globalsFrom(cmd)) } catch (e) { handleError(e) }
+    })
+  ws.command('rename').description('Rename current workspace')
+    .requiredOption('--name <name>')
+    .action(async (opts, cmd) => {
+      try { await updateWorkspaceName({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  ws.command('guests').description('Update guest settings (--read-only and/or --sign-up, true|false)')
+    .option('--read-only <bool>')
+    .option('--sign-up <bool>')
+    .action(async (opts, cmd) => {
+      try {
+        const readOnly = opts.readOnly === undefined ? undefined : opts.readOnly !== 'false' && opts.readOnly !== '0'
+        const signUp = opts.signUp === undefined ? undefined : opts.signUp !== 'false' && opts.signUp !== '0'
+        await workspaceGuests({ ...globalsFrom(cmd), readOnly, signUp })
+      } catch (e) { handleError(e) }
+    })
+  ws.command('access-link').description('Create an access link (signup invite) for a role')
+    .requiredOption('--role <r>', 'Guest|ReadOnlyGuest|DocGuest|Admin|Owner')
+    .option('--exp-hours <n>', 'expiration in hours', (v) => parseInt(v, 10))
+    .option('--auto-join')
+    .option('--email <email>')
+    .action(async (opts, cmd) => {
+      try { await createAccessLink({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  ws.command('regions').description('List available regions')
+    .action(async (_o, cmd) => {
+      try { await listRegions(globalsFrom(cmd)) } catch (e) { handleError(e) }
+    })
+
+  const user = program.command('user').description('Manage user profile')
+  user.command('get').description('Show the current user profile (or `--ref <id>`)')
+    .option('--ref <id>')
+    .action(async (opts, cmd) => {
+      try { await getUser({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  user.command('update').description('Update current user profile')
+    .option('--name <name>')
+    .option('--bio <text>')
+    .option('--city <city>')
+    .option('--country <country>')
+    .action(async (opts, cmd) => {
+      try { await updateUser({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  user.command('find <email>').description('Look up a user by email (requires server permission)')
+    .action(async (email, _o, cmd) => {
+      try { await findUser(email, globalsFrom(cmd)) } catch (e) { handleError(e) }
+    })
 
   const project = program.command('project').description('Manage tracker projects'); withGlobalHelp(project)
   project.command('list').description('List projects').option('--limit <n>', 'limit', (v) => parseInt(v, 10)).option('--offset <n>', 'offset', (v) => parseInt(v, 10)).action(async (opts, cmd) => {

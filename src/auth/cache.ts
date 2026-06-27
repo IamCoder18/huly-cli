@@ -66,6 +66,15 @@ export async function setCachedWorkspaceToken(
   await saveCredentials(all)
 }
 
+export async function getCachedWorkspaceToken(
+  host: string,
+  email: string,
+  workspaceKey: string
+): Promise<WorkspaceCreds | undefined> {
+  const all = await loadCredentials()
+  return all[host]?.[email]?.workspaces[workspaceKey]
+}
+
 export async function readActiveWorkspace(): Promise<string | undefined> {
   try {
     const raw = await fs.readFile(activeWorkspacePath(), 'utf8')

@@ -92,7 +92,12 @@ export async function loginAndCache(
   password: string
 ): Promise<{ token: string; account: string }> {
   const result = await login(url, email, password)
-  await setCachedCreds(url, email, { accountToken: result.token, workspaces: {} })
+  // Preserve any cached workspace tokens — only refresh the account token.
+  const existing = await getCachedCreds(url, email)
+  await setCachedCreds(url, email, {
+    accountToken: result.token,
+    workspaces: existing?.workspaces ?? {}
+  })
   await writeActiveAccount(url, email)
   return result
 }
@@ -179,17 +184,19 @@ export async function connectPlatform(opts: ConnectArgs): Promise<PlatformClient
 export async function resolveToken(opts: { url?: string; token?: string; email?: string; password?: string }): Promise<string> {
   const env = readEnv()
   const url = opts.url ?? env.url
-  let token = opts.token ?? env.token
+  const token = opts.token ?? env.token
   if (token) return token
   const email = opts.email ?? env.email
   const password = opts.password ?? env.password
-  if (email && password) {
-    const r = await loginAndCache(url, email, password)
-    return r.token
-  }
+  // Prefer cached credentials over re-authenticating. Re-login would clobber
+  // any cached workspace tokens.
   if (email) {
     const cached = await getCachedCreds(url, email)
     if (cached) return cached.accountToken
+  }
+  if (email && password) {
+    const r = await loginAndCache(url, email, password)
+    return r.token
   }
   const any = await findAnyCachedToken(url)
   if (any) return any.token

@@ -1,6 +1,6 @@
 import { connectPlatform, type PlatformClient, type AccountClient, resolveToken } from '../auth/client.js'
 import { readEnv } from '../auth/env.js'
-import { readActiveWorkspace } from '../auth/cache.js'
+import { readActiveWorkspace, getCachedWorkspaceToken } from '../auth/cache.js'
 import { CliError, ExitCode } from '../output/errors.js'
 
 export interface ConnectOpts {
@@ -31,7 +31,22 @@ export async function connectCli(opts: ConnectOpts = {}): Promise<PlatformClient
 export async function connectAccountCli(opts: ConnectOpts = {}): Promise<AccountClient> {
   const env = readEnv()
   const url = opts.url ?? env.url
-  const token = await resolveToken(opts)
+  let token = await resolveToken(opts)
+  // If a workspace is in scope, prefer the workspace-scoped token so methods
+  // like getWorkspaceMembers / getWorkspaceInfo (which require workspace
+  // authorization) succeed.
+  const workspace = opts.workspace ?? env.workspace
+  if (workspace) {
+    try {
+      const email = env.email
+      if (email) {
+        const ws = await getCachedWorkspaceToken(url, email, workspace)
+        if (ws?.token) token = ws.token
+      }
+    } catch {
+      // best-effort; fall back to account token
+    }
+  }
   const { accountClient } = await import('../auth/client.js')
   return await accountClient(url, token)
 }
