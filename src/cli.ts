@@ -34,10 +34,15 @@ import {
   listComments, addComment, updateComment, deleteComments
 } from './resources/comment.js'
 import {
+  listCalendars,
+  listSchedules, getSchedule, createSchedule, updateSchedule, deleteSchedules,
+  listEvents, getEvent, createEvent, updateEvent, deleteEvents,
+  listRecurringEvents, listRecurringInstances
+} from './resources/calendar.js'
+import {
   listCards, getCard, createCard, deleteCards,
   listActions, createAction, deleteActions,
-  listDocuments, createDocument, deleteDocuments,
-  listEvents, createEvent, deleteEvents
+  listDocuments, createDocument, deleteDocuments
 } from './resources/misc.js'
 import { apiCommand } from './raw/api.js'
 import { wsCommand } from './raw/ws.js'
@@ -579,19 +584,28 @@ export async function run(argv: string[] = process.argv): Promise<void> {
     try { await deleteDocuments(refs, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
   })
 
-  const cal = program.command('calendar').description('Manage calendar events'); withGlobalHelp(cal)
+  const cal = program.command('calendar').description('Manage calendar events, schedules, calendars'); withGlobalHelp(cal)
+  cal.command('calendars').description('List calendars')
+    .action(async (_o, cmd) => {
+      try { await listCalendars(globalsFrom(cmd)) } catch (e) { handleError(e) }
+    })
   cal
     .command('list')
     .description('List events')
     .option('--start <iso>')
     .option('--end <iso>')
+    .option('--calendar <id|name>')
     .option('--limit <n>', 'limit', (v) => parseInt(v, 10))
     .action(async (opts, cmd) => {
       try { await listEvents({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
+  cal.command('get <ref>').description('Get an event')
+    .action(async (ref, opts, cmd) => {
+      try { await getEvent(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
   cal
     .command('create')
-    .description('Create an event')
+    .description('Create an event (or recurring event with --rrule)')
     .requiredOption('--title <t>')
     .requiredOption('--start <iso>')
     .requiredOption('--end <iso>')
@@ -600,12 +614,69 @@ export async function run(argv: string[] = process.argv): Promise<void> {
     .option('--all-day')
     .option('--description <text>')
     .option('--body <md>')
+    .option('--calendar-id <id>')
+    .option('--rrule <string>', 'RRULE e.g. FREQ=DAILY;COUNT=3')
     .action(async (opts, cmd) => {
       try { await createEvent({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  cal.command('update <ref>').description('Update an event')
+    .option('--title <t>')
+    .option('--description <text>')
+    .option('--start <iso>')
+    .option('--end <iso>')
+    .option('--all-day')
+    .option('--location <text>')
+    .option('--attendee <email>')
+    .action(async (ref, opts, cmd) => {
+      try { await updateEvent(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
   cal.command('delete <ref...>').description('Delete events').action(async (refs, opts, cmd) => {
     try { await deleteEvents(refs, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
   })
+  cal.command('recurring').description('List recurring events')
+    .action(async (_o, cmd) => {
+      try { await listRecurringEvents(globalsFrom(cmd)) } catch (e) { handleError(e) }
+    })
+  cal.command('recurring-instances <ref>').description('List instances of a recurring event')
+    .option('--start <iso>')
+    .option('--end <iso>')
+    .option('--limit <n>', 'limit', (v) => parseInt(v, 10))
+    .action(async (ref, opts, cmd) => {
+      try { await listRecurringInstances(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+
+  const schedule = program.command('schedule').description('Manage calendar schedules'); withGlobalHelp(schedule)
+  schedule.command('list').description('List schedules')
+    .action(async (_o, cmd) => {
+      try { await listSchedules(globalsFrom(cmd)) } catch (e) { handleError(e) }
+    })
+  schedule.command('get <ref>').description('Get a schedule')
+    .action(async (ref, opts, cmd) => {
+      try { await getSchedule(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  schedule.command('create').description('Create a schedule')
+    .requiredOption('--title <t>')
+    .requiredOption('--owner <uuid>')
+    .requiredOption('--time-zone <tz>')
+    .option('--description <text>')
+    .option('--duration <minutes>', 'meetingDuration', (v) => parseInt(v, 10))
+    .option('--interval <minutes>', 'meetingInterval', (v) => parseInt(v, 10))
+    .action(async (opts, cmd) => {
+      try { await createSchedule({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  schedule.command('update <ref>').description('Update a schedule')
+    .option('--title <t>')
+    .option('--description <text>')
+    .option('--time-zone <tz>')
+    .option('--duration <minutes>', '', (v) => parseInt(v, 10))
+    .option('--interval <minutes>', '', (v) => parseInt(v, 10))
+    .action(async (ref, opts, cmd) => {
+      try { await updateSchedule(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  schedule.command('delete <ref...>').description('Delete schedules')
+    .action(async (refs, opts, cmd) => {
+      try { await deleteSchedules(refs, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
 
   const raw = program.command('api').description('Raw HTTP escape hatch')
   raw

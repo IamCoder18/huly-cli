@@ -194,6 +194,33 @@ case "$PHASE" in
     echo "  ✓ comment add rejects missing --issue"
     ;;
 
+  9)
+    step "calendar calendars" HULY calendar calendars
+    step "schedule list" HULY schedule list
+    step "calendar recurring" HULY calendar recurring
+    # create event + cleanup
+    EID=$(HULY calendar create --title "smoke-evt-$(date +%s)" --start "2027-01-01T10:00:00Z" --end "2027-01-01T11:00:00Z" --json 2>/dev/null \
+      | sed -n '/^{/,$p' | jq -r '._id // empty')
+    if [[ -n "$EID" ]]; then
+      echo "  ✓ created event $EID"
+      HULY calendar delete "$EID" --yes >/dev/null 2>&1 || true
+      echo "  ✓ deleted event"
+    else
+      echo "  ⚠ calendar create skipped (server may forbid)"
+    fi
+    # create recurring event + cleanup
+    RID=$(HULY calendar create --title "smoke-rec-$(date +%s)" --start "2027-02-01T10:00:00Z" --end "2027-02-01T11:00:00Z" --rrule "FREQ=DAILY;COUNT=3" --json 2>/dev/null \
+      | sed -n '/^{/,$p' | jq -r '._id // empty')
+    if [[ -n "$RID" ]]; then
+      echo "  ✓ created recurring event $RID"
+      HULY calendar delete "$RID" --yes >/dev/null 2>&1 || true
+      echo "  ✓ deleted recurring event"
+    fi
+    # cleanup assertion
+    cleanup_count "events" "smoke-evt-" "HULY calendar list --json 2>/dev/null | sed -n '/^\[/,\$p'"
+    cleanup_count "events" "smoke-rec-" "HULY calendar recurring --json 2>/dev/null | sed -n '/^\[/,\$p'"
+    ;;
+
   all)
     for p in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18; do
       bash "$0" "$p" || { echo "phase $p failed" >&2; exit 1; }
