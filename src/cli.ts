@@ -1,0 +1,324 @@
+#!/usr/bin/env node
+import { Command } from 'commander'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
+import { handleError } from './output/errors.js'
+import { isNonInteractive, markNonInteractive } from './auth/env.js'
+import { loginCommand } from './commands/login.js'
+import { whoamiCommand } from './commands/whoami.js'
+import { listWorkspaces, currentWorkspace, useWorkspace } from './resources/workspace.js'
+import {
+  listProjects, getProject, createProject, updateProject, deleteProjects
+} from './resources/project.js'
+import {
+  listIssues, getIssue, createIssue, updateIssue, deleteIssues
+} from './resources/issue.js'
+import {
+  listCards, getCard, createCard, deleteCards,
+  listActions, createAction, deleteActions,
+  listDocuments, createDocument, deleteDocuments,
+  listEvents, createEvent, deleteEvents
+} from './resources/misc.js'
+import { apiCommand } from './raw/api.js'
+import { wsCommand } from './raw/ws.js'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
+const pkg = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf8'))
+
+export interface GlobalOpts {
+  url?: string
+  workspace?: string
+  json?: boolean
+  ci?: boolean
+  markdown?: boolean
+  dryRun?: boolean
+  minimal?: boolean
+  yes?: boolean
+  nonInteractive?: boolean
+  headless?: boolean
+}
+
+export function globalsFrom(cmd: Command): GlobalOpts {
+  return cmd.optsWithGlobals() as GlobalOpts
+}
+
+function attachGlobalOpts(cmd: Command): Command {
+  return cmd
+    .option('--url <url>', 'Huly server URL')
+    .option('--workspace <name>', 'workspace URL name or UUID')
+    .option('--json', 'output JSON')
+    .option('--ci', 'CI mode (JSON output)')
+    .option('--markdown', 'output body as markdown')
+    .option('--dry-run', 'print intended tx, do not apply')
+    .option('--minimal', 'minimal payload (no smart defaults)')
+    .option('-y, --yes', 'skip confirmation prompts')
+    .option('--non-interactive', 'disable interactive prompts')
+}
+
+function attachToChildren(cmd: Command): void {
+  for (const child of cmd.commands) {
+    attachGlobalOpts(child)
+    attachToChildren(child)
+  }
+}
+
+const GLOBAL_OPTS_HELP = `
+Global options (also available on parent commands):
+  --url <url>           Huly server URL
+  --workspace <name>    workspace URL name or UUID
+  --json / --ci         output JSON
+  --markdown            output body as markdown
+  --dry-run             print intended tx, do not apply
+  --minimal             minimal payload (no smart defaults)
+  -y, --yes             skip confirmation prompts
+  --non-interactive     disable interactive prompts
+`
+
+function withGlobalHelp(cmd: Command): Command {
+  cmd.addHelpText('after', GLOBAL_OPTS_HELP)
+  return cmd
+}
+
+function preAction(cmd: Command): void {
+  const opts = cmd.optsWithGlobals() as GlobalOpts
+  if (opts.nonInteractive || opts.headless || opts.ci || isNonInteractive()) {
+    markNonInteractive()
+  }
+}
+
+export async function run(argv: string[] = process.argv): Promise<void> {
+  const program = new Command()
+  program
+    .name('huly')
+    .description('AI-agent-first CLI for self-hosted Huly')
+    .version(pkg.version)
+    .option('--non-interactive', 'disable interactive prompts')
+    .hook('preAction', (thisCmd) => preAction(thisCmd as Command))
+
+  program
+    .command('login')
+    .description('Log in and cache credentials')
+    .option('--headless', 'use env vars only, no prompts')
+    .action(async (opts, cmd) => {
+      try {
+        const g = globalsFrom(cmd)
+        await loginCommand({ headless: opts.headless ?? g.headless ?? g.nonInteractive })
+      } catch (e) { handleError(e) }
+    })
+
+  program
+    .command('whoami')
+    .description('Show current account and workspace')
+    .action(async (_opts, cmd) => {
+      try { await whoamiCommand({ json: cmd.optsWithGlobals()?.json }) } catch (e) { handleError(e) }
+    })
+
+  const ws = program.command('workspace').description('Manage workspaces'); withGlobalHelp(ws)
+  ws.command('list').description('List accessible workspaces').action(async (_o, cmd) => {
+    try { await listWorkspaces(globalsFrom(cmd)) } catch (e) { handleError(e) }
+  })
+  ws.command('current').description('Show current workspace').action(async (_o, cmd) => {
+    try { await currentWorkspace(globalsFrom(cmd)) } catch (e) { handleError(e) }
+  })
+  ws.command('use <name>').description('Set active workspace').action(async (name, _o, cmd) => {
+    try { await useWorkspace(name, globalsFrom(cmd)) } catch (e) { handleError(e) }
+  })
+
+  const project = program.command('project').description('Manage tracker projects'); withGlobalHelp(project)
+  project.command('list').description('List projects').option('--limit <n>', 'limit', (v) => parseInt(v, 10)).option('--offset <n>', 'offset', (v) => parseInt(v, 10)).action(async (opts, cmd) => {
+    try { await listProjects({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+  })
+  project.command('get <ref>').description('Get a project').action(async (ref, opts, cmd) => {
+    try { await getProject(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+  })
+  project
+    .command('create')
+    .description('Create a project')
+    .requiredOption('--name <name>')
+    .requiredOption('--identifier <id>')
+    .option('--description <text>')
+    .option('--private')
+    .action(async (opts, cmd) => {
+      try { await createProject({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  project
+    .command('update <ref>')
+    .description('Update a project')
+    .option('--set <kv...>', 'set key=value (repeatable)')
+    .option('--unset <key...>', 'unset key (repeatable)')
+    .action(async (ref, opts, cmd) => {
+      try { await updateProject(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  project.command('delete <ref...>').description('Delete projects').action(async (refs, opts, cmd) => {
+    try { await deleteProjects(refs, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+  })
+
+  const issue = program.command('issue').description('Manage tracker issues'); withGlobalHelp(issue)
+  issue
+    .command('list')
+    .description('List issues')
+    .option('--project <id>')
+    .option('--status <name>')
+    .option('--assignee <email>')
+    .option('--label <l...>')
+    .option('--limit <n>', 'limit', (v) => parseInt(v, 10))
+    .option('--offset <n>', 'offset', (v) => parseInt(v, 10))
+    .action(async (opts, cmd) => {
+      try { await listIssues({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  issue
+    .command('get <ref>')
+    .description('Get an issue')
+    .action(async (ref, opts, cmd) => {
+      try { await getIssue(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  issue
+    .command('create')
+    .description('Create an issue')
+    .option('--project <id>')
+    .requiredOption('--title <t>')
+    .option('--description <text>')
+    .option('--body <md>')
+    .option('--body-file <path>')
+    .option('--status <name>')
+    .option('--priority <p>')
+    .option('--assignee <email>')
+    .option('--label <l...>')
+    .option('--due <iso>')
+    .action(async (opts, cmd) => {
+      try { await createIssue({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  issue
+    .command('update <ref>')
+    .description('Update an issue')
+    .option('--set <kv...>')
+    .option('--unset <key...>')
+    .option('--status <name>')
+    .option('--priority <p>')
+    .option('--assignee <email>')
+    .option('--title <t>')
+    .action(async (ref, opts, cmd) => {
+      try { await updateIssue(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  issue.command('delete <ref...>').description('Delete issues').action(async (refs, opts, cmd) => {
+    try { await deleteIssues(refs, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+  })
+
+  const card = program.command('card').description('Manage board cards'); withGlobalHelp(card)
+  card.command('list').description('List cards').option('--space <id>').option('--limit <n>', 'limit', (v) => parseInt(v, 10)).action(async (opts, cmd) => {
+    try { await listCards({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+  })
+  card.command('get <ref>').description('Get a card').action(async (ref, opts, cmd) => {
+    try { await getCard(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+  })
+  card
+    .command('create')
+    .description('Create a card')
+    .option('--space <id>')
+    .requiredOption('--title <t>')
+    .option('--description <text>')
+    .option('--body <md>')
+    .option('--body-file <path>')
+    .option('--rank <r>')
+    .action(async (opts, cmd) => {
+      try { await createCard({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  card.command('delete <ref...>').description('Delete cards').action(async (refs, opts, cmd) => {
+    try { await deleteCards(refs, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+  })
+
+  const action = program.command('action').description('Manage tasks (top-level todo)'); withGlobalHelp(action)
+  action
+    .command('list')
+    .description('List tasks')
+    .option('--assignee <email>')
+    .option('--status <s>')
+    .option('--limit <n>', 'limit', (v) => parseInt(v, 10))
+    .action(async (opts, cmd) => {
+      try { await listActions({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  action
+    .command('create')
+    .description('Create a task')
+    .requiredOption('--title <t>')
+    .option('--description <text>')
+    .option('--due <iso>')
+    .option('--assignee <email>')
+    .action(async (opts, cmd) => {
+      try { await createAction({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  action.command('delete <ref...>').description('Delete tasks').action(async (refs, opts, cmd) => {
+    try { await deleteActions(refs, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+  })
+
+  const doc = program.command('document').description('Manage documents'); withGlobalHelp(doc)
+  doc.command('list').description('List documents').option('--limit <n>', 'limit', (v) => parseInt(v, 10)).action(async (opts, cmd) => {
+    try { await listDocuments({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+  })
+  doc
+    .command('create')
+    .description('Create a document')
+    .requiredOption('--title <t>')
+    .option('--body <md>')
+    .option('--body-file <path>')
+    .option('--parent <id>')
+    .action(async (opts, cmd) => {
+      try { await createDocument({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  doc.command('delete <ref...>').description('Delete documents').action(async (refs, opts, cmd) => {
+    try { await deleteDocuments(refs, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+  })
+
+  const cal = program.command('calendar').description('Manage calendar events'); withGlobalHelp(cal)
+  cal
+    .command('list')
+    .description('List events')
+    .option('--start <iso>')
+    .option('--end <iso>')
+    .option('--limit <n>', 'limit', (v) => parseInt(v, 10))
+    .action(async (opts, cmd) => {
+      try { await listEvents({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  cal
+    .command('create')
+    .description('Create an event')
+    .requiredOption('--title <t>')
+    .requiredOption('--start <iso>')
+    .requiredOption('--end <iso>')
+    .option('--attendee <email>')
+    .option('--location <text>')
+    .option('--all-day')
+    .option('--description <text>')
+    .option('--body <md>')
+    .action(async (opts, cmd) => {
+      try { await createEvent({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  cal.command('delete <ref...>').description('Delete events').action(async (refs, opts, cmd) => {
+    try { await deleteEvents(refs, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+  })
+
+  const raw = program.command('api').description('Raw HTTP escape hatch')
+  raw
+    .argument('<method>', 'HTTP method')
+    .argument('<path>', 'URL path (e.g. /_accounts, /_transactor/...)')
+    .option('--body <json>', 'request body')
+    .option('--query <kv...>', 'query params k=v')
+    .option('--header <kv...>', 'headers k=v')
+    .action(async (method, path, opts) => {
+      try { await apiCommand(method, path, opts) } catch (e) { handleError(e) }
+    })
+
+  const wsCmd = program.command('ws').description('Raw WebSocket escape hatch')
+    wsCmd
+    .argument('<method>', 'RPC method (e.g. findAll, tx)')
+    .argument('[params]', 'JSON-encoded params')
+    .option('--binary')
+    .option('--no-ping', 'disable ping/pong')
+    .action(async (method, params, opts) => {
+      try { await wsCommand(method, params, opts) } catch (e) { handleError(e) }
+    })
+
+  attachToChildren(program)
+  await program.parseAsync(argv)
+}
