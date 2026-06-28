@@ -48,8 +48,10 @@ import {
   listMasterTags
 } from './resources/card.js'
 import {
-  listDocuments, getDocument, createDocument, updateDocument, deleteDocuments
-} from './resources/misc.js'
+  listDocuments, getDocument, createDocument, updateDocument, deleteDocuments,
+  listSnapshots, getSnapshot, listInlineComments,
+  listTeamspaces, getTeamspace, createTeamspace, updateTeamspace, deleteTeamspaces
+} from './resources/document.js'
 import {
   listActions, getAction, createAction, updateAction, deleteActions,
   completeAction, reopenAction, scheduleAction, unscheduleAction
@@ -672,11 +674,19 @@ export async function run(argv: string[] = process.argv): Promise<void> {
     try { await deleteActions(refs, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
   })
 
-  const doc = program.command('document').description('Manage documents'); withGlobalHelp(doc)
-  doc.command('list').description('List documents').option('--limit <n>', 'limit', (v) => parseInt(v, 10)).action(async (opts, cmd) => {
-    try { await listDocuments({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
-  })
-  doc.command('get <ref>').description('Get a document')
+  const doc = program.command('document').description('Manage documents (and their snapshots/inline comments)'); withGlobalHelp(doc)
+  doc
+    .command('list')
+    .description('List documents')
+    .option('--teamspace <name|id>')
+    .option('--title-search <q>', 'regex match on title')
+    .option('--content-search <q>', 'best-effort regex match on content')
+    .option('--limit <n>', 'limit', (v) => parseInt(v, 10))
+    .option('--offset <n>', 'offset', (v) => parseInt(v, 10))
+    .action(async (opts, cmd) => {
+      try { await listDocuments({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  doc.command('get <ref>').description('Get a document (use --markdown to render the body)')
     .action(async (ref, opts, cmd) => {
       try { await getDocument(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
@@ -684,22 +694,69 @@ export async function run(argv: string[] = process.argv): Promise<void> {
     .command('create')
     .description('Create a document')
     .requiredOption('--title <t>')
+    .option('--teamspace <name|id>', 'defaults to the first available teamspace')
     .option('--body <md>')
     .option('--body-file <path>')
-    .option('--parent <id>')
+    .option('--parent <ref|title>', 'parent ref or title (resolved within teamspace)')
     .action(async (opts, cmd) => {
       try { await createDocument({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
-  doc.command('update <ref>').description('Update a document')
-    .option('--title <t>')
+  doc
+    .command('update <ref>')
+    .description('Update a document (full body replace OR targeted --old-text/--new-text)')
     .option('--body <md>')
     .option('--body-file <path>')
+    .option('--old-text <s>')
+    .option('--new-text <s>')
+    .option('--replace-all')
+    .option('--title <t>')
     .option('--archived')
     .action(async (ref, opts, cmd) => {
       try { await updateDocument(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
   doc.command('delete <ref...>').description('Delete documents').action(async (refs, opts, cmd) => {
     try { await deleteDocuments(refs, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+  })
+  doc.command('snapshots <ref>').description('List snapshots for a document')
+    .action(async (ref, opts, cmd) => {
+      try { await listSnapshots(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  doc.command('snapshot <ref>').description('Get a specific snapshot')
+    .requiredOption('--snapshot-id <id>')
+    .action(async (ref, opts, cmd) => {
+      try { await getSnapshot(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  doc.command('inline-comments <ref>').description('List inline comments for a document')
+    .action(async (ref, opts, cmd) => {
+      try { await listInlineComments(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+
+  const ts = program.command('teamspace').description('Manage document teamspaces'); withGlobalHelp(ts)
+  ts.command('list').description('List teamspaces')
+    .action(async (_o, cmd) => {
+      try { await listTeamspaces(globalsFrom(cmd)) } catch (e) { handleError(e) }
+    })
+  ts.command('get <ref>').description('Get a teamspace')
+    .action(async (ref, opts, cmd) => {
+      try { await getTeamspace(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  ts.command('create').description('Create a teamspace')
+    .requiredOption('--name <n>')
+    .option('--description <text>')
+    .option('--type <t>', 'public|private (default public)')
+    .option('--private')
+    .action(async (opts, cmd) => {
+      try { await createTeamspace({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  ts.command('update <ref>').description('Update a teamspace')
+    .option('--name <n>')
+    .option('--description <text>')
+    .option('--archived <bool>')
+    .action(async (ref, opts, cmd) => {
+      try { await updateTeamspace(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  ts.command('delete <ref...>').description('Delete teamspaces').action(async (refs, opts, cmd) => {
+    try { await deleteTeamspaces(refs, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
   })
 
   const cal = program.command('calendar').description('Manage calendar events, schedules, calendars'); withGlobalHelp(cal)

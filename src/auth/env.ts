@@ -5,6 +5,7 @@ export interface HulyEnv {
   token?: string
   workspace?: string
   project?: string
+  teamspace?: string
 }
 
 export function readEnv(env: NodeJS.ProcessEnv = process.env): HulyEnv {
@@ -14,7 +15,8 @@ export function readEnv(env: NodeJS.ProcessEnv = process.env): HulyEnv {
     password: env.HULY_PASSWORD,
     token: env.HULY_TOKEN,
     workspace: env.HULY_WORKSPACE,
-    project: env.HULY_PROJECT
+    project: env.HULY_PROJECT,
+    teamspace: env.HULY_TEAMSPACE
   }
 }
 

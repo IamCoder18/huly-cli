@@ -8,7 +8,8 @@ export const ExitCode = {
   Validation: 4,
   RateLimited: 5,
   Conflict: 6,
-  Server: 7
+  Server: 7,
+  Ambiguous: 8
 } as const
 
 export type ExitCodeValue = (typeof ExitCode)[keyof typeof ExitCode]

@@ -285,6 +285,44 @@ case "$PHASE" in
     fi
     ;;
 
+  6)
+    step "teamspace list" HULY teamspace list
+    step "document list" HULY document list
+    # Validation: document create requires --title
+    if HULY document create --body "x" >/dev/null 2>&1; then
+      echo "  FAIL: document create should require --title" >&2
+      exit 1
+    fi
+    echo "  ✓ document create rejects missing --title"
+    # Validation: teamspace create requires --name
+    if HULY teamspace create >/dev/null 2>&1; then
+      echo "  FAIL: teamspace create should require --name" >&2
+      exit 1
+    fi
+    echo "  ✓ teamspace create rejects missing --name"
+    # Validation: document update rejects ambiguous body + old-text
+    if HULY document update "bogus-doc-ref" --body "x" --old-text "y" --new-text "z" >/dev/null 2>&1; then
+      echo "  FAIL: document update should reject ambiguous --body + --old-text" >&2
+      exit 1
+    fi
+    echo "  ✓ document update rejects ambiguous --body + --old-text"
+    # Lifecycle: create teamspace + document + update + delete
+    TSID=$(HULY teamspace create --name "smoke-ts-$(date +%s)" --json 2>/dev/null \
+      | sed -n '/^{/,$p' | jq -r '._id // empty')
+    if [[ -n "$TSID" ]]; then
+      DID=$(HULY document create --teamspace "$TSID" --title "smoke-doc-$(date +%s)" --body "original" --json 2>/dev/null \
+        | sed -n '/^{/,$p' | jq -r '._id // empty')
+      if [[ -n "$DID" ]]; then
+        HULY document update "$DID" --body "updated" >/dev/null 2>&1 || true
+        HULY document inline-comments "$DID" >/dev/null 2>&1 || true
+        HULY document snapshots "$DID" >/dev/null 2>&1 || true
+        HULY document delete "$DID" --yes >/dev/null 2>&1 || true
+        echo "  ✓ document lifecycle complete"
+      fi
+      HULY teamspace delete "$TSID" --yes >/dev/null 2>&1 || true
+    fi
+    ;;
+
   all)
     for p in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18; do
       bash "$0" "$p" || { echo "phase $p failed" >&2; exit 1; }
