@@ -56,6 +56,14 @@ import {
   listActions, getAction, createAction, updateAction, deleteActions,
   completeAction, reopenAction, scheduleAction, unscheduleAction
 } from './resources/todo.js'
+import {
+  listChannels, getChannel, createChannel, updateChannel, deleteChannels,
+  archiveChannel, listChannelMembers, joinChannel, leaveChannel,
+  addChannelMembers, removeChannelMembers,
+  listChannelMessages, sendChannelMessage, updateChannelMessage, deleteChannelMessages,
+  listThreadReplies, addThreadReply, updateThreadReply, deleteThreadReplies,
+  listDms, createDm, listDmMessages, sendDmMessage
+} from './resources/channel.js'
 import { apiCommand } from './raw/api.js'
 import { wsCommand } from './raw/ws.js'
 
@@ -529,6 +537,140 @@ export async function run(argv: string[] = process.argv): Promise<void> {
   comment.command('delete <ref...>').description('Delete comments')
     .action(async (refs, opts, cmd) => {
       try { await deleteComments(refs, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+
+  const channel = program.command('channel').description('Manage chunter channels (and their messages/threads)'); withGlobalHelp(channel)
+  channel.command('list').description('List channels')
+    .option('--archived <bool>', 'filter by archived state')
+    .option('--limit <n>', 'limit', (v) => parseInt(v, 10))
+    .action(async (opts, cmd) => {
+      try { await listChannels({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  channel.command('get <ref>').description('Get a channel')
+    .action(async (ref, opts, cmd) => {
+      try { await getChannel(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  channel.command('create').description('Create a channel')
+    .requiredOption('--name <n>')
+    .option('--description <text>')
+    .option('--topic <text>')
+    .option('--private')
+    .option('--auto-join')
+    .option('--members <email...>')
+    .action(async (opts, cmd) => {
+      try { await createChannel({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  channel.command('update <ref>').description('Update a channel')
+    .option('--name <n>')
+    .option('--description <text>')
+    .option('--topic <text>')
+    .option('--private <bool>')
+    .option('--auto-join <bool>')
+    .action(async (ref, opts, cmd) => {
+      try { await updateChannel(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  channel.command('delete <ref...>').description('Delete channels')
+    .action(async (refs, opts, cmd) => {
+      try { await deleteChannels(refs, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  channel.command('archive <ref>').description('Archive a channel (--value false to unarchive)')
+    .option('--value <bool>', 'true|false', (v) => v !== 'false' && v !== '0')
+    .action(async (ref, opts, cmd) => {
+      try { await archiveChannel(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  channel.command('unarchive <ref>').description('Unarchive a channel')
+    .action(async (ref, opts, cmd) => {
+      try { await archiveChannel(ref, { ...opts, value: false, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  channel.command('members <ref>').description('List channel members')
+    .action(async (ref, opts, cmd) => {
+      try { await listChannelMembers(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  channel.command('join <ref>').description('Join a channel (--member <email> for a specific user)')
+    .option('--member <email>')
+    .action(async (ref, opts, cmd) => {
+      try { await joinChannel(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  channel.command('leave <ref>').description('Leave a channel')
+    .option('--member <email>')
+    .action(async (ref, opts, cmd) => {
+      try { await leaveChannel(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  channel.command('add-member <ref>').description('Add one or more members')
+    .requiredOption('--members <email...>')
+    .action(async (ref, opts, cmd) => {
+      try { await addChannelMembers(ref, opts.members, globalsFrom(cmd)) } catch (e) { handleError(e) }
+    })
+  channel.command('remove-member <ref>').description('Remove one or more members')
+    .requiredOption('--members <email...>')
+    .action(async (ref, opts, cmd) => {
+      try { await removeChannelMembers(ref, opts.members, globalsFrom(cmd)) } catch (e) { handleError(e) }
+    })
+  const cmsg = channel.command('message').description('Manage messages within a channel')
+  cmsg.command('list <ref>').description('List messages in a channel')
+    .option('--limit <n>', 'limit', (v) => parseInt(v, 10))
+    .action(async (ref, opts, cmd) => {
+      try { await listChannelMessages(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  cmsg.command('send <ref>').description('Send a message to a channel')
+    .option('--body <md>')
+    .option('--body-file <path>')
+    .action(async (ref, opts, cmd) => {
+      try { await sendChannelMessage(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  cmsg.command('update <ref> <id>').description('Update a message')
+    .option('--body <md>')
+    .option('--body-file <path>')
+    .action(async (ref, id, opts, cmd) => {
+      try { await updateChannelMessage(ref, id, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  cmsg.command('delete <ref>').description('Delete one or more messages')
+    .action(async (ref, opts, cmd) => {
+      try { await deleteChannelMessages(ref, opts.messageIds ?? [], globalsFrom(cmd)) } catch (e) { handleError(e) }
+    })
+
+  const dm = program.command('dm').description('Manage direct messages'); withGlobalHelp(dm)
+  dm.command('list').description('List DMs (spaces)')
+    .action(async (opts, cmd) => {
+      try { await listDms(globalsFrom(cmd)) } catch (e) { handleError(e) }
+    })
+  dm.command('create').description('Create a DM (with --person or --members)')
+    .option('--person <email>')
+    .option('--members <email...>')
+    .action(async (opts, cmd) => {
+      try { await createDm({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  dm.command('messages <dm>').description('List messages in a DM')
+    .action(async (dm, opts, cmd) => {
+      try { await listDmMessages(dm, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  dm.command('send <dm>').description('Send a DM message')
+    .option('--body <md>')
+    .option('--body-file <path>')
+    .action(async (dm, opts, cmd) => {
+      try { await sendDmMessage(dm, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+
+  const thread = program.command('thread').description('Manage thread replies on a chat message'); withGlobalHelp(thread)
+  thread.command('list <target>').description('List replies on a target message')
+    .action(async (target, opts, cmd) => {
+      try { await listThreadReplies(target, globalsFrom(cmd)) } catch (e) { handleError(e) }
+    })
+  thread.command('add <target>').description('Add a reply')
+    .option('--body <md>')
+    .option('--body-file <path>')
+    .action(async (target, opts, cmd) => {
+      try { await addThreadReply(target, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  thread.command('update <replyId>').description('Update a reply')
+    .option('--body <md>')
+    .option('--body-file <path>')
+    .action(async (replyId, opts, cmd) => {
+      try { await updateThreadReply(replyId, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  thread.command('delete <replyId...>').description('Delete replies')
+    .action(async (replies, opts, cmd) => {
+      try { await deleteThreadReplies(replies, globalsFrom(cmd)) } catch (e) { handleError(e) }
     })
 
   // Note: the old `board:class:Card` (board module) commands were removed —

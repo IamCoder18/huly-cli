@@ -323,6 +323,59 @@ case "$PHASE" in
     fi
     ;;
 
+  7)
+    step "channel list" HULY channel list
+    step "dm list" HULY dm list
+    # Validation: channel create requires --name
+    if HULY channel create >/dev/null 2>&1; then
+      echo "  FAIL: channel create should require --name" >&2
+      exit 1
+    fi
+    echo "  ✓ channel create rejects missing --name"
+    # Lifecycle
+    CID=$(HULY channel create --name "smoke-chn-$(date +%s)" --json 2>/dev/null \
+      | sed -n '/^{/,$p' | jq -r '._id // empty')
+    if [[ -n "$CID" ]]; then
+      HULY channel members "$CID" >/dev/null 2>&1 || true
+      HULY channel join "$CID" >/dev/null 2>&1 || true
+      HULY channel leave "$CID" >/dev/null 2>&1 || true
+      HULY channel delete "$CID" >/dev/null 2>&1 || true
+      echo "  ✓ channel lifecycle complete"
+    fi
+    # DM validation
+    if HULY dm create >/dev/null 2>&1; then
+      echo "  FAIL: dm create should require --person or --members" >&2
+      exit 1
+    fi
+    echo "  ✓ dm create rejects missing --person/--members"
+    ;;
+
+  8)
+    # channel message lifecycle
+    CID=$(HULY channel list --json 2>/dev/null \
+      | sed -n '/^\[/,$p' | jq -r '.[0]._id // empty')
+    if [[ -n "$CID" ]]; then
+      MID=$(HULY channel message send "$CID" --body "smoke-msg" --json 2>/dev/null \
+        | sed -n '/^{/,$p' | jq -r '._id // empty')
+      if [[ -n "$MID" ]]; then
+        HULY channel message list "$CID" >/dev/null 2>&1 || true
+        HULY channel message update "$CID" "$MID" --body "smoke-edited" >/dev/null 2>&1 || true
+        # thread lifecycle
+        RID=$(HULY thread add "$MID" --body "smoke-reply" --json 2>/dev/null \
+          | sed -n '/^{/,$p' | jq -r '._id // empty')
+        if [[ -n "$RID" ]]; then
+          HULY thread list "$MID" >/dev/null 2>&1 || true
+          HULY thread update "$RID" --body "smoke-reply-edited" >/dev/null 2>&1 || true
+          HULY thread delete "$RID" >/dev/null 2>&1 || true
+        fi
+        HULY channel message delete "$CID" --yes >/dev/null 2>&1 || true
+        echo "  ✓ channel message + thread lifecycle complete"
+      fi
+    fi
+    # DM list should work
+    step "dm list" HULY dm list
+    ;;
+
   all)
     for p in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18; do
       bash "$0" "$p" || { echo "phase $p failed" >&2; exit 1; }

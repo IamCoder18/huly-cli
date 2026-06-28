@@ -183,9 +183,23 @@ export const COLUMNS = {
     { key: '_id', header: '_ID', format: (r) => shortId((r as Record<string, unknown>)._id) }
   ],
   channelMessage: <T>(): TableColumn<T>[] => [
-    { key: 'message', header: 'MESSAGE', format: (r) => trim((r as Record<string, unknown>).message, 80) },
+    {
+      key: 'message',
+      header: 'MESSAGE',
+      format: (r) => {
+        const m = (r as Record<string, unknown>).message
+        if (m == null) return '(empty)'
+        if (typeof m === 'string') return trim(m, 80)
+        // MarkupContent ref — the actual content is stored as a blob and
+        // can be retrieved with `huly channel get <id> --markdown` (per
+        // message, the platformClient.fetchMarkup path is used internally).
+        if (typeof m === 'object' && Object.keys(m as object).length === 0) return '(blob, use get --markdown)'
+        const content = (m as { content?: unknown }).content
+        return trim(typeof content === 'string' ? content : JSON.stringify(m).slice(0, 80), 80)
+      }
+    },
     { key: 'createOn', header: 'CREATED', format: (r) => isoDay((r as Record<string, unknown>).createOn) },
-    { key: '_id', header: '_ID', format: (r) => shortId((r as Record<string, unknown>)._id) }
+    { key: '_id', header: '_ID', format: (r) => String((r as Record<string, unknown>)._id).slice(-12) }
   ],
   timeReport: <T>(): TableColumn<T>[] => [
     { key: 'value', header: 'MINUTES' },
