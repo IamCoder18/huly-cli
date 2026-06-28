@@ -4,7 +4,7 @@ const { MarkupContent } = pkg
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, invalidateIndex } from '../transport/ref-resolver.js'
-import { shouldJson, json, table, COLUMNS } from '../output/format.js'
+import { shouldJson, json, table, COLUMNS, withTimeout } from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
 import { readEnv } from '../auth/env.js'
@@ -64,10 +64,13 @@ async function readBodyText(opts: { body?: string; bodyFile?: string }): Promise
 
 async function resolveEmployeeId(client: Awaited<ReturnType<typeof connectCli>>, email?: string): Promise<Ref<Doc>> {
   if (email) {
-    const ac = await connectAccountCli({ url: readEnv().url })
-    const personId = await ac.findPersonBySocialKey(email, false)
-    if (!personId) throw new CliError(ExitCode.NotFound, `no person with email ${email}`)
-    return personId as Ref<Doc>
+    // findPersonBySocialKey returns Forbidden on this selfhost; fall back to
+    // a workspace-local Person scan (by email or by name).
+    const persons = (await client.findAll('contact:class:Person' as Ref<Class<Doc>>, {}, { limit: 200 })) as Array<Doc & { name?: string }>
+    const lower = email.toLowerCase()
+    const hit = persons.find((p) => p.name?.toLowerCase() === lower || (p.name ?? '').toLowerCase().includes(lower))
+    if (!hit) throw new CliError(ExitCode.NotFound, `no person matching ${email} in this workspace`)
+    return hit._id
   }
   // Default: current user
   const account = await client.getAccount()
@@ -174,7 +177,11 @@ export async function getAction(ref: string, opts: GetActionOpts = {}): Promise<
     if (!doc) throw new CliError(ExitCode.NotFound, `action ${ref} not found`)
     if (opts.markdown && doc.description) {
       try {
-        const body = await client.fetchMarkup(TODO_CLASS as Ref<Class<Doc>>, doc._id, 'description', doc.description as any, 'markdown')
+        const body = await withTimeout(
+          client.fetchMarkup(TODO_CLASS as Ref<Class<Doc>>, doc._id, 'description', doc.description as any, 'markdown'),
+          5000,
+          '(body fetch timed out)'
+        )
         console.log(body)
         return
       } catch { console.log(String(doc.description)); return }

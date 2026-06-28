@@ -105,6 +105,22 @@ export async function createProject(opts: {
   }
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
+    // Idempotency: if a project with this identifier already exists, return it
+    // without creating a duplicate. The Huly selfhost does not enforce
+    // identifier uniqueness at the DB level.
+    const existing = (await client.findAll(
+      CLASS.Project as Ref<Class<Project>>,
+      { identifier: opts.identifier }
+    )) as Project[]
+    if (existing.length > 0) {
+      const found = existing[0]
+      if (shouldJson({ json: opts.json, ci: opts.ci })) {
+        json({ _id: found._id, identifier: found.identifier, name: found.name, created: false })
+      } else {
+        console.log(`project exists: ${found.identifier} (${found._id})`)
+      }
+      return
+    }
     const domain = client.getHierarchy().getDomain(CLASS.Project as Ref<Class<Doc>>) as unknown as Ref<Space>
     let id: Ref<Project>
     try {

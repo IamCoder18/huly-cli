@@ -112,6 +112,7 @@ export async function deleteWorkspace(opts: {
   ci?: boolean
   url?: string
   yes?: boolean
+  force?: boolean
 }): Promise<void> {
   const env = readEnv()
   const active = await readActiveWorkspace()
@@ -119,11 +120,11 @@ export async function deleteWorkspace(opts: {
   if (!target) {
     throw new CliError(ExitCode.Validation, 'no workspace resolved', 'pass --workspace or run `huly workspace use <n>` first')
   }
-  if (env.workspace || target === env.workspace) {
+  if (!opts.force && (env.workspace || target === env.workspace)) {
     throw new CliError(
       ExitCode.Validation,
       `cannot delete workspace ${target} while it is the active --workspace/HULY_WORKSPACE`,
-      'unset HULY_WORKSPACE and run `huly workspace use <other>` first'
+      'unset HULY_WORKSPACE and run `huly workspace use <other>` first, or pass --force'
     )
   }
   if (!opts.yes) {

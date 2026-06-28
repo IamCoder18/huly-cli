@@ -109,6 +109,24 @@ export function shouldJson(opts: { json?: boolean; ci?: boolean }): boolean {
   return Boolean(opts.json || opts.ci || process.env.CI)
 }
 
+/**
+ * Race a promise against a timeout. Returns the promise's result, or
+ * the provided fallback if the timeout fires first. Used to keep
+ * `client.fetchMarkup` calls from hanging the CLI when the collaborator
+ * service is unhealthy.
+ */
+export async function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<T>((resolve) => {
+    timer = setTimeout(() => resolve(fallback), ms)
+  })
+  try {
+    return await Promise.race([p, timeout])
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+  }
+}
+
 function shortId(id: unknown): string {
   return String(id ?? '').slice(-12)
 }
@@ -193,7 +211,7 @@ export const COLUMNS = {
         // MarkupContent ref — the actual content is stored as a blob and
         // can be retrieved with `huly channel get <id> --markdown` (per
         // message, the platformClient.fetchMarkup path is used internally).
-        if (typeof m === 'object' && Object.keys(m as object).length === 0) return '(blob, use get --markdown)'
+        if (typeof m === 'object' && Object.keys(m as object).length === 0) return '(empty — use get <id> for body)'
         const content = (m as { content?: unknown }).content
         return trim(typeof content === 'string' ? content : JSON.stringify(m).slice(0, 80), 80)
       }

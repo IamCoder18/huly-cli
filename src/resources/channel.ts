@@ -62,10 +62,8 @@ async function resolveChannel(client: PlatformClient, ref: string): Promise<Chan
 }
 
 async function resolvePersonId(emailOrName: string, client: PlatformClient): Promise<Ref<Doc>> {
-  const ac = await connectAccountCli({ url: readEnv().url })
-  const personId = await ac.findPersonBySocialKey(emailOrName, false).catch(() => null)
-  if (personId) return personId as Ref<Doc>
-  // Fallback: find by name in the workspace
+  // The account-client's findPersonBySocialKey returns Forbidden on this
+  // selfhost, so we go straight to the workspace-local Person scan.
   const persons = (await client.findAll('contact:class:Person' as Ref<Class<Doc>>, {}, { limit: 200 })) as Array<Doc & { name?: string }>
   const lower = emailOrName.toLowerCase()
   const hit = persons.find((p) => {

@@ -5,7 +5,7 @@ const { MarkupContent } = pkg
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, buildIndex, invalidateIndex } from '../transport/ref-resolver.js'
-import { shouldJson, json, table, COLUMNS } from '../output/format.js'
+import { shouldJson, json, table, COLUMNS, withTimeout } from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
 import { readEnv } from '../auth/env.js'
@@ -304,7 +304,11 @@ export async function getDocument(ref: string, opts: { json?: boolean; ci?: bool
     if (!doc) throw new CliError(ExitCode.NotFound, `document ${ref} not found`)
     if (opts.markdown && doc.content) {
       try {
-        const body = await client.fetchMarkup(DOCUMENT_CLASS as Ref<Class<Doc>>, doc._id, 'content', doc.content as any, 'markdown')
+        const body = await withTimeout(
+          client.fetchMarkup(DOCUMENT_CLASS as Ref<Class<Doc>>, doc._id, 'content', doc.content as any, 'markdown'),
+          5000,
+          '(body fetch timed out)'
+        )
         console.log(body)
         return
       } catch { console.log(String(doc.content)); return }
@@ -421,7 +425,11 @@ export async function updateDocument(ref: string, opts: UpdateDocumentOpts): Pro
       // Targeted replace — fetch current content, perform substitution.
       const currentContent = doc.content
       const currentText = currentContent
-        ? await client.fetchMarkup(DOCUMENT_CLASS as Ref<Class<Doc>>, doc._id, 'content', currentContent as any, 'markdown').catch(() => String(currentContent))
+        ? await withTimeout(
+            client.fetchMarkup(DOCUMENT_CLASS as Ref<Class<Doc>>, doc._id, 'content', currentContent as any, 'markdown'),
+            5000,
+            String(currentContent)
+          ).catch(() => String(currentContent))
         : ''
       const replaceAll = !!opts.replaceAll
       const occurrences = currentText.split(opts.oldText).length - 1
@@ -525,7 +533,11 @@ export async function getSnapshot(ref: string, opts: { snapshotId?: string; json
     }
     if (opts.markdown && snap.content) {
       try {
-        const body = await client.fetchMarkup(SNAPSHOT_CLASS as Ref<Class<Doc>>, snap._id, 'content', snap.content as any, 'markdown')
+        const body = await withTimeout(
+          client.fetchMarkup(SNAPSHOT_CLASS as Ref<Class<Doc>>, snap._id, 'content', snap.content as any, 'markdown'),
+          5000,
+          '(body fetch timed out)'
+        )
         console.log(body)
         return
       } catch { console.log(String(snap.content)); return }

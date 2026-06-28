@@ -4,7 +4,7 @@ const { MarkupContent } = pkg
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, invalidateIndex } from '../transport/ref-resolver.js'
-import { shouldJson, json, table, COLUMNS } from '../output/format.js'
+import { shouldJson, json, table, COLUMNS, withTimeout } from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { deleteDoc } from '../commands/dry-run.js'
 import { CliError, ExitCode } from '../output/errors.js'
@@ -211,7 +211,11 @@ export async function getCard(ref: string, opts: { json?: boolean; ci?: boolean;
     if (!doc) throw new CliError(ExitCode.NotFound, `card ${ref} not found`)
     if (opts.markdown && doc.content) {
       try {
-        const body = await client.fetchMarkup(CLASS.Card as Ref<Class<Doc>>, doc._id, 'content', doc.content as any, 'markdown')
+        const body = await withTimeout(
+          client.fetchMarkup(CLASS.Card as Ref<Class<Doc>>, doc._id, 'content', doc.content as any, 'markdown'),
+          5000,
+          '(body fetch timed out)'
+        )
         console.log(body)
         return
       } catch { console.log(String(doc.content)); return }

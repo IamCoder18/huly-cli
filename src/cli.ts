@@ -174,7 +174,8 @@ export async function run(argv: string[] = process.argv): Promise<void> {
     .action(async (opts, cmd) => {
       try { await createWorkspace({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
-  ws.command('delete').description('Delete the current workspace (DESTRUCTIVE; requires --yes)')
+  ws.command('delete').description('Delete the current workspace (DESTRUCTIVE; requires --yes; --force to delete the active workspace)')
+    .option('--force', 'delete even if this is the active workspace')
     .action(async (opts, cmd) => {
       try { await deleteWorkspace({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })

@@ -5,7 +5,7 @@ const { MarkupContent } = pkg
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, buildIndex, invalidateIndex } from '../transport/ref-resolver.js'
-import { shouldJson, json, table } from '../output/format.js'
+import { shouldJson, json, table, withTimeout } from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { deleteDoc } from '../commands/dry-run.js'
 import { CliError, ExitCode } from '../output/errors.js'
@@ -89,8 +89,52 @@ async function resolveProject(client: PlatformClient, identifier?: string): Prom
 
 async function firstStatus(client: PlatformClient, project: Project): Promise<Ref<Doc>> {
   const statuses = (await client.findAll(CLASS.IssueStatus as Ref<Class<Doc>>, { space: project._id })) as Doc[]
-  if (statuses.length === 0) throw new CliError(ExitCode.NotFound, `no IssueStatus in project ${project.identifier} — run \`huly project create\` via template first`)
+  if (statuses.length === 0) {
+    await ensureDefaultStatuses(client, project)
+    const rechecked = (await client.findAll(CLASS.IssueStatus as Ref<Class<Doc>>, { space: project._id })) as Doc[]
+    if (rechecked.length === 0) {
+      throw new CliError(ExitCode.NotFound,
+        `no IssueStatus in project ${project.identifier}; tried to auto-seed but the workspace model may be missing tracker attributes`,
+        'try running: huly issue create with --status in another workspace, then come back')
+    }
+    return rechecked.sort((a, b) => ((a as { rank?: number }).rank ?? 0) - ((b as { rank?: number }).rank ?? 0))[0]._id
+  }
   return statuses.sort((a, b) => ((a as { rank?: number }).rank ?? 0) - ((b as { rank?: number }).rank ?? 0))[0]._id
+}
+
+/**
+ * Auto-seed a default set of IssueStatus records into a project that has none.
+ * Models after the model-tracker migration's classicStatuses:
+ *   Backlog / To do / In progress / Done / Canceled
+ * The space is the model space (core:space:Model) per the platform
+ * pattern — IssueStatus is a model entity, not a per-project entity.
+ */
+async function ensureDefaultStatuses(client: PlatformClient, project: Project): Promise<void> {
+  const ofAttribute = 'tracker:attribute:IssueStatus' as Ref<Doc>
+  const defaults = [
+    { name: 'Backlog', color: 0, rank: '0|aaaaa:' },
+    { name: 'To do', color: 0, rank: '1|aaaaa:' },
+    { name: 'In progress', color: 0, rank: '2|aaaaa:' },
+    { name: 'Done', color: 0, rank: '3|aaaaa:' },
+    { name: 'Canceled', color: 0, rank: '4|aaaaa:' }
+  ]
+  for (const s of defaults) {
+    try {
+      await client.createDoc(
+        CLASS.IssueStatus as Ref<Class<Doc>>,
+        'core:space:Model' as Ref<Space>,
+        {
+          ofAttribute,
+          name: s.name,
+          color: s.color,
+          rank: s.rank,
+          space: project._id
+        } as any
+      )
+    } catch {
+      // ignore — race or already-exists
+    }
+  }
 }
 
 async function resolveStatus(client: PlatformClient, project: Project, name?: string): Promise<Ref<Doc>> {
@@ -233,7 +277,11 @@ export async function getIssue(ref: string, opts: { json?: boolean; ci?: boolean
 
     if (opts.markdown && issue.description) {
       try {
-        const body = await client.fetchMarkup(CLASS.Issue as Ref<Class<Doc>>, issue._id, 'description', issue.description as any, 'markdown')
+        const body = await withTimeout(
+          client.fetchMarkup(CLASS.Issue as Ref<Class<Doc>>, issue._id, 'description', issue.description as any, 'markdown'),
+          5000,
+          '(body fetch timed out)'
+        )
         console.log(body)
         return
       } catch { console.log(String(issue.description)); return }
@@ -262,7 +310,8 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
       status,
       priority,
       labels: opts.label ?? [],
-      dueDate
+      dueDate,
+      space: project._id
     }
 
     if (opts.taskType) {

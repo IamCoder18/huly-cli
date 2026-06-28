@@ -124,16 +124,22 @@ export async function updateUser(opts: {
 }
 
 export async function findUser(email: string, opts: GlobalOpts = {}): Promise<void> {
-  const ac = await connectAccountCli({ url: opts.url })
-  const personId = await withSpinner(
-    `Looking up ${email}…`,
-    () => ac.findPersonBySocialKey(email, false),
-    opts
-  )
-  if (!personId) throw new CliError(ExitCode.NotFound, `no person with email ${email}`)
-  if (shouldJson({ json: opts.json, ci: opts.ci })) {
-    json({ email, personId })
-    return
-  }
-  console.log(`${email}\t${personId}`)
+  // findPersonBySocialKey returns Forbidden on this selfhost; use a
+  // workspace-local Person scan (matches by name).
+  const client = await connectCli({ url: opts.url, workspace: opts.workspace })
+  try {
+    const persons = (await withSpinner(
+      `Looking up ${email}…`,
+      () => client.findAll('contact:class:Person' as Ref<Class<Doc>>, {}, { limit: 200 }),
+      opts
+    )) as Array<Doc & { name?: string }>
+    const lower = email.toLowerCase()
+    const hit = persons.find((p) => p.name?.toLowerCase() === lower || (p.name ?? '').toLowerCase().includes(lower))
+    if (!hit) throw new CliError(ExitCode.NotFound, `no person matching ${email} in this workspace`)
+    if (shouldJson({ json: opts.json, ci: opts.ci })) {
+      json({ email, personId: hit._id, name: hit.name })
+      return
+    }
+    console.log(`${email}\t${hit._id}`)
+  } finally { await client.close() }
 }

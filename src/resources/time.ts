@@ -91,7 +91,8 @@ export async function logTime(opts: {
       value: totalMinutes / 60, // TimeSpendReport stores man hours
       description,
       date: opts.date ? new Date(opts.date).getTime() : Date.now(),
-      employee: account.uuid
+      employee: account.uuid,
+      space: (issue as Doc).space
     }
     const id = await withSpinner(
       `Logging ${totalMinutes}min on ${opts.issue}…`,
