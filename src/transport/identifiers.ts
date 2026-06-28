@@ -54,7 +54,7 @@ export const CLASS = {
   ThreadMessage: 'chunter:class:ThreadMessage' as const,
 
   // time
-  TimeSpendReport: 'time:class:TimeSpendReport' as const,
+  TimeSpendReport: 'tracker:class:TimeSpendReport' as const,
   WorkSlot: 'time:class:WorkSlot' as const,
 
   // activity
