@@ -212,3 +212,95 @@ docker exec -u root huly_v7-cockroach-1 /cockroach/cockroach sql \
 # 3. Start fixing real server bugs
 #    Priority: S3 (collaborator createMarkup timeout) → CF1 (init script) → C2 (investigate)
 ```
+## Verification commands for the next session
+
+To confirm nothing changed underneath, run these in order:
+
+```bash
+cd ~/huly-cli
+
+# 1. Confirm CLI builds clean
+npm run build 2>&1 | tail -3
+# Expected: clean tsc output
+
+# 2. Confirm CLI version + new flags present
+node dist/index.js --help 2>&1 | grep -E "workspace|json|markdown"
+node dist/index.js workspace --help 2>&1 | grep -E "delete"
+node dist/index.js --workspace life whoami 2>&1 | head -5
+
+# 3. Confirm docker services all up
+docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}' | grep huly_v7
+
+# 4. Confirm life is pending-deletion
+docker exec -u root huly_v7-cockroach-1 /cockroach/cockroach sql \
+  --url 'postgresql://root@127.0.0.1:26257/defaultdb?sslcert=certs/client.root.crt&sslkey=certs/client.root.key&sslmode=verify-full&sslrootcert=certs/ca.crt' \
+  -e "SELECT name, mode, is_disabled FROM global_account.workspace_status s JOIN global_account.workspace w ON w.uuid=s.workspace_uuid WHERE w.name = 'life';"
+
+# 5. Confirm account server debug logging is in
+docker logs huly_v7-account-1 2>&1 | grep -c "DECODE-VERBOSE\|debug-getWorkspaceRole"
+# Expected: > 0 (debug logs are there)
+
+# 6. Confirm CLI worktree clean except for new commits
+git status --short | head
+# Expected: empty (or just NANDOVER/learning commits)
+```
+
+## Complete catalog of remaining work
+
+### Server bugs (`~/platform`)
+
+| # | Bug | Severity | Effort | Status |
+|---|-----|----------|--------|--------|
+| **C2** | Sub-resource create→list returns 0 (component/milestone/template) | High | Unknown | Smoke captures it. Root cause: server-side. |
+| **C3** | Issue create blocked by "AttachedDoc" model routing | High | Medium | CLI works around. Real fix in `~/platform/foundations/core/packages/core/src/operations.ts:111` |
+| **S3** | Collaborator `createMarkup` hangs | High | Low | Mirror Fix #2 timeout pattern in `~/platform/server/collaborator/src/rpc/methods/createContent.ts` |
+| **S4** | Model-upgrade tx retry incomplete | Medium | Medium | `~/platform/foundations/core/packages/core/src/memdb.ts:328-413` — multi-pass with dep re-ordering |
+| **S7** | `tracker:class:TimeSpendReport` mixin not seeded | Low | Low | Time plugin migration — add seeding step |
+
+### Configuration / selfhost (`~/huly-selfhost`)
+
+| # | Issue | Severity | Effort | Status |
+|---|-------|----------|--------|--------|
+| **CF1** | Cockroach `selfhost` user missing `CREATE` privilege | Operational | Low | Manual `GRANT CREATE` required after every `down -v`. Add init script. |
+| **CF3** | 9 stale `smoke-ws-*` + 1 `probe-test-*` workspaces | Operational | Low | Direct SQL cleanup (user not member, CLI cannot delete). |
+| **CF4** | Workspace/transactor version drift risk | Operational | Low | Add version hash check at startup. |
+| **CF6/CF7** | Model-upgrade retry warning spam + 3s `getContent` timeout | Low | Low | Bump getContent to 10s. |
+
+### Cleanup tasks
+
+| # | Task | Effort |
+|---|------|--------|
+| 1 | Remove debug logging from account bundle.js | 5 min |
+| 2 | Restore `life` workspace to active state (in pending-deletion) | 10 min |
+| 3 | Recreate `~/.config/huly/active-workspace = life` after restore | 1 min |
+| 4 | Re-run full smoke test (phases 0-10, 12, 13) for sanity check | 5 min |
+| 5 | Commit source change to `~/platform/server/account/src/collections/postgres/postgres.ts` | 1 min |
+
+Total remaining: ~3-4 hours of focused work, IF the next session follows
+the priority order: C3 server fix → S3 (createMarkup timeout) → CF1
+(init script) → re-test.
+
+## DO NOT forget
+
+- **Stop the account server before debugging `bundle.js`** — it crash-loops
+  if bundle is broken
+- The CLI's `connectAccountCli()` returns `accountClient(url, token)` where
+  `token` is the workspace token from cache. If `connectAccountCli` is
+  called without `workspace` in opts and `HULY_WORKSPACE` is unset, it
+  falls back to `readActiveWorkspace()` (this was the fix that made
+  deleteWorkspace work).
+- **Cockroach `selfhost` user lacks `CREATE` privilege** after every
+  `docker compose down -v` — must run `GRANT CREATE ON DATABASE defaultdb
+  TO selfhost` (full root password in `~/huly-selfhost/.env`)
+- The **deployed `account:local-fix` bundle includes BOTH `MongoAccountDB`
+  AND `PostgresAccountDB` classes**. The Postgres one is used at runtime
+  but the Mongo one is dead code. Source change to add
+  `this.workspaceMembers` is defensive for the Mongo path (if anyone
+  runs Mongo in the future); currently Postgres uses raw SQL so
+  `this.workspaceMembers` is never referenced.
+
+## Files NOT to modify
+
+- `~/huly-cli/dist/` — never edit, regenerate from `src/` via `npm run build`
+- `~/.config/huly/credentials.json` — auto-managed, deleting it forces re-login
+- Node version: must be Node 22 (not 26). Use `/tmp/node22/bin/node`.

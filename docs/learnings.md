@@ -1028,3 +1028,213 @@ fall back to `active-workspace`. The server's `deleteWorkspace` decoded
 cache, the server correctly decodes workspace from the token, role lookup
 succeeds, deletion works. `--force` was already correctly implemented;
 only the auth path was broken.
+
+## 25. Server-side bugs — full deep-dive for next session
+
+### C2 — Sub-resource create succeeds but list returns 0
+
+**Symptom:** `huly component create --project TSK --label X` returns the doc
+with an `_id`. `huly component list --project TSK` returns `(no results)`.
+Same for `milestone`, `issue-template`, `time log`.
+
+**Smoke test that captures it:** phase 3 in `scripts/smoke.sh` — the roundtrip
+test creates a component, then queries `component list --project TSK --json`
+for the same `_id`, and prints `⚠ KNOWN BUG: component <id> created but not
+found in list (server-side C2 bug)` instead of failing.
+
+**What we know:**
+- Transactor logs show no errors after component create
+- The CLI's `_id` for the created component is locally-generated (via
+  `generateId()` in core lib, line 17), so `createDoc` returns a valid id even
+  before the tx reaches the server
+- `client.findAll('tracker:class:Component', {})` with empty query also
+  returns 0 — server-side query reports no matches
+- The class IS registered (model load returns 4080+ classes including
+  Component)
+- A direct server-side `findAll` over the workspace via WebSocket returns
+  empty even though data was inserted
+
+**What we DON'T know:**
+- Whether the tx actually committed at the server (vs. was rejected silently)
+- Whether the doc is stored under `public.tx` log but not propagated to
+  `public.tracker` class table
+- Whether `findAll` filter against `tracker:class:Component` is hitting a
+  different index (the local minquery index, broken because local model is
+  incomplete)
+
+**Investigation path:**
+1. Verify tx commit at server: `docker logs huly_v7-transactor-1 2>&1 | grep -E "<component-id>|tracker.*error"` after a create
+2. Check `public.tracker` directly via cockroach
+3. Check `public.tx` for the create tx
+4. Compare with a component that DOES appear (e.g. status) and find the diff
+
+**Where to fix:**
+- Likely `~/platform/foundations/server/packages/server-storage/src/` or
+  the `lowLevelStorage` adapter that maps class ids to storage tables.
+  Or the `findAll` pipeline stage that filters by class.
+
+### C3 — Issue create blocked by "AttachedDoc" error
+
+**Symptom:** `huly issue create --project TSK --title X` fails with
+`error: 1: createDoc cannot be used for objects inherited from AttachedDoc`.
+
+**Root cause:**
+- The CLI's local model believes `tracker:class:TypeIssuePriority` and
+  `tracker:class:IssueStatus` inherit from `core:class:AttachedDoc`
+- `~/platform/foundations/core/packages/core/src/operations.ts:111`
+  guards `createDoc` against AttachedDoc instances:
+  ```ts
+  if (hierarchy.isDerived(_class, core.class.AttachedDoc)) {
+    throw new Error('createDoc cannot be used for objects inherited from AttachedDoc')
+  }
+  ```
+- The local model has incomplete inheritance info because of the
+  model-upgrade tx out-of-order issue (S4)
+
+**CLI workaround (already applied):**
+- `resolveStatus` queries by `ofAttribute: 'tracker:attribute:IssueStatus'`
+  instead of by space
+- `resolvePriority` returns `undefined` when no priorities exist (CLI
+  skips the priority field rather than failing)
+- `ensureDefaultStatuses` calls `createDoc` but catches errors
+
+**Real server fix:**
+- Investigate the model-upgrade tx ordering (S4) so that
+  `TypeIssuePriority`'s parents are processed before its UpdateDoc txes
+- OR: explicitly update the local hierarchy's `isDerived` cache for these
+  classes (workaround, not real fix)
+- Source: `~/platform/foundations/core/packages/core/src/operations.ts:108-115`
+
+### S3 — Collaborator `createMarkup` hangs indefinitely
+
+**Symptom:** Without the CLI workaround, `processMarkup` in the SDK hangs
+on every `MarkupContent` upload. Fix #2 wrapped `getContent` (read path)
+in 3s `Promise.race`. The same pattern is needed for `createMarkup`.
+
+**Where to fix:**
+- `~/platform/server/collaborator/src/rpc/methods/createContent.ts:42-46`
+- Currently calls `await saveCollabJson(...)` for each field with no timeout
+- Need to wrap each saveCollabJson in a Promise.race similar to getContent.ts:
+
+```ts
+const saveWithTimeout = (markup: string, timeoutMs = 3_000) =>
+  Promise.race([
+    saveCollabJson(ctx, storageAdapter, context.wsIds, documentId, markup),
+    new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), timeoutMs))
+  ])
+
+for (const [field, m] of Object.entries(content)) {
+  const blob = await saveWithTimeout(m)
+  if (blob === undefined) {
+    ctx.warn('createContent: timeout, skipping', { documentName, field })
+    continue  // or return a partial result
+  }
+  result[field] = blob
+}
+```
+
+**After fixing:** revert the CLI's `MarkupContent → string` refactor in
+9 resource files (the workaround becomes unnecessary).
+
+### S4 — Model-upgrade tx retry is incomplete
+
+**Symptom:** Transactor logs spam warnings on every CLI command:
+`no document found, failed to apply model transaction, skipping
+_class="core:class:TxUpdateDoc" objectId="..."`
+
+**Root cause:** Model-upgrade batches contain UpdateDoc/Mixin txes whose
+objectId references classes created by later txs in the same batch.
+1-pass retry can't fix the ordering issue.
+
+**Where to fix:**
+- `~/platform/foundations/core/packages/core/src/memdb.ts:328-413`
+- Currently: process all txes, retry failed ones once
+- Should be: process txes, collect failed ones, then re-order by dependency
+  (objectClass of UpdateDoc must be created before the UpdateDoc), retry
+- OR: divide batch into "create" + "update" phases
+
+**Severity:** Medium (functional impact unknown, mostly cosmetic log noise)
+
+### S7 — TimeSpendReport migration not seeded
+
+**Symptom:** `time log --list` may return incomplete results on fresh
+workspaces.
+
+**Where to investigate:**
+- `~/platform/models/tracker/src/migration.ts` (if it exists)
+- Or `~/platform/models/time/src/migration.ts`
+- CLI works around via hardcoded class ID `tracker:class:TimeSpendReport`
+
+**Fix:** Add TimeSpendReport mixin/seed to the tracker or time plugin's
+migration that runs at workspace creation.
+
+### CF1 — `GRANT CREATE` automation
+
+**Symptom:** After `docker compose down -v`, account pod crashes on
+startup: `permission denied to create schema` from cockroach.
+
+**Where to fix:**
+- `~/huly-selfhost/compose.yml`
+- Add init container that runs before account:
+
+```yaml
+services:
+  cockroach-init:
+    image: hardcoreeng/cockroach:v25.1.1
+    depends_on:
+      - cockroach
+    command: |
+      /cockroach/cockroach sql --insecure -d defaultdb -u root \
+        -e "GRANT CREATE ON DATABASE defaultdb TO selfhost" \
+        --host cockroach:26257
+    restart: on-failure
+```
+
+OR add the GRANT to cockroach's `command:` after the wait-for-ready block.
+
+### CF3 — stale workspace cleanup
+
+**Symptom:** `huly workspace list` shows 9 `smoke-ws-*` + 1 `probe-test-*`
+leftover from previous smoke runs. User is not a member so CLI cannot delete.
+
+**Where to fix:** Direct SQL cleanup. The user is not part of these
+workspaces' member tables, so the CLI's delete path returns Forbidden even
+with the C6/C7 fix (the fix only works for the user-owned workspaces).
+
+**Cleanup SQL (run with care, use cockroach root):**
+```sql
+-- Inspect first
+SELECT name, uuid FROM global_account.workspace WHERE name LIKE 'smoke-ws-%' OR name LIKE 'probe-test-%';
+
+-- For each, delete in order: tx, workspace_members, workspace_status, workspace
+-- Cockroach doesn't have DELETE CASCADE; do manually
+```
+
+### CF4 — Workspace/transactor version sync check
+
+**Symptom:** If `~/platform/common/scripts/version.txt` differs between
+builds of transactor and workspace pods, WebSocket connections fail with
+"version mismatch".
+
+**Where to add check:**
+- `~/platform/server/transactor/src/` startup logging
+- `~/platform/pods/workspace/src/` startup logging
+- Add a `console.warn` or `console.error` if versions diverge when the
+  versions are checkable at startup
+
+OR: add a startup probe via `findfull model` RPC that returns the server
+version, and the CLI logs it.
+
+### CF7 — Bump getContent timeout for large docs
+
+**Symptom:** `huly document get <id> --markdown` returns `(body fetch
+timed out)` for documents > ~100KB.
+
+**Where to fix:**
+- `~/platform/server/collaborator/src/rpc/methods/getContent.ts:30-34`
+- Currently `connectionTimeoutMs = 3_000`
+- Bump to `10_000` or `30_000` for production use
+
+**Trade-off:** Larger timeout = slower failure response for actually-broken
+docs. Suggest: `10_000` (10s) as compromise.
+
