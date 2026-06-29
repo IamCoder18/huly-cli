@@ -163,37 +163,74 @@ export async function run(argv: string[] = process.argv): Promise<void> {
     })
 
   const ws = program.command('workspace').description('Manage workspaces'); withGlobalHelp(ws)
-  ws.command('list').description('List accessible workspaces').action(async (_o, cmd) => {
+  ws.command('list').description('List accessible workspaces')
+    .addHelpText('after', `
+Examples:
+  $ huly workspace list
+  $ huly workspace list --json | jq -r '.[].name'`)
+    .action(async (_o, cmd) => {
     try { await listWorkspaces(globalsFrom(cmd)) } catch (e) { handleError(e) }
   })
   ws.command('current').description('Show current workspace').action(async (_o, cmd) => {
     try { await currentWorkspace(globalsFrom(cmd)) } catch (e) { handleError(e) }
   })
-  ws.command('use <name>').description('Set active workspace').action(async (name, _o, cmd) => {
+  ws.command('use <name>').description('Set active workspace')
+    .addHelpText('after', `
+Examples:
+  $ huly workspace use production
+  $ huly workspace use life  # switch workspace for subsequent commands
+  $ huly --workspace life issue list  # one-off without switching`)
+    .action(async (name, _o, cmd) => {
     try { await useWorkspace(name, globalsFrom(cmd)) } catch (e) { handleError(e) }
   })
   ws.command('create').description('Create a new workspace (requires --yes)')
     .requiredOption('--name <name>')
     .option('--region <region>')
+    .addHelpText('after', `
+Examples:
+  $ huly workspace create --name "My new workspace" --yes
+  $ huly workspace create --name "EU workspace" --region eu-west --yes
+
+Note: workspace creation runs the tracker migration. May take 30-60s.`)
     .action(async (opts, cmd) => {
       try { await createWorkspace({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
   ws.command('delete').description('Delete the current workspace (DESTRUCTIVE; requires --yes; --force to delete the active workspace)')
     .option('--force', 'delete even if this is the active workspace')
+    .addHelpText('after', `
+Examples:
+  $ huly workspace delete my-old-workspace --yes
+  $ huly workspace delete life --yes --force  # delete active workspace
+
+WARNING: server-side hard-delete may take several minutes. Worker calls
+doCleanup which drops all docs in all per-workspace tables.`)
     .action(async (opts, cmd) => {
       try { await deleteWorkspace({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
   ws.command('members').description('List workspace members')
     .option('--role <r>', 'filter by role (Owner|Admin|Guest|ReadOnlyGuest|DocGuest)')
+    .addHelpText('after', `
+Examples:
+  $ huly workspace members
+  $ huly workspace members --role Owner --json
+  $ huly workspace members --role Guest`)
     .action(async (opts, cmd) => {
       try { await listMembers({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
   ws.command('member <account>').description('Update a member\'s role (account uuid or email)')
     .requiredOption('--role <r>', 'Owner|Admin|Guest|ReadOnlyGuest|DocGuest')
+    .addHelpText('after', `
+Examples:
+  $ huly workspace member alice@example.com --role MAINTAINER
+  $ huly workspace member 86d46120-594e-4c10-8996-821ac2a7001a --role GUEST`)
     .action(async (account, opts, cmd) => {
       try { await updateMemberRole({ ...opts, target: account, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
   ws.command('info').description('Show current workspace info (name, uuid, region, mode)')
+    .addHelpText('after', `
+Examples:
+  $ huly workspace info
+  $ huly workspace info --json | jq -r .uuid`)
     .action(async (_o, cmd) => {
       try { await workspaceInfo(globalsFrom(cmd)) } catch (e) { handleError(e) }
     })
@@ -205,6 +242,11 @@ export async function run(argv: string[] = process.argv): Promise<void> {
   ws.command('guests').description('Update guest settings (--read-only and/or --sign-up, true|false)')
     .option('--read-only <bool>')
     .option('--sign-up <bool>')
+    .addHelpText('after', `
+Examples:
+  $ huly workspace guests --read-only true
+  $ huly workspace guests --sign-up false --read-only true
+  $ huly workspace guests --sign-up true`)
     .action(async (opts, cmd) => {
       try {
         const readOnly = opts.readOnly === undefined ? undefined : opts.readOnly !== 'false' && opts.readOnly !== '0'
@@ -217,6 +259,12 @@ export async function run(argv: string[] = process.argv): Promise<void> {
     .option('--exp-hours <n>', 'expiration in hours', (v) => parseInt(v, 10))
     .option('--auto-join')
     .option('--email <email>')
+    .addHelpText('after', `
+Examples:
+  $ huly workspace access-link --role GUEST
+  $ huly workspace access-link --role MAINTAINER --exp-hours 48
+  $ huly workspace access-link --role GUEST --auto-join
+  $ huly workspace access-link --role GUEST --email alice@example.com`)
     .action(async (opts, cmd) => {
       try { await createAccessLink({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
@@ -245,31 +293,57 @@ export async function run(argv: string[] = process.argv): Promise<void> {
     })
 
   const project = program.command('project').description('Manage tracker projects'); withGlobalHelp(project)
-  project.command('list').description('List projects').option('--limit <n>', 'limit', (v) => parseInt(v, 10)).option('--offset <n>', 'offset', (v) => parseInt(v, 10)).action(async (opts, cmd) => {
+  project.command('list').description('List projects').option('--limit <n>', 'limit', (v) => parseInt(v, 10)).option('--offset <n>', 'offset', (v) => parseInt(v, 10))
+    .addHelpText('after', `
+Examples:
+  $ huly project list
+  $ huly project list --limit 10 --json
+  $ huly project list --offset 10  # pagination`)
+    .action(async (opts, cmd) => {
     try { await listProjects({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
   })
-  project.command('get <ref>').description('Get a project').action(async (ref, opts, cmd) => {
+  project.command('get <ref>').description('Get a project')
+    .addHelpText('after', `
+Examples:
+  $ huly project get TSK
+  $ huly project get "Default project"
+  $ huly project get tracker:project:DefaultProject`)
+    .action(async (ref, opts, cmd) => {
     try { await getProject(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
   })
   project
     .command('create')
     .description('Create a project')
     .requiredOption('--name <name>')
-    .requiredOption('--identifier <id>')
+    .requiredOption('--identifier <id>', 'short uppercase identifier (1-5 chars typical)')
     .option('--description <text>')
     .option('--private')
+    .addHelpText('after', `
+Examples:
+  $ huly project create --name "Q3 Goals" --identifier Q3G
+  $ huly project create --name "Internal" --identifier INT --private \\
+      --description "Internal projects"
+
+Required: --name, --identifier. Identifier must be uppercase letters/digits.
+The CLI pre-checks for duplicate identifiers (server may not enforce).`)
     .action(async (opts, cmd) => {
       try { await createProject({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
   project
     .command('update <ref>')
     .description('Update a project')
-    .option('--set <kv...>', 'set key=value (repeatable)')
+    .option('--set <kv...>', 'set key=value (repeatable); value=null clears')
     .option('--unset <key...>', 'unset key (repeatable)')
+    .addHelpText('after', `
+Examples:
+  $ huly project update TSK --set description="Updated description"
+  $ huly project update TSK --set description=null  # clear
+  $ huly project update TSK --set private=true
+  $ huly project update TSK --unset description`)
     .action(async (ref, opts, cmd) => {
       try { await updateProject(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
-  project.command('delete <ref...>').description('Delete projects').action(async (refs, opts, cmd) => {
+  project.command('delete <ref...>').description('Delete projects (DESTRUCTIVE; requires --yes)').action(async (refs, opts, cmd) => {
     try { await deleteProjects(refs, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
   })
   project.command('statuses').description('List issue statuses for a project (defaults to $HULY_PROJECT)')
@@ -308,12 +382,27 @@ export async function run(argv: string[] = process.argv): Promise<void> {
     .option('--label <l...>')
     .option('--limit <n>', 'limit', (v) => parseInt(v, 10))
     .option('--offset <n>', 'offset', (v) => parseInt(v, 10))
+    .addHelpText('after', `
+Examples:
+  $ huly issue list --project TSK
+  $ huly issue list --status Backlog --assignee alice@example.com
+  $ huly issue list --status-category Active --limit 50 --json
+  $ huly issue list --description-search "smoke"
+  $ huly issue list --parent null  # top-level only
+
+Ref formats accepted by --project, --assignee, --label: name, identifier, or _id.`)
     .action(async (opts, cmd) => {
       try { await listIssues({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
   issue
     .command('get <ref>')
     .description('Get an issue')
+    .addHelpText('after', `
+Examples:
+  $ huly issue get TSK-1
+  $ huly issue get 1                # uses \$HULY_PROJECT
+  $ huly issue get TSK-1 --markdown
+  $ huly issue get tracker:issue:6a... # raw _id`)
     .action(async (ref, opts, cmd) => {
       try { await getIssue(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
@@ -326,29 +415,48 @@ export async function run(argv: string[] = process.argv): Promise<void> {
     .option('--body <md>')
     .option('--body-file <path>')
     .option('--status <name>')
-    .option('--priority <p>')
-    .option('--assignee <email>')
-    .option('--label <l...>')
-    .option('--due <iso>')
+    .option('--priority <p>', 'Urgent | High | Normal | Low | None')
+    .option('--assignee <email>', 'must be a workspace member')
+    .option('--label <l...>', 'repeatable: --label bug --label auth')
+    .option('--due <iso>', 'ISO 8601 e.g. 2026-07-01T14:00:00Z')
     .option('--parent <ref>')
     .option('--task-type <name|id>')
+    .addHelpText('after', `
+Examples:
+  $ huly issue create --project TSK --title "Add OAuth login"
+  $ huly issue create --project TSK --title "Bug" --priority High \\
+      --assignee alice@example.com --label bug --label p1
+  $ huly issue create --project TSK --title "..." --body-file ./spec.md \\
+      --due 2026-08-01T00:00:00Z
+  $ huly issue create --project TSK --title "Sub-task" --parent TSK-5
+
+Required: --project, --title. Valid priority values: Urgent, High, Normal,
+Low, None. Assignee must be a workspace member.`)
     .action(async (opts, cmd) => {
       try { await createIssue({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
   issue
     .command('update <ref>')
     .description('Update an issue')
-    .option('--set <kv...>')
+    .option('--set <kv...>', 'key=value (repeatable); key=null clears the field')
     .option('--unset <key...>')
     .option('--status <name>')
-    .option('--priority <p>')
+    .option('--priority <p>', 'Urgent | High | Normal | Low | None')
     .option('--assignee <email>')
     .option('--title <t>')
     .option('--task-type <name|id>')
+    .addHelpText('after', `
+Examples:
+  $ huly issue update TSK-1 --status Done
+  $ huly issue update TSK-1 --set description="Updated text"
+  $ huly issue update TSK-1 --set priority=High --set assignee=bob@example.com
+  $ huly issue update TSK-1 --set description=null  # clear field
+
+Pass any combination of --status/--priority/--assignee/--title/--set.`)
     .action(async (ref, opts, cmd) => {
       try { await updateIssue(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
-  issue.command('delete <ref...>').description('Delete issues').action(async (refs, opts, cmd) => {
+  issue.command('delete <ref...>').description('Delete issues (requires --yes for multiple)').action(async (refs, opts, cmd) => {
     try { await deleteIssues(refs, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
   })
   const issueLabel = issue.command('label <ref>').description('Manage labels on an issue')
@@ -546,12 +654,21 @@ export async function run(argv: string[] = process.argv): Promise<void> {
 
   const channel = program.command('channel').description('Manage chunter channels (and their messages/threads)'); withGlobalHelp(channel)
   channel.command('list').description('List channels')
-    .option('--archived <bool>', 'filter by archived state')
+    .option('--archived <bool>', 'filter by archived state (true|false)')
     .option('--limit <n>', 'limit', (v) => parseInt(v, 10))
+    .addHelpText('after', `
+Examples:
+  $ huly channel list
+  $ huly channel list --archived false
+  $ huly channel list --json | jq -r '.[] | select(.topic != null) | .name'`)
     .action(async (opts, cmd) => {
       try { await listChannels({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
   channel.command('get <ref>').description('Get a channel')
+    .addHelpText('after', `
+Examples:
+  $ huly channel get engineering
+  $ huly channel get chunter:space.General  # raw _id`)
     .action(async (ref, opts, cmd) => {
       try { await getChannel(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
@@ -559,9 +676,17 @@ export async function run(argv: string[] = process.argv): Promise<void> {
     .requiredOption('--name <n>')
     .option('--description <text>')
     .option('--topic <text>')
-    .option('--private')
-    .option('--auto-join')
-    .option('--members <email...>')
+    .option('--private', 'private channel (members only)')
+    .option('--auto-join', 'new workspace members join automatically')
+    .option('--members <email...>', 'initial members (workspace members only)')
+    .addHelpText('after', `
+Examples:
+  $ huly channel create --name engineering --topic "Eng discussions"
+  $ huly channel create --name leads --private --members alice@.. bob@..
+  $ huly channel create --name general --auto-join
+
+Required: --name. Optional: --description, --topic, --private,
+--auto-join, --members (space-separated emails).`)
     .action(async (opts, cmd) => {
       try { await createChannel({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
@@ -569,17 +694,25 @@ export async function run(argv: string[] = process.argv): Promise<void> {
     .option('--name <n>')
     .option('--description <text>')
     .option('--topic <text>')
-    .option('--private <bool>')
-    .option('--auto-join <bool>')
+    .option('--private <bool>', 'true|false')
+    .option('--auto-join <bool>', 'true|false')
+    .addHelpText('after', `
+Examples:
+  $ huly channel update engineering --topic "New topic"
+  $ huly channel update engineering --private true`)
     .action(async (ref, opts, cmd) => {
       try { await updateChannel(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
-  channel.command('delete <ref...>').description('Delete channels')
+  channel.command('delete <ref...>').description('Delete channels (DESTRUCTIVE; requires --yes)')
     .action(async (refs, opts, cmd) => {
       try { await deleteChannels(refs, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
   channel.command('archive <ref>').description('Archive a channel (--value false to unarchive)')
     .option('--value <bool>', 'true|false', (v) => v !== 'false' && v !== '0')
+    .addHelpText('after', `
+Examples:
+  $ huly channel archive engineering
+  $ huly channel archive engineering --value false  # unarchive`)
     .action(async (ref, opts, cmd) => {
       try { await archiveChannel(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
@@ -588,32 +721,53 @@ export async function run(argv: string[] = process.argv): Promise<void> {
       try { await archiveChannel(ref, { ...opts, value: false, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
   channel.command('members <ref>').description('List channel members')
+    .addHelpText('after', `
+Examples:
+  $ huly channel members engineering
+  $ huly channel members engineering --json`)
     .action(async (ref, opts, cmd) => {
       try { await listChannelMembers(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
   channel.command('join <ref>').description('Join a channel (--member <email> for a specific user)')
-    .option('--member <email>')
+    .option('--member <email>', 'add a specific user (OWNER/admin only)')
+    .addHelpText('after', `
+Examples:
+  $ huly channel join engineering
+  $ huly channel join engineering --member alice@example.com`)
     .action(async (ref, opts, cmd) => {
       try { await joinChannel(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
   channel.command('leave <ref>').description('Leave a channel')
-    .option('--member <email>')
+    .option('--member <email>', 'remove a specific user (OWNER/admin only)')
     .action(async (ref, opts, cmd) => {
       try { await leaveChannel(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
   channel.command('add-member <ref>').description('Add one or more members')
-    .requiredOption('--members <email...>')
+    .requiredOption('--members <email...>', 'space-separated list')
+    .addHelpText('after', `
+Examples:
+  $ huly channel add-member engineering --members alice@example.com
+  $ huly channel add-member engineering --members alice@.. bob@.. carol@..`)
     .action(async (ref, opts, cmd) => {
       try { await addChannelMembers(ref, opts.members, globalsFrom(cmd)) } catch (e) { handleError(e) }
     })
   channel.command('remove-member <ref>').description('Remove one or more members')
-    .requiredOption('--members <email...>')
+    .requiredOption('--members <email...>', 'space-separated list')
+    .addHelpText('after', `
+Examples:
+  $ huly channel remove-member engineering --members alice@example.com
+  $ huly channel remove-member engineering --members alice@.. bob@..`)
     .action(async (ref, opts, cmd) => {
       try { await removeChannelMembers(ref, opts.members, globalsFrom(cmd)) } catch (e) { handleError(e) }
     })
   const cmsg = channel.command('message').description('Manage messages within a channel')
   cmsg.command('list <ref>').description('List messages in a channel')
     .option('--limit <n>', 'limit', (v) => parseInt(v, 10))
+    .addHelpText('after', `
+Examples:
+  $ huly channel message list engineering
+  $ huly channel message list engineering --limit 50
+  $ huly channel message list engineering --json`)
     .action(async (ref, opts, cmd) => {
       try { await listChannelMessages(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
