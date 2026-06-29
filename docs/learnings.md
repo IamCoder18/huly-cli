@@ -340,6 +340,32 @@ If you don't set `WS_OPERATION=all+backup` in compose, only `pending-creation` +
 ### Caddy is on the host, not in compose
 `huly_v7-nginx-1` is a container, but the actual TLS terminator is `caddy` running on the host (via systemd). `systemctl restart caddy` doesn't restart nginx. The caddy Caddyfile is at `/etc/caddy/Caddyfile`.
 
+### Cockroach `selfhost` user is missing the `CREATE` privilege on `defaultdb` after a fresh DB
+**Why it matters:** The account service connects to cockroach as user `selfhost` (per `CR_USERNAME=selfhost` in `~/huly-selfhost/.env`). On first start, `PostgresDbCollection._init()` in `~/platform/server/account/src/collections/postgres/postgres.ts:730-734` runs:
+```sql
+CREATE SCHEMA IF NOT EXISTS global_account;
+```
+(`global_account` is the default namespace — `ns = 'global_account'` in `postgres.ts:546`.) In cockroach, `CREATE SCHEMA` requires the `CREATE` privilege on the database — which the `selfhost` user does NOT have by default (only `root` does). The account service crashes on startup with a `permission denied to create schema` error from cockroach.
+
+**Fix (run once after every `docker compose down -v` that recreates the cockroach volume):**
+```bash
+docker exec -e PGPASSWORD=bfaa9bb7e4c4b5ff0c525f9210c711ce52c82989c2919bfeb7535c693b619bb6 \
+  huly_v7-cockroach-1 /cockroach/cockroach sql --insecure -d defaultdb -u root \
+  -e "GRANT CREATE ON DATABASE defaultdb TO selfhost"
+```
+The password in `PGPASSWORD` is `CR_USER_PASSWORD` from `.env`. After granting, restart the account pod (`docker compose up -d --force-recreate account`).
+
+**Verification (once cockroach is up):**
+```bash
+docker exec huly_v7-cockroach-1 /cockroach/cockroach sql --insecure -d defaultdb -u selfhost \
+  -e "CREATE SCHEMA IF NOT EXISTS smoke_test;"   # should succeed
+docker exec huly_v7-cockroach-1 /cockroach/cockroach sql --insecure -d defaultdb -u selfhost \
+  -e "DROP SCHEMA smoke_test;"
+```
+Without the grant, the first command errors with `SQLSTATE 42501` (`permission denied to create schema`).
+
+**Why it's not just a one-time issue:** cockroach's `CREATE` privilege on a database is granted to `root` only. `selfhost` is created by the compose init but does not inherit `CREATE`. The platform never calls `CREATE DATABASE` from runtime — but it DOES call `CREATE SCHEMA` (for `global_account`, and per-workspace schemas later). Both require the same privilege. The bug exists in upstream `PostgresDbCollection._init()`; an upstream PR-worthy fix would be to either: (a) explicitly check for schema existence before creating, or (b) grant the `CREATE` privilege to the runtime user in the platform's own startup sequence, or (c) let `root` create the schema and then `selfhost` only needs to read/write tables. None of these are done today.
+
 ### Selfhost sign-up
 There's no `huly signup` CLI command. You must call `accountClient.signUp` directly. `login --headless` doesn't create an account.
 
@@ -670,7 +696,7 @@ If any of Fixes #1-#6 don't actually work, more investigation is needed.
 - [ ] Add `huly calendar calendars` verification to the smoke
 - [ ] Update `docs/issues.md` to mark the fixes as verified
 - [ ] Resume phases 14-18
-- [ ] Consider opening PRs upstream for Fixes #1-#6
+- [ ] (skipped — user does not want PRs for the fixes; they're kept locally on branch `fix/server-issues-2026-06`)
 
 ---
 

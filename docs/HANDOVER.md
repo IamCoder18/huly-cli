@@ -7,7 +7,7 @@
 ## TL;DR — state of the world right now
 
 - **CLI repo (`~/huly-cli`, branch `feat/feature-parity`):** Phases 0-13 of the 18-phase parity plan are implemented. 11 of 13 smoke phases pass cleanly. 2 (phases 6, 9) are blocked on a real server bug (`uploadMarkup` to the collaborator throws), and I just patched the code to work around it but haven't re-run the smoke yet.
-- **Server repo (`~/platform`, branch `fix/server-issues-2026-06`):** 6 server fixes committed in separate commits ready for upstream PRs.
+- **Server repo (`~/platform`, branch `fix/server-issues-2026-06`):** 6 server fixes committed in separate commits (kept locally; user does not want PRs).
 - **Selfhost (`~/huly-selfhost`):** `main` branch has nginx + compose fixes for redpanda healthcheck, redpanda DNS resolution (nginx `resolver`), `WS_OPERATION=all+backup` with `BACKUP_STORAGE` + 14-day MinIO lifecycle, and `local-fix` image tags for the 4 patched pods.
 - **The shared selfhost server** is currently up with: 1 active workspace `life`, full plugin model loaded (3832 classes, 1 active `TSK` project), 5 leftover smoke-doc entries from the smoke runs (visible in `huly document list`). Redpanda is healthy. Transactor at 0.7.423, workspace pod at 0.7.423 (matched).
 
@@ -18,9 +18,8 @@
 1. **Verify Fix #2 of all resources — `uploadMarkup` to collaborator fails.** I started a refactor (`new MarkupContent(X, 'markdown')` → `X`) in 9 files but didn't build or test. The work is done but unverified.
 2. **Re-run all 13 smoke phases on the live server** to confirm 100% pass rate.
 3. **Investigate Fix #3 (model-upgrade retry) more deeply.** It retries once, but the `no document found` warnings keep happening on the live server. Either the retry needs more passes, or the txs reference classes that simply don't exist in the model anymore.
-4. **Document the remaining server-side bugs that need upstream PRs** in `docs/issues.md`.
+4. **Document the remaining server-side bugs** in `docs/issues.md`.
 5. **Implement phases 14-18** (Activity, Notifications, Approvals, README, final smoke). These are paused per the user's earlier instruction. The user said the goal is "100% of the CLI surface verified" — so once all 13 phases are 100% clean, the user may or may not want 14-18.
-6. **Open upstream PRs** for the 6 server fixes in `~/platform`.
 
 ---
 
@@ -175,7 +174,7 @@ The Node 22 tarball is at `/tmp/node22.tar.xz` and the extracted binary at `/tmp
 
 ### Server fixes (~/platform, branch `fix/server-issues-2026-06`)
 
-Six separate commits, each individually PR-able:
+Six separate commits:
 
 | Commit | What it does | Files |
 |---|---|---|
@@ -241,7 +240,7 @@ docker exec -e PGPASSWORD=bfaa9bb7e4c4b5ff0c525f9210c711ce52c82989c2919bfeb7535c
 
 1. **Selfsigned MinIO bucket lifecycle is NOT in the Huly server** — set it up manually with `mc`.
 2. **`WS_OPERATION=all` doesn't include `deletingSql` by default** (Fix #5 fixed this on our branch; `all+backup` was the workaround for original behavior).
-3. **Cockroach `selfhost` user needs `CREATE` on `defaultdb`** — `grant` it once after `docker compose down -v`.
+3. **Cockroach `selfhost` user needs `CREATE` on `defaultdb`** — see `docs/learnings.md §6 "Cockroach selfhost user is missing..."` for full root cause.
 4. **The `redpanda` healthcheck using `rpk cluster info -X user=... -X pass=...` returns `ILLEGAL_SASL_STATE`** because of SASL bootstrap race conditions. Use unauthenticated metadata probe.
 5. **Workspace pod version must match transactor version**, otherwise transactor's `sessionManager` rejects WebSocket connections. Bump `version.txt`.
 6. **Nginx `proxy_pass <var>/;` (with trailing slash) replaces the matched location prefix with `/`** — so `GET /_transactor/api/v1/version` becomes `GET /` to the upstream. Use `proxy_pass <var>;` (no slash) and let the `rewrite` capture the path. Same applies to `location /` (root) — never use a trailing slash there.
@@ -363,14 +362,13 @@ The next agent (or me, after a long break) should:
 3. **Verify the state of the selfhost:** `cd ~/huly-selfhost && docker ps`. Should show 14 services running including the 4 with `local-fix` tag.
 4. **Check the git state:** both `~/huly-cli` and `~/platform` should be on the right branches with the recent commits.
 5. **If continuing the MarkupContent refactor:** start at step 1 above (verify the refactor builds, run smoke, see what fails).
-6. **If opening upstream PRs:** `cd ~/platform && git log --oneline fix/server-issues-2026-06 ^develop` (assuming develop is the upstream) — that shows the 6 fix commits. PR them one by one to `hardeng/platform`.
-7. **If continuing phases 14-18:** read the parity plan in `~/platform/.kilo/plans/1782509790047-partial-feature-parity-plan.md` and follow the same pattern as phases 0-13: add class IDs to `src/transport/identifiers.ts`, create `src/resources/<surface>.ts`, wire commands in `src/cli.ts`, add a `case` to `scripts/smoke.sh`, run the smoke, commit.
+6. **If continuing phases 14-18:** read the parity plan in `~/platform/.kilo/plans/1782509790047-partial-feature-parity-plan.md` and follow the same pattern as phases 0-13: add class IDs to `src/transport/identifiers.ts`, create `src/resources/<surface>.ts`, wire commands in `src/cli.ts`, add a `case` to `scripts/smoke.sh`, run the smoke, commit.
 
 ---
 
 ## Final notes
 
-The user said the goal is **100% verification on all implemented sections**. The work in this session gets us to ~11/13 smoke phases passing cleanly, with 2 blocked on a real server-side bug (Fix #2 covers the read path but not the write path). The user has been very patient and is going to be away for a long period. When they come back, the deliverable is a clean, working CLI on a clean selfhost, with all 13 phases passing and 6 server fixes ready to PR.
+The user said the goal is **100% verification on all implemented sections**. The work in this session gets us to ~11/13 smoke phases passing cleanly, with 2 blocked on a real server-side bug (Fix #2 covers the read path but not the write path). The user has been very patient and is going to be away for a long period. When they come back, the deliverable is a clean, working CLI on a clean selfhost, with all 13 phases passing and 6 server fixes committed locally on `fix/server-issues-2026-06`.
 
 The most important things to do when resuming:
 1. **Verify the MarkupContent refactor (step 1 above) — this is the most likely path to phase 6/9 passing.**
