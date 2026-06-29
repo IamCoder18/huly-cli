@@ -710,6 +710,7 @@ export async function sendDmMessage(dmRef: string, opts: {
   message?: string
   body?: string
   bodyFile?: string
+  person?: string
   json?: boolean
   ci?: boolean
   dryRun?: boolean
@@ -717,6 +718,12 @@ export async function sendDmMessage(dmRef: string, opts: {
   url?: string
 }): Promise<void> {
   const body = await readMessageBody(opts)
+  // --person <email>: resolve or auto-create DM, then send.
+  if (opts.person !== undefined && opts.person !== '') {
+    const { createDm } = await import('./channel.js')
+    const dmId = await createDm({ person: opts.person, workspace: opts.workspace, url: opts.url })
+    dmRef = String(dmId)
+  }
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const account = await client.getAccount()
