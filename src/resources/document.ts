@@ -87,7 +87,24 @@ async function resolveTeamspace(client: PlatformClient, ref?: string): Promise<T
   }
   const all = (await client.findAll(TEAMSPACE_CLASS, {})) as Teamspace[]
   if (all.length === 0) {
-    throw new CliError(ExitCode.NotFound, 'no teamspaces found in this workspace')
+    // No teamspaces — auto-create a default 'General' teamspace so users can
+    // create their first document without manual setup.
+    const id = await client.createDoc(
+      TEAMSPACE_CLASS,
+      TEAMSPACE_DEFAULT,
+      {
+        name: 'General',
+        description: 'Default teamspace (auto-created)',
+        type: 'space-type:default' as Ref<Doc>,
+        private: false,
+        archived: false,
+        members: [],
+        rank: '0|aaaaa:'
+      } as any
+    )
+    const created = await client.findOne(TEAMSPACE_CLASS, { _id: id as Ref<Teamspace> })
+    if (!created) throw new CliError(ExitCode.NotFound, 'failed to auto-create default teamspace')
+    return created
   }
   return all[0]
 }
