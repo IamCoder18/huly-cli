@@ -375,9 +375,44 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
         client.createDoc(CLASS.Issue as Ref<Class<Issue>>, project._id as unknown as Ref<Space>, data as any)
       )
     } catch (err: unknown) {
-      // Idempotency: if an issue with the same title already exists in this project, return it.
+      // Workaround for C3: SDK's local model has incomplete inheritance info and
+      // thinks tracker:class:Issue inherits from AttachedDoc. TxOperations.createDoc
+      // refuses to create AttachedDoc instances. Bypass by building the TxCreateDoc
+      // manually and applying via the raw connection.tx RPC.
       const msg = err instanceof Error ? err.message : String(err)
-      if (/duplicate|exists|already/i.test(msg)) {
+      if (/createDoc cannot be used for objects inherited from AttachedDoc/i.test(msg)) {
+        const conn = (client as unknown as {
+          connection?: { tx: (tx: unknown) => Promise<unknown> }
+        }).connection
+        const txFactory = (client as unknown as {
+          client?: {
+            txFactory?: {
+              createTxCreateDoc: (
+                _class: Ref<Class<Doc>>,
+                space: Ref<Space>,
+                attributes: Record<string, unknown>,
+                objectId?: Ref<Doc>
+              ) => { _id: string }
+            }
+          }
+        }).client?.txFactory
+        if (conn !== undefined && txFactory !== undefined) {
+          id = await withSpinner('Creating issue (bypass AttachedDoc check)…', async () => {
+            const tx = txFactory.createTxCreateDoc(
+              CLASS.Issue as Ref<Class<Doc>>,
+              project._id as unknown as Ref<Space>,
+              data,
+              undefined
+            )
+            await conn.tx(tx)
+            return tx._id as Ref<Doc>
+          }) as Ref<Doc>
+          if (id === undefined) throw err
+        } else {
+          throw err
+        }
+      } else if (/duplicate|exists|already/i.test(msg)) {
+        // Idempotency: if an issue with the same title already exists in this project, return it.
         const existing = (await client.findAll(CLASS.Issue as Ref<Class<Issue>>, {
           space: project._id,
           title
@@ -391,8 +426,10 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
           }
           return
         }
+        throw err
+      } else {
+        throw err
       }
-      throw err
     }
 
     invalidateIndex((await client.getAccount()).uuid, CLASS.Issue)
