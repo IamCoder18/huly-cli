@@ -304,3 +304,83 @@ the priority order: C3 server fix → S3 (createMarkup timeout) → CF1
 - `~/huly-cli/dist/` — never edit, regenerate from `src/` via `npm run build`
 - `~/.config/huly/credentials.json` — auto-managed, deleting it forces re-login
 - Node version: must be Node 22 (not 26). Use `/tmp/node22/bin/node`.
+
+## VERIFICATION CHECKLIST for the next session
+
+Before claiming 100% confidence, run this checklist. After fixes are
+deployed, the next agent should:
+
+1. Re-run `bash scripts/smoke.sh all` and verify all phases still pass.
+2. For each command in `docs/verified-cli-surface.md`, do a smoke test
+   in this order:
+   - `auth`: `login --headless`, `whoami`
+   - `workspace`: `list`, `use`, `info`, `members`, `regions`,
+     `create`, `delete <fresh-test-ws> --yes --force` (verify pending-deletion)
+   - `project`: `list`, `create --name X --identifier NEWB`,
+     `get`, `update`, `delete <ref> --yes`
+   - `user`: `get`, `find`, `update`
+   - `component` / `milestone` / `issue-template`: **CRITICAL** —
+     create then list, verify both find the item (C2 fix)
+   - `issue`: `list`, `get`, `create --project NEWB --title Y` (C3 fix), `update`, `delete`
+   - `comment`: `add`, `list`, `update`, `delete`
+   - `channel`: `list`, `create`, `message create`, `message list`, `delete`
+   - `dm`: `list`, `create`, `send`, `message list`
+   - `thread`: `add`, `list`, `update`, `delete`
+   - `card`: `list`, `get`, `create`, `update`, `delete`
+   - `card-space`: `list`, `create`, `delete`
+   - `master-tag`: `list`
+   - `action`: `list`, `create`, `update`, `complete`, `schedule`, `delete`
+   - `document`: `list`, `create`, `update`, `delete`, `snapshots`, `snapshot`, `inline-comments`
+   - `teamspace`: `list`, `create`, `delete`
+   - `calendar`: `calendars` (list), `list` (events), `create`, `update`, `delete`, `recurring`
+   - `schedule`: `list`, `create`, `update`, `delete`
+   - `time`: `log`, `report`, `delete`
+   - `api`, `ws`: any method, e.g. `api GET /api/v1/version`
+
+3. After each test, record result in this checklist or note failure.
+4. If ALL pass, the agent can claim: 100% confident (excluding edge
+   cases).
+5. If any fail, document each with:
+   - The command
+   - The error
+   - The traceback chain (CLI → SDK → server)
+   - Suggested next investigation step
+
+## Test workspace lifecycle
+
+Before testing `issue create` and `component create`, the test agent
+should:
+
+```bash
+# Use a fresh test workspace so previous deletions don't interfere
+huly workspace create --name "verify-$(date +%s)" --yes
+# Get the new workspace identifier
+huly workspace list --json | jq '.[] | select(.name | startswith("verify-")) | .url'
+```
+
+If the workspace limit is hit (WorkspaceLimitReached), run SQL cleanup:
+```bash
+docker exec -u root huly_v7-cockroach-1 /cockroach/cockroach sql \
+  --url 'postgresql://root@127.0.0.1:26257/defaultdb?sslcert=certs/client.root.crt&sslkey=certs/client.root.key&sslmode=verify-full&sslrootcert=certs/ca.crt' \
+  -e "DELETE FROM global_account.workspace_status WHERE workspace_uuid IN (SELECT uuid FROM global_account.workspace WHERE name LIKE 'verify-%'); DELETE FROM global_account.workspace_members WHERE workspace_uuid IN (SELECT uuid FROM global_account.workspace WHERE name LIKE 'verify-%'); DELETE FROM global_account.workspace WHERE name LIKE 'verify-%';"
+```
+
+## Cleanup after verification
+
+After confirming 100% works:
+```bash
+# Restore life workspace
+docker exec -u root huly_v7-cockroach-1 /cockroach/cockroach sql \
+  --url 'postgresql://root@127.0.0.1:26257/defaultdb?sslcert=certs/client.root.crt&sslkey=certs/client.root.key&sslmode=verify-full&sslrootcert=certs/ca.crt' \
+  -e "UPDATE global_account.workspace_status SET is_disabled=false, mode='active' WHERE workspace_uuid='dbb698bd-5cda-4231-bb2a-cb8ca99d719a';"
+
+# Remove debug logging from account bundle
+docker rm -f huly_v7-account-1
+docker compose -f ~/huly-selfhost/compose.yml up -d account
+
+# Run final smoke
+bash scripts/smoke.sh all
+
+# Commit all fixes
+cd ~/platform && git add -A && git commit -m "fix: server-side bugs verified"
+```
