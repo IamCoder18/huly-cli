@@ -78,6 +78,63 @@ export async function listCalendars(g: { json?: boolean; ci?: boolean; workspace
 
 // ---- schedules ----
 
+export async function createCalendar(opts: {
+  name?: string
+  visibility?: string
+  private?: boolean
+  hidden?: boolean
+  access?: string
+  json?: boolean
+  ci?: boolean
+  dryRun?: boolean
+  workspace?: string
+  url?: string
+}): Promise<void> {
+  if (!opts.name) throw new CliError(ExitCode.Validation, 'missing --name')
+  const data: Record<string, unknown> = {
+    name: opts.name,
+    visibility: opts.visibility ?? 'public',
+    access: opts.access ?? 'owner',
+    private: opts.private ?? false,
+    hidden: opts.hidden ?? false
+  }
+  if (opts.dryRun) {
+    console.log('would create calendar:')
+    console.log(JSON.stringify({ _class: CLASS.Calendar, space: 'core:space:Workspace', data }, null, 2))
+    return
+  }
+  const client = await connectCli({ url: opts.url, workspace: opts.workspace })
+  try {
+    const id = await withSpinner(
+      'Creating calendar…',
+      () => client.createDoc(CLASS.Calendar as Ref<Class<Doc>>, 'core:space:Workspace' as Ref<Space>, data as any),
+      opts
+    )
+    if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ _id: id, ...data }); return }
+    console.log(`created calendar: ${opts.name} (${id})`)
+  } finally { await client.close() }
+}
+
+export async function deleteCalendar(ref: string, opts: { workspace?: string; url?: string; yes?: boolean } = {}): Promise<void> {
+  const client = await connectCli({ url: opts.url, workspace: opts.workspace })
+  try {
+    const account = await client.getAccount()
+    const id = await resolveRef(ref, {
+      client,
+      classId: CLASS.Calendar as Ref<Class<Doc>>,
+      workspaceId: account.uuid
+    })
+    const doc = await client.findOne(CLASS.Calendar, { _id: id })
+    if (!doc) throw new CliError(ExitCode.NotFound, `calendar ${ref} not found`)
+    try {
+      await client.removeDoc(CLASS.Calendar, doc.space as unknown as Ref<Space>, id as Ref<Doc>)
+      console.log(`deleted calendar: ${id}`)
+    } catch (e) {
+      throw new CliError(ExitCode.Server, `delete failed: ${(e as Error).message}`)
+    }
+  } finally { await client.close() }
+}
+
 export async function listSchedules(g: { json?: boolean; ci?: boolean; workspace?: string; url?: string } = {}): Promise<void> {
   const client = await connectCli({ url: g.url, workspace: g.workspace })
   try {

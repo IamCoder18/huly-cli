@@ -37,7 +37,8 @@ import {
   listCalendars,
   listSchedules, getSchedule, createSchedule, updateSchedule, deleteSchedules,
   listEvents, getEvent, createEvent, updateEvent, deleteEvents,
-  listRecurringEvents, listRecurringInstances
+  listRecurringEvents, listRecurringInstances,
+  createCalendar, deleteCalendar
 } from './resources/calendar.js'
 import {
   listTimeEntries, logTime, deleteTimeEntries, timeReport
@@ -906,6 +907,18 @@ export async function run(argv: string[] = process.argv): Promise<void> {
   cal.command('calendars').description('List calendars')
     .action(async (_o, cmd) => {
       try { await listCalendars(globalsFrom(cmd)) } catch (e) { handleError(e) }
+    })
+  cal.command('create-calendar').description('Create a calendar')
+    .requiredOption('--name <name>')
+    .option('--description <text>')
+    .option('--private')
+    .option('--access <a>')
+    .action(async (opts, cmd) => {
+      try { await createCalendar({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  cal.command('delete-calendar <ref>').description('Delete a calendar')
+    .action(async (ref, opts, cmd) => {
+      try { await deleteCalendar(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
   cal
     .command('list')
