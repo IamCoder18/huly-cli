@@ -734,3 +734,34 @@ import('./dist/auth/client.js').then(async (m) => {
 })
 "
 ```
+
+## 19. Handover document
+
+The file `docs/HANDOVER.md` is the most important starting point for the next session. It contains:
+- Current state of all 3 repos (CLI, platform, selfhost)
+- 4-6 hours of remaining work
+- Resume instructions
+- Env vars and shell setup
+- File locations cheat sheet
+- Class ID reference
+- Image version mapping
+- Common pitfalls (12 items)
+
+If the session gets cut short, write or update HANDOVER.md. The next session should read HANDOVER.md, issues.md, and learnings.md in that order.
+
+## 20. Refactor: `new MarkupContent(X, 'markdown')` → `X`
+
+The SDK's `processMarkup` (in `node_modules/@hcengineering/api-client/lib/client.js`) tries to upload any `MarkupContent` instance to the collaborator service. The collaborator throws on this selfhost, breaking every CLI command that creates a doc/comment/channel-message etc. with a body.
+
+**Workaround applied in this session (unverified):** Python script in `HANDOVER.md` replaced `new MarkupContent(X, 'markdown')` with `X` (raw string) in 9 resource files. The SDK's processMarkup's else branch passes strings through. Trade-off: `get --markdown` won't be able to convert markup ref → text (it'll show the raw string).
+
+**Proper fix (not done):** apply the same 3s timeout fix from `getContent` to `createMarkup` in `~/platform/server/collaborator/src/rpc/methods/` (look for the file that handles `createMarkup` RPC). Then revert the MarkupContent → string refactor.
+
+## 21. Smoke runner fixes
+
+Two real bugs in `scripts/smoke.sh` that took hours to find:
+
+1. `sed -n '/^\[/,$p'` only captures the first line `[`, leaving the rest of the array for jq to fail on with `Unfinished JSON term at EOF`. **Replace with `awk '/^\[/,0'`** which captures from `[` to end-of-input.
+2. `sed -n '/^{/,$p'` has the same issue for single objects. The fix was to **remove the grep entirely** since the noise filter already strips the SDK output and jq can handle the remaining JSON.
+
+3. The `filter_huly_noise` shell function (added) is necessary because the SDK uses `console.log` for `Generate new SessionId`, `Connected to server:`, `findfull model`, etc. — these go to **stdout** (not stderr), so `2>/dev/null` doesn't suppress them. The `grep -vE` filter must explicitly skip them.
