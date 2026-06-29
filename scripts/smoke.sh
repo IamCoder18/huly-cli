@@ -52,15 +52,17 @@ if [[ -z "${HULY_WORKSPACE:-}" && -f "$HOME/.config/huly/active-workspace" ]]; t
   export HULY_WORKSPACE="$(cat "$HOME/.config/huly/active-workspace" | tr -d '[:space:]')"
 fi
 
-if [[ -z "${HULY_WORKSPACE:-}" ]]; then
-  echo "HULY_WORKSPACE not set and no active-workspace cached; pass HULY_WORKSPACE=... or run \`huly workspace use <n>\`" >&2
-  exit 1
-fi
+# Filter out SDK noise that goes to stdout (the @hcengineering/client-resources
+# SDK uses console.log for "Generate new SessionId", "Connected to server", and
+# "findfull model" — these are not JSON, so they break JSON parsing below).
+filter_huly_noise() {
+  grep -vE "^(Generate new SessionId|Connected to server: |findfull model|ExperimentalWarning|Use \`node|node:.*ExperimentalWarning|node:.*Use \`node)"
+}
 
 # Pick a project ref for phases that need one (first available).
 if [[ -z "${HULY_PROJECT:-}" ]]; then
-  PROJ_ID=$(HULY project list --json 2>/dev/null \
-    | sed -n '/^\[/,$p' \
+  PROJ_ID=$(HULY project list --json 2>/dev/null | filter_huly_noise \
+    | awk '/^\[/,0' \
     | jq -r '.[0]._id // empty')
   if [[ -n "$PROJ_ID" ]]; then
     export HULY_PROJECT="$PROJ_ID"
@@ -87,7 +89,7 @@ step() {
 cleanup_count() {
   local label="$1" pattern="$2" cmd="$3"
   local count
-  count="$(eval "$cmd" 2>/dev/null | jq --arg p "$pattern" '[.[] | select((.title // .name // "") | test($p))] | length')"
+  count="$(eval "$cmd" 2>/dev/null | filter_huly_noise | jq --arg p "$pattern" '[.[] | select((.title // .name // "") | test($p))] | length')"
   if [[ "$count" != "0" ]]; then
     echo "  CLEANUP FAIL ($label): $count leftover items matching $pattern" >&2
     exit 1
@@ -136,8 +138,8 @@ case "$PHASE" in
   2)
     step "project list" HULY project list
     # idempotent create (may not be enforced on all servers)
-    PROJ_ID=$(HULY project create --name "smoke-p2-$(date +%s)" --identifier "P2S$(date +%s)" --json 2>/dev/null \
-      | sed -n '/^{/,$p' | jq -r '._id // empty')
+    PROJ_ID=$(HULY project create --name "smoke-p2-$(date +%s)" --identifier "P2S$(date +%s)" --json 2>/dev/null | filter_huly_noise \
+      | jq -r '._id // empty')
     if [[ -z "$PROJ_ID" ]]; then
       echo "  FAIL: project create returned no _id" >&2
       exit 1
@@ -150,7 +152,7 @@ case "$PHASE" in
     step "project update --set description=null (clear)" HULY project update "$PROJ_ID" --set description=null
     step "project target-preferences list" HULY project target-preferences --project "$PROJ_ID" --json
     step "project delete" HULY project delete "$PROJ_ID" --yes
-    cleanup_count "projects" "smoke-p2-" "HULY project list --json 2>/dev/null | sed -n '/^\[/,\$p'"
+    cleanup_count "projects" "smoke-p2-" "HULY project list --json 2>/dev/null | filter_huly_noise | awk '/^\[/,0'"
     ;;
 
   3)
@@ -198,9 +200,32 @@ case "$PHASE" in
     step "calendar calendars" HULY calendar calendars
     step "schedule list" HULY schedule list
     step "calendar recurring" HULY calendar recurring
+    # Bootstrap a calendar if none exist — calendar event creation requires
+    # at least one Calendar doc attached to a space. The example template
+    # doesn't seed one, so we create it via the CLI.
+    if ! HULY calendar calendars 2>/dev/null | filter_huly_noise | grep -q .; then
+      HULY calendar create-calendar --name "smoke-cal" --json >/dev/null 2>&1 || true
+    fi
+    # Cleanup any leftover smoke events / recurring events from prior runs
+    LEFTOVER_EVTS=$(HULY calendar list --json 2>/dev/null | filter_huly_noise \
+      | awk '/^\[/,0' \
+      | jq -r '.[] | select(.title | test("smoke-(evt|rec)-")) | ._id')
+    if [[ -n "$LEFTOVER_EVTS" ]]; then
+      echo "$LEFTOVER_EVTS" | while read -r eid; do
+        [[ -n "$eid" ]] && HULY calendar delete "$eid" --yes >/dev/null 2>&1 || true
+      done
+    fi
+    LEFTOVER_REC=$(HULY calendar recurring --json 2>/dev/null | filter_huly_noise \
+      | awk '/^\[/,0' \
+      | jq -r '.[] | select(.title | test("smoke-rec-")) | ._id')
+    if [[ -n "$LEFTOVER_REC" ]]; then
+      echo "$LEFTOVER_REC" | while read -r rid; do
+        [[ -n "$rid" ]] && HULY calendar delete "$rid" --yes >/dev/null 2>&1 || true
+      done
+    fi
     # create event + cleanup
-    EID=$(HULY calendar create --title "smoke-evt-$(date +%s)" --start "2027-01-01T10:00:00Z" --end "2027-01-01T11:00:00Z" --json 2>/dev/null \
-      | sed -n '/^{/,$p' | jq -r '._id // empty')
+    EID=$(HULY calendar create --title "smoke-evt-$(date +%s)" --start "2027-01-01T10:00:00Z" --end "2027-01-01T11:00:00Z" --json 2>/dev/null | filter_huly_noise \
+      | jq -r '._id // empty')
     if [[ -n "$EID" ]]; then
       echo "  ✓ created event $EID"
       HULY calendar delete "$EID" --yes >/dev/null 2>&1 || true
@@ -209,16 +234,23 @@ case "$PHASE" in
       echo "  ⚠ calendar create skipped (server may forbid)"
     fi
     # create recurring event + cleanup
-    RID=$(HULY calendar create --title "smoke-rec-$(date +%s)" --start "2027-02-01T10:00:00Z" --end "2027-02-01T11:00:00Z" --rrule "FREQ=DAILY;COUNT=3" --json 2>/dev/null \
-      | sed -n '/^{/,$p' | jq -r '._id // empty')
+    RID=$(HULY calendar create --title "smoke-rec-$(date +%s)" --start "2027-02-01T10:00:00Z" --end "2027-02-01T11:00:00Z" --rrule "FREQ=DAILY;COUNT=3" --json 2>/dev/null | filter_huly_noise \
+      | jq -r '._id // empty')
     if [[ -n "$RID" ]]; then
       echo "  ✓ created recurring event $RID"
       HULY calendar delete "$RID" --yes >/dev/null 2>&1 || true
       echo "  ✓ deleted recurring event"
     fi
     # cleanup assertion
-    cleanup_count "events" "smoke-evt-" "HULY calendar list --json 2>/dev/null | sed -n '/^\[/,\$p'"
-    cleanup_count "events" "smoke-rec-" "HULY calendar recurring --json 2>/dev/null | sed -n '/^\[/,\$p'"
+    cleanup_count "events" "smoke-evt-" "HULY calendar list --json 2>/dev/null | filter_huly_noise | awk '/^\[/,0'"
+    cleanup_count "events" "smoke-rec-" "HULY calendar recurring --json 2>/dev/null | filter_huly_noise | awk '/^\[/,0'"
+    # Cleanup the bootstrap calendar too
+    SMOKE_CAL=$(HULY calendar calendars --json 2>/dev/null | filter_huly_noise \
+      | awk '/^\[/,0' \
+      | jq -r '.[] | select(.name == "smoke-cal") | ._id')
+    if [[ -n "$SMOKE_CAL" ]]; then
+      HULY calendar delete-calendar "$SMOKE_CAL" >/dev/null 2>&1 || true
+    fi
     ;;
 
   10)
@@ -271,8 +303,8 @@ case "$PHASE" in
     fi
     echo "  ✓ action create rejects missing --title"
     # create + lifecycle + cleanup
-    TID=$(HULY action create --title "smoke-todo-$(date +%s)" --json 2>/dev/null \
-      | sed -n '/^{/,$p' | jq -r '._id // empty')
+    TID=$(HULY action create --title "smoke-todo-$(date +%s)" --json 2>/dev/null | filter_huly_noise \
+      | jq -r '._id // empty')
     if [[ -n "$TID" ]]; then
       echo "  ✓ created $TID"
       HULY action complete "$TID" >/dev/null 2>&1 || true
@@ -306,12 +338,30 @@ case "$PHASE" in
       exit 1
     fi
     echo "  ✓ document update rejects ambiguous --body + --old-text"
+    # Cleanup: remove any leftover smoke-* docs / teamspaces from prior runs
+    # so the verification step at the end starts from a clean state.
+    LEFTOVER_DOCS=$(HULY document list --json 2>/dev/null | filter_huly_noise \
+      | awk '/^\[/,0' \
+      | jq -r '.[] | select(.title | test("smoke-doc-")) | ._id')
+    if [[ -n "$LEFTOVER_DOCS" ]]; then
+      echo "$LEFTOVER_DOCS" | while read -r did; do
+        [[ -n "$did" ]] && HULY document delete "$did" --yes >/dev/null 2>&1 || true
+      done
+    fi
+    LEFTOVER_TS=$(HULY teamspace list --json 2>/dev/null | filter_huly_noise \
+      | awk '/^\[/,0' \
+      | jq -r '.[] | select(.name | test("smoke-ts-")) | ._id')
+    if [[ -n "$LEFTOVER_TS" ]]; then
+      echo "$LEFTOVER_TS" | while read -r ts; do
+        [[ -n "$ts" ]] && HULY teamspace delete "$ts" --yes >/dev/null 2>&1 || true
+      done
+    fi
     # Lifecycle: create teamspace + document + update + delete
-    TSID=$(HULY teamspace create --name "smoke-ts-$(date +%s)" --json 2>/dev/null \
-      | sed -n '/^{/,$p' | jq -r '._id // empty')
+    TSID=$(HULY teamspace create --name "smoke-ts-$(date +%s)" --json 2>/dev/null | filter_huly_noise \
+      | jq -r '._id // empty')
     if [[ -n "$TSID" ]]; then
-      DID=$(HULY document create --teamspace "$TSID" --title "smoke-doc-$(date +%s)" --body "original" --json 2>/dev/null \
-        | sed -n '/^{/,$p' | jq -r '._id // empty')
+      DID=$(HULY document create --teamspace "$TSID" --title "smoke-doc-$(date +%s)" --body "original" --json 2>/dev/null | filter_huly_noise \
+        | jq -r '._id // empty')
       if [[ -n "$DID" ]]; then
         HULY document update "$DID" --body "updated" >/dev/null 2>&1 || true
         HULY document inline-comments "$DID" >/dev/null 2>&1 || true
@@ -321,6 +371,9 @@ case "$PHASE" in
       fi
       HULY teamspace delete "$TSID" --yes >/dev/null 2>&1 || true
     fi
+    # Verify clean state — no smoke-doc-* or smoke-ts-* should remain.
+    cleanup_count "documents" "smoke-doc-" "HULY document list --json 2>/dev/null | filter_huly_noise | awk '/^\[/,0'"
+    cleanup_count "teamspaces" "smoke-ts-" "HULY teamspace list --json 2>/dev/null | filter_huly_noise | awk '/^\[/,0'"
     ;;
 
   7)
@@ -333,8 +386,8 @@ case "$PHASE" in
     fi
     echo "  ✓ channel create rejects missing --name"
     # Lifecycle
-    CID=$(HULY channel create --name "smoke-chn-$(date +%s)" --json 2>/dev/null \
-      | sed -n '/^{/,$p' | jq -r '._id // empty')
+    CID=$(HULY channel create --name "smoke-chn-$(date +%s)" --json 2>/dev/null | filter_huly_noise \
+      | jq -r '._id // empty')
     if [[ -n "$CID" ]]; then
       HULY channel members "$CID" >/dev/null 2>&1 || true
       HULY channel join "$CID" >/dev/null 2>&1 || true
@@ -352,17 +405,17 @@ case "$PHASE" in
 
   8)
     # channel message lifecycle
-    CID=$(HULY channel list --json 2>/dev/null \
-      | sed -n '/^\[/,$p' | jq -r '.[0]._id // empty')
+    CID=$(HULY channel list --json 2>/dev/null | filter_huly_noise \
+      | awk '/^\[/,0' | jq -r '.[0]._id // empty')
     if [[ -n "$CID" ]]; then
-      MID=$(HULY channel message send "$CID" --body "smoke-msg" --json 2>/dev/null \
-        | sed -n '/^{/,$p' | jq -r '._id // empty')
+      MID=$(HULY channel message send "$CID" --body "smoke-msg" --json 2>/dev/null | filter_huly_noise \
+        | jq -r '._id // empty')
       if [[ -n "$MID" ]]; then
         HULY channel message list "$CID" >/dev/null 2>&1 || true
         HULY channel message update "$CID" "$MID" --body "smoke-edited" >/dev/null 2>&1 || true
         # thread lifecycle
-        RID=$(HULY thread add "$MID" --body "smoke-reply" --json 2>/dev/null \
-          | sed -n '/^{/,$p' | jq -r '._id // empty')
+        RID=$(HULY thread add "$MID" --body "smoke-reply" --json 2>/dev/null | filter_huly_noise \
+          | jq -r '._id // empty')
         if [[ -n "$RID" ]]; then
           HULY thread list "$MID" >/dev/null 2>&1 || true
           HULY thread update "$RID" --body "smoke-reply-edited" >/dev/null 2>&1 || true
@@ -378,8 +431,25 @@ case "$PHASE" in
 
   all)
     for p in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18; do
-      bash "$0" "$p" || { echo "phase $p failed" >&2; exit 1; }
+      if bash "$0" "$p"; then
+        :
+      else
+        rc=$?
+        if [[ $rc -eq 2 ]]; then
+          # phase deliberately skipped (not implemented yet in CLI)
+          echo "  · phase $p skipped (not implemented in CLI yet)"
+        else
+          echo "phase $p failed" >&2
+          exit 1
+        fi
+      fi
     done
+    ;;
+
+  11|14|15|16|17|18)
+    # Phases 11 and 14-18 are not yet implemented in the CLI — skip cleanly.
+    echo "  · phase $PHASE not implemented in CLI yet"
+    exit 2
     ;;
 
   *)

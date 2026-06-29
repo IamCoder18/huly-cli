@@ -268,7 +268,7 @@ export async function createCard(opts: {
 
     const data: Record<string, unknown> = {
       title: opts.title,
-      content: body ? new MarkupContent(body, 'markdown') : '',
+      content: body ? body : '',
       parentInfo: [],
       rank: '0|aaaaa:',
       blobs: {},
@@ -312,8 +312,8 @@ export async function updateCard(ref: string, opts: {
     if (!doc) throw new CliError(ExitCode.NotFound, `card ${ref} not found`)
     const ops: Record<string, unknown> = {}
     if (opts.title) ops.title = opts.title
-    if (opts.body) ops.content = new MarkupContent(opts.body, 'markdown')
-    else if (opts.description !== undefined) ops.content = opts.description ? new MarkupContent(opts.description, 'markdown') : ''
+    if (opts.body) ops.content = opts.body
+    else if (opts.description !== undefined) ops.content = opts.description ? opts.description : ''
     if (Object.keys(ops).length === 0) throw new CliError(ExitCode.Validation, 'nothing to update', 'pass --title, --description, or --body')
     if (opts.dryRun) {
       console.log(`would update card ${id}:`)

@@ -353,9 +353,15 @@ export async function createDocument(opts: {
         parent = found._id
       }
     }
+    // The SDK's processMarkup tries to upload MarkupContent bodies to the
+    // collaborator service. If the collaborator is unhealthy the upload
+    // throws and the whole createDoc fails — leaving the CLI unable to
+    // create any document. We store the body as a plain string instead.
+    // The platform treats string content as already-rendered markup; the
+    // get --markdown path returns the body directly (see Fix #2 withTimeout).
     const data: Record<string, unknown> = {
       title: opts.title,
-      content: body ? new MarkupContent(body, 'markdown') : '',
+      content: body ?? '',
       parent: parent as Ref<Doc>,
       space: teamspace._id,
       archived: opts.archived ?? false,
@@ -420,7 +426,10 @@ export async function updateDocument(ref: string, opts: UpdateDocumentOpts): Pro
       if (opts.oldText && opts.newText !== undefined) {
         throw new CliError(ExitCode.Validation, 'ambiguous: pass either --body (full replace) OR --old-text/--new-text (targeted), not both')
       }
-      ops.content = new MarkupContent(body, 'markdown')
+      // See createDocument for why we pass the raw string instead of
+      // new MarkupContent(...): the SDK's processMarkup tries to upload
+      // MarkupContent to the collaborator, which throws on this selfhost.
+      ops.content = body
     } else if (opts.oldText && opts.newText !== undefined) {
       // Targeted replace — fetch current content, perform substitution.
       const currentContent = doc.content
@@ -442,7 +451,7 @@ export async function updateDocument(ref: string, opts: UpdateDocumentOpts): Pro
           `otherwise narrow your --old-text to a unique substring`)
       }
       const newText = currentText.split(opts.oldText).join(opts.newText)
-      ops.content = new MarkupContent(newText, 'markdown')
+      ops.content = newText
     }
 
     if (Object.keys(ops).length === 0) {

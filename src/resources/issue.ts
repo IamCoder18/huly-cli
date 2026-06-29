@@ -336,7 +336,7 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
       data.project = (project._id as unknown) as Ref<Project>
     }
 
-    if (body) data.description = new MarkupContent(body, 'markdown')
+    if (body) data.description = body
 
     if (opts.dryRun) {
       console.log('would create issue:')

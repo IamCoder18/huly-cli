@@ -94,7 +94,7 @@ export async function addComment(opts: {
         issueId,
         CLASS.Issue,
         'comments',
-        { message: new MarkupContent(body, 'markdown') } as any
+        { message: body } as any
       ),
       opts
     )
@@ -133,7 +133,7 @@ export async function updateComment(ref: string, opts: {
         CLASS.ChatMessage as Ref<Class<ChatMessage>>,
         (comment as Doc).space as Ref<Doc>,
         commentId as Ref<Doc>,
-        { message: new MarkupContent(body, 'markdown'), editedOn: Date.now() } as any
+        { message: body, editedOn: Date.now() } as any
       ),
       opts
     )

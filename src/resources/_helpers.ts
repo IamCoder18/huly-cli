@@ -287,9 +287,9 @@ export async function readBodyText(opts: { body?: string; bodyFile?: string }): 
   return opts.body
 }
 
-export function wrapBody(body: string | undefined): InstanceType<typeof MarkupContent> | undefined {
+export function wrapBody(body: string | undefined): string | undefined {
   if (!body) return undefined
-  return new MarkupContent(body, 'markdown')
+  return body
 }
 
 export async function resolveByTitle<T extends Doc>(

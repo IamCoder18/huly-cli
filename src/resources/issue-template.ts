@@ -87,7 +87,7 @@ export async function createIssueTemplate(opts: {
     }
     const data: Record<string, unknown> = {
       title: opts.title,
-      description: description ? new MarkupContent(description, 'markdown') : '',
+      description: description ? description : '',
       space: project._id,
       children: []
     }
@@ -120,8 +120,8 @@ export async function updateIssueTemplate(ref: string, opts: { title?: string; d
     if (!doc) throw new CliError(ExitCode.NotFound, `issue-template ${ref} not found`)
     const ops: Record<string, unknown> = {}
     if (opts.title) ops.title = opts.title
-    if (opts.body) ops.description = new MarkupContent(opts.body, 'markdown')
-    else if (opts.description !== undefined) ops.description = opts.description ? new MarkupContent(opts.description, 'markdown') : ''
+    if (opts.body) ops.description = opts.body
+    else if (opts.description !== undefined) ops.description = opts.description ? opts.description : ''
     if (Object.keys(ops).length === 0) throw new CliError(ExitCode.Validation, 'nothing to update', 'pass --title, --description, or --body')
     if (opts.dryRun) {
       console.log(`would update issue-template ${id}:`)

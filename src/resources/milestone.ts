@@ -75,7 +75,7 @@ export async function createMilestone(opts: {
     const targetDate = opts.targetDate ? parseDate(opts.targetDate, '--target-date') : Date.now() + 30 * 24 * 3600 * 1000
     const data: Record<string, unknown> = {
       label: opts.label,
-      description: opts.description ? new MarkupContent(opts.description, 'markdown') : '',
+      description: opts.description ? opts.description : '',
       status: 'planned',
       targetDate,
       space: project._id,
@@ -120,7 +120,7 @@ export async function updateMilestone(ref: string, opts: {
     if (!doc) throw new CliError(ExitCode.NotFound, `milestone ${ref} not found`)
     const ops: Record<string, unknown> = {}
     if (opts.label) ops.label = opts.label
-    if (opts.description !== undefined) ops.description = opts.description ? new MarkupContent(opts.description, 'markdown') : ''
+    if (opts.description !== undefined) ops.description = opts.description ? opts.description : ''
     if (opts.targetDate) ops.targetDate = parseDate(opts.targetDate, '--target-date')
     if (opts.status) ops.status = opts.status
     if (Object.keys(ops).length === 0) throw new CliError(ExitCode.Validation, 'nothing to update', 'pass --label/--description/--target-date/--status')

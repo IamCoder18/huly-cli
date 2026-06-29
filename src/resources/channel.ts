@@ -388,7 +388,7 @@ export async function sendChannelMessage(ref: string, opts: {
   try {
     const channel = await resolveChannel(client, ref)
     const data: Record<string, unknown> = {
-      message: new MarkupContent(body, 'markdown')
+      message: body
     }
     if (opts.dryRun) {
       console.log('would send channel message:')
@@ -421,7 +421,7 @@ export async function updateChannelMessage(ref: string, messageId: string, opts:
     const msg = await client.findOne(CHAT_MESSAGE_CLASS, { _id: messageId as Ref<ChatMessage> })
     if (!msg) throw new CliError(ExitCode.NotFound, `message ${messageId} not found`)
     const data: Record<string, unknown> = {
-      message: new MarkupContent(body, 'markdown'),
+      message: body,
       editedOn: Date.now()
     }
     if (opts.dryRun) {
@@ -515,7 +515,7 @@ export async function addThreadReply(targetId: string, opts: {
     const parent = await client.findOne(CHAT_MESSAGE_CLASS, { _id: targetId as Ref<ChatMessage> })
     if (!parent) throw new CliError(ExitCode.NotFound, `target message ${targetId} not found`)
     const data: Record<string, unknown> = {
-      message: new MarkupContent(body, 'markdown')
+      message: body
     }
     if (opts.dryRun) {
       console.log('would add thread reply:')
@@ -553,7 +553,7 @@ export async function updateThreadReply(replyId: string, opts: {
   try {
     const reply = await client.findOne('chunter:class:ThreadMessage' as Ref<Class<ChatMessage>>, { _id: replyId as Ref<ChatMessage> })
     if (!reply) throw new CliError(ExitCode.NotFound, `thread reply ${replyId} not found`)
-    const data: Record<string, unknown> = { message: new MarkupContent(body, 'markdown'), editedOn: Date.now() }
+    const data: Record<string, unknown> = { message: body, editedOn: Date.now() }
     if (opts.dryRun) {
       console.log(`would update thread reply ${replyId}:`)
       console.log(JSON.stringify({ _class: 'chunter:class:ThreadMessage', space: reply.space, ops: data }, null, 2))
@@ -727,7 +727,7 @@ export async function sendDmMessage(dmRef: string, opts: {
     })
     const dm = await client.findOne(DM_CLASS, { _id: dmId as Ref<DirectMessage> })
     if (!dm) throw new CliError(ExitCode.NotFound, `DM ${dmRef} not found`)
-    const data: Record<string, unknown> = { message: new MarkupContent(body, 'markdown') }
+    const data: Record<string, unknown> = { message: body }
     if (opts.dryRun) {
       console.log('would send DM:')
       console.log(JSON.stringify({ _class: CHAT_MESSAGE_CLASS, space: dm.space, attachedTo: dmId, attachedToClass: DM_CLASS, collection: 'messages', data }, null, 2))

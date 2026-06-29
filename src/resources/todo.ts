@@ -217,8 +217,8 @@ export async function createAction(opts: CreateActionOpts): Promise<void> {
   if (!opts.title) throw new CliError(ExitCode.Validation, 'missing --title')
   const body = await readBodyText(opts)
   const description = body
-    ? new MarkupContent(body, 'markdown')
-    : (opts.description ? new MarkupContent(opts.description, 'markdown') : '')
+    ? body
+    : (opts.description ? opts.description : '')
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const account = await client.getAccount()
@@ -300,8 +300,8 @@ export async function updateAction(ref: string, opts: UpdateActionOpts): Promise
 
     const ops: Record<string, unknown> = {}
     if (opts.title) ops.title = opts.title
-    if (opts.body) ops.description = new MarkupContent(opts.body, 'markdown')
-    else if (opts.description !== undefined) ops.description = opts.description ? new MarkupContent(opts.description, 'markdown') : ''
+    if (opts.body) ops.description = opts.body
+    else if (opts.description !== undefined) ops.description = opts.description ? opts.description : ''
     if (opts.due) ops.dueDate = parseDate(opts.due, '--due')
     if (opts.priority) {
       if (!TODO_PRIORITIES.has(opts.priority)) {

@@ -68,7 +68,7 @@ export async function createComponent(opts: {
     const project = await resolveProjectForCommand(client, opts.project)
     const data: Record<string, unknown> = {
       label: opts.label,
-      description: opts.description ? new MarkupContent(opts.description, 'markdown') : '',
+      description: opts.description ? opts.description : '',
       lead: null,
       space: project._id
     }
@@ -101,7 +101,7 @@ export async function updateComponent(ref: string, opts: { label?: string; descr
     if (!doc) throw new CliError(ExitCode.NotFound, `component ${ref} not found`)
     const ops: Record<string, unknown> = {}
     if (opts.label) ops.label = opts.label
-    if (opts.description !== undefined) ops.description = opts.description ? new MarkupContent(opts.description, 'markdown') : ''
+    if (opts.description !== undefined) ops.description = opts.description ? opts.description : ''
     if (Object.keys(ops).length === 0) throw new CliError(ExitCode.Validation, 'nothing to update', 'pass --label or --description')
     if (opts.dryRun) {
       console.log(`would update component ${id}:`)
