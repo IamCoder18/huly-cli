@@ -980,3 +980,51 @@ to `master-tag list` for tag discovery.
 - **All fixes kept local on `fix/server-issues-2026-06` branch per
   user request.**
 
+
+## 24. Why workspace delete requires `--force`
+
+The CLI guards against accidentally deleting the workspace you're currently
+operating in. The check (in `src/resources/workspace.ts:124-130`):
+
+```ts
+if (!opts.force && (env.workspace || target === (env.workspace ?? active))) {
+  throw new CliError(
+    ExitCode.Validation,
+    `cannot delete workspace ${target} while it is the active --workspace/HULY_WORKSPACE`,
+    'unset HULY_WORKSPACE and run `huly workspace use <other>` first, or pass --force'
+  )
+}
+```
+
+`workspace delete` marks the workspace `pending-deletion` and the worker
+eventually drops all data (Issue, Component, Calendar, etc.). Deleting the
+active workspace would brick every subsequent CLI command — there's no
+recovery. `--force` is the explicit "yes, I really mean it" override.
+
+### When --force is required
+
+| Scenario | --force needed? |
+|---|---|
+| Delete a non-active workspace (env unset, active different) | No |
+| Delete workspace matching `HULY_WORKSPACE` env var | Yes |
+| Delete workspace matching `~/.config/huly/active-workspace` | Yes |
+| Delete the workspace passed via `--workspace <target>` | Yes |
+| Delete via SDK directly (`connectAccountCli()`) | N/A (SDK has no such guard) |
+
+### Quirk in resolution logic
+
+`target = opts.workspace ?? env.workspace ?? active` — if user passes
+`--workspace OTHER workspace delete Y`, target resolves to `OTHER` (not Y).
+Not the user's intent but not the question you asked. Left as-is for
+later cleanup.
+
+### Connection to the C6/C7 fix
+
+Before the C6/C7 fix, `connectAccountCli()` was sending the **account
+token** (no `workspace` field) because the workspace resolution didn't
+fall back to `active-workspace`. The server's `deleteWorkspace` decoded
+`workspace=undefined` → `getWorkspaceRole(undefined, ...)` returned null
+→ Forbidden. The fix: `connectAccountCli` now uses workspace token from
+cache, the server correctly decodes workspace from the token, role lookup
+succeeds, deletion works. `--force` was already correctly implemented;
+only the auth path was broken.
