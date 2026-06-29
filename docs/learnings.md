@@ -779,7 +779,16 @@ If the session gets cut short, write or update HANDOVER.md. The next session sho
 
 The SDK's `processMarkup` (in `node_modules/@hcengineering/api-client/lib/client.js`) tries to upload any `MarkupContent` instance to the collaborator service. The collaborator throws on this selfhost, breaking every CLI command that creates a doc/comment/channel-message etc. with a body.
 
-**Workaround applied in this session (unverified):** Python script in `HANDOVER.md` replaced `new MarkupContent(X, 'markdown')` with `X` (raw string) in 9 resource files. The SDK's processMarkup's else branch passes strings through. Trade-off: `get --markdown` won't be able to convert markup ref → text (it'll show the raw string).
+**Workaround (verified):** Replaced `new MarkupContent(X, 'markdown')` with `X` (raw string) in 9 resource files. The SDK's processMarkup's else branch passes strings through.
+
+**Verified behavior (2026-06-29):**
+- Write path: `huly document create --body "..."` works cleanly (smoke phase 6 passes)
+- Read path no flag: `huly document get <id>` returns the table view (no body shown — table view omits `content`)
+- Read path `--markdown`: `huly document get <id> --markdown` prints the raw body string correctly. Tested: created doc with body `"hello world body content"`, ran `get --markdown`, got back the same string.
+
+**Why read still works:** `fetchMarkup` expects a markup ref, but `getDocument`'s catch fallback (`String(doc.content)`) handles non-ref content by just stringifying it. So `--markdown` becomes "print the body as-is". No regression in practice for our workflow where bodies are always raw strings.
+
+**Caveat:** If a legacy document was created via the web UI (with a real markup ref pointing to a y-doc), `get --markdown` on it would print the ref string instead of resolving it. But this selfhost has no such legacy docs (only CLI-created ones).
 
 **Proper fix (not done):** apply the same 3s timeout fix from `getContent` to `createMarkup` in `~/platform/server/collaborator/src/rpc/methods/` (look for the file that handles `createMarkup` RPC). Then revert the MarkupContent → string refactor.
 
