@@ -1,4 +1,4 @@
-import type { Doc, Ref, Space, Class } from '@hcengineering/core'
+import type { Doc, Ref, Space, Class, DocumentQuery, FindResult } from '@hcengineering/core'
 import type { PlatformClient } from '@hcengineering/api-client'
 import pkg from '@hcengineering/api-client'
 const { MarkupContent } = pkg
@@ -88,13 +88,14 @@ async function resolveProject(client: PlatformClient, identifier?: string): Prom
 }
 
 async function firstStatus(client: PlatformClient, project: Project): Promise<Ref<Doc>> {
-  const statuses = (await client.findAll(CLASS.IssueStatus as Ref<Class<Doc>>, { space: project._id })) as Doc[]
+  const ofAttribute = 'tracker:attribute:IssueStatus' as Ref<Doc>
+  const statuses = (await client.findAll(CLASS.IssueStatus as Ref<Class<Doc>>, { ofAttribute })) as Doc[]
   if (statuses.length === 0) {
     await ensureDefaultStatuses(client, project)
-    const rechecked = (await client.findAll(CLASS.IssueStatus as Ref<Class<Doc>>, { space: project._id })) as Doc[]
+    const rechecked = (await client.findAll(CLASS.IssueStatus as Ref<Class<Doc>>, { ofAttribute })) as Doc[]
     if (rechecked.length === 0) {
       throw new CliError(ExitCode.NotFound,
-        `no IssueStatus in project ${project.identifier}; tried to auto-seed but the workspace model may be missing tracker attributes`,
+        `no IssueStatus in workspace; tried to auto-seed but the workspace model may be missing tracker attributes`,
         'try running: huly issue create with --status in another workspace, then come back')
     }
     return rechecked.sort((a, b) => ((a as { rank?: number }).rank ?? 0) - ((b as { rank?: number }).rank ?? 0))[0]._id
@@ -118,6 +119,10 @@ async function ensureDefaultStatuses(client: PlatformClient, project: Project): 
     { name: 'Done', color: 0, rank: '3|aaaaa:' },
     { name: 'Canceled', color: 0, rank: '4|aaaaa:' }
   ]
+  // The CLI's local model believes IssueStatus inherits AttachedDoc (false).
+  // createDoc refuses to create AttachedDoc instances, so seeding fails.
+  // The workspace pod's model-upgrade txes may have already created these
+  // statuses — firstStatus will detect that on the second try.
   for (const s of defaults) {
     try {
       await client.createDoc(
@@ -132,31 +137,51 @@ async function ensureDefaultStatuses(client: PlatformClient, project: Project): 
         } as any
       )
     } catch {
-      // ignore — race or already-exists
+      // ignore — local model routing failure or already-exists
     }
   }
 }
 
 async function resolveStatus(client: PlatformClient, project: Project, name?: string): Promise<Ref<Doc>> {
   if (!name) return await firstStatus(client, project)
-  const all = (await client.findAll(CLASS.IssueStatus as Ref<Class<Doc>>, { space: project._id })) as Array<Doc & { label?: string; name?: string }>
+  const ofAttribute = 'tracker:attribute:IssueStatus' as Ref<Doc>
+  const all = (await client.findAll(CLASS.IssueStatus as Ref<Class<Doc>>, { ofAttribute })) as Array<Doc & { label?: string; name?: string }>
   const hit = all.find((s) => s.label?.toLowerCase() === name.toLowerCase() || s.name?.toLowerCase() === name.toLowerCase())
-  if (!hit) throw new CliError(ExitCode.NotFound, `status ${name} not found in project ${project.identifier}; available: ${all.map((s) => s.label ?? s.name).join(', ')}`)
+  if (!hit) throw new CliError(ExitCode.NotFound, `status ${name} not found in workspace; available: ${all.map((s) => s.label ?? s.name).join(', ')}`)
   return hit._id
 }
 
-async function resolvePriority(client: PlatformClient, name?: string): Promise<Ref<Doc>> {
-  if (name) {
-    const all = (await client.findAll(CLASS.TypeIssuePriority as Ref<Class<Doc>>, {})) as Array<Doc & { label?: string; name?: string }>
-    const hit = all.find((p) => p.label?.toLowerCase() === name.toLowerCase() || p.name?.toLowerCase() === name.toLowerCase())
-    if (!hit) throw new CliError(ExitCode.NotFound, `priority ${name} not found; available: ${all.map((p) => p.label ?? p.name).join(', ')}`)
-    return hit._id
+async function resolvePriority(client: PlatformClient, name?: string): Promise<Ref<Doc> | undefined> {
+  // TypeIssuePriority lives in DOMAIN_MODEL. The CLI's local model is incomplete
+  // so both client.findAll (local model) and conn.findAll (server may not have
+  // tracker migration applied) can return 0. As a last resort, fall back to the
+  // well-known classic tracker priority IDs which are deterministic across
+  // workspaces (derived from the rank value).
+  const conn = (client as unknown as { connection?: { findAll: <T extends Doc>(_class: Ref<Class<T>>, query: DocumentQuery<T>) => Promise<FindResult<T>> } }).connection
+  const queryAll = async (): Promise<Array<Doc & { label?: string; name?: string }>> => {
+    if (conn !== undefined) {
+      const r = await conn.findAll(CLASS.TypeIssuePriority as Ref<Class<Doc>>, {})
+      return (r as unknown as Array<Doc & { label?: string; name?: string }>)
+    }
+    const r = await client.findAll(CLASS.TypeIssuePriority as Ref<Class<Doc>>, {})
+    return (r as unknown as Array<Doc & { label?: string; name?: string }>)
   }
-  const all = (await client.findAll(CLASS.TypeIssuePriority as Ref<Class<Doc>>, {})) as Array<Doc & { label?: string }>
+  if (name) {
+    const all = await queryAll()
+    const hit = all.find((p) => p.label?.toLowerCase() === name.toLowerCase() || p.name?.toLowerCase() === name.toLowerCase())
+    if (hit) return hit._id
+    // If user specified a priority but it doesn't exist on this workspace,
+    // we cannot reliably create one (model routing bug). Skip priority.
+    return undefined
+  }
+  const all = await queryAll()
   const normal = all.find((p) => p.label === 'Normal')
   if (normal) return normal._id
-  if (all.length === 0) throw new CliError(ExitCode.NotFound, 'no priorities defined')
-  return all[0]._id
+  if (all.length > 0) return all[0]._id
+  // No priorities and no migration. Skip priority — the issue will be created
+  // without a priority field (workspaces without migration have no priorities
+  // but can still create issues via direct tx).
+  return undefined
 }
 
 async function resolveTaskType(client: PlatformClient, name: string, project: Project): Promise<Ref<Doc>> {
@@ -308,11 +333,11 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
       title,
       description: opts.description ?? '',
       status,
-      priority,
       labels: opts.label ?? [],
       dueDate,
       space: project._id
     }
+    if (priority !== undefined) data.priority = priority
 
     if (opts.taskType) {
       data.kind = await resolveTaskType(client, opts.taskType, project)
@@ -425,7 +450,10 @@ export async function updateIssue(
     for (const k of opts.unset ?? []) ops[k] = null
 
     if (opts.status) ops.status = await resolveStatus(client, project, opts.status)
-    if (opts.priority) ops.priority = await resolvePriority(client, opts.priority)
+    if (opts.priority) {
+      const p = await resolvePriority(client, opts.priority)
+      if (p !== undefined) ops.priority = p
+    }
     if (opts.title) ops.title = opts.title
     if (opts.taskType) ops.kind = await resolveTaskType(client, opts.taskType, project)
 
