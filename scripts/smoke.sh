@@ -156,11 +156,29 @@ case "$PHASE" in
     ;;
 
   3)
-    step "component list (--project)" HULY component list --project "$HULY_PROJECT" 2>/dev/null || true
-    step "milestone list (--project)" HULY milestone list --project "$HULY_PROJECT" 2>/dev/null || true
-    step "issue-template list (--project)" HULY issue-template list --project "$HULY_PROJECT" 2>/dev/null || true
+    # Capture pre-test counts (these list calls may legitimately return 0).
+    step "component list (--project)" HULY component list --project "$HULY_PROJECT" --json 2>/dev/null || true
+    step "milestone list (--project)" HULY milestone list --project "$HULY_PROJECT" --json 2>/dev/null || true
+    step "issue-template list (--project)" HULY issue-template list --project "$HULY_PROJECT" --json 2>/dev/null || true
     # preview-delete accepts any ref; pass a fake one and assert graceful behaviour
     step "issue preview-delete (no-op on bogus)" sh -c 'HULY issue preview-delete "$HULY_PROJECT-bogus" >/dev/null 2>&1 || true; echo done'
+    # Create+list roundtrip test for sub-resources. As of 2026-06-29 the
+    # server has a bug where component create returns an _id but the list
+    # doesn't find it (see docs/issues.md §1.1 / C2 in open-issues.md).
+    # Track this as a known failure — phase still passes with a notice.
+    COMP_ID=$(HULY component create --project "$HULY_PROJECT" --label "smoke-p3-comp-$(date +%s)" --json 2>/dev/null | filter_huly_noise | jq -r '._id // empty')
+    if [[ -z "$COMP_ID" ]]; then
+      echo "  ⚠ component create returned no _id (skipped roundtrip test)"
+    else
+      COMP_LIST=$(HULY component list --project "$HULY_PROJECT" --json 2>/dev/null | filter_huly_noise | jq -r --arg id "$COMP_ID" '.[] | select(._id == $id) | ._id' 2>/dev/null)
+      if [[ "$COMP_LIST" == "$COMP_ID" ]]; then
+        echo "  ✓ component create→list roundtrip works"
+        HULY component delete "$COMP_ID" --yes >/dev/null 2>&1 || true
+      else
+        echo "  ⚠ KNOWN BUG: component $COMP_ID created but not found in list (server-side C2 bug)"
+        echo "  → tracked in docs/open-issues.md#C2 (server: sub-resource create not queryable)"
+      fi
+    fi
     ;;
 
   4)
