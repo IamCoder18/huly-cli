@@ -217,12 +217,17 @@ Examples:
     .action(async (opts, cmd) => {
       try { await listMembers({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
-  ws.command('member <account>').description('Update a member\'s role (account uuid or email)')
+  // N2: alias `member add` for consistency with channel.add-member.
+  // (No `member remove` — the SDK has no remove-member API; users must
+  // leave the workspace via huly workspace leave.)
+  const wsMember = ws.command('member').description('Manage a single member (alias for `workspace member`)')
+  wsMember.command('add <account>').description('Add or change a member\'s role (requires OWNER)')
     .requiredOption('--role <r>', 'Owner|Admin|Guest|ReadOnlyGuest|DocGuest')
     .addHelpText('after', `
 Examples:
-  $ huly workspace member alice@example.com --role MAINTAINER
-  $ huly workspace member 86d46120-594e-4c10-8996-821ac2a7001a --role GUEST`)
+  $ huly workspace member add alice@example.com --role MAINTAINER
+  $ huly workspace member add bob@example.com --role GUEST
+  $ huly workspace member add 86d46120-594e-4c10-8996-821ac2a7001a --role OWNER`)
     .action(async (account, opts, cmd) => {
       try { await updateMemberRole({ ...opts, target: account, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
@@ -246,7 +251,10 @@ Examples:
 Examples:
   $ huly workspace guests --read-only true
   $ huly workspace guests --sign-up false --read-only true
-  $ huly workspace guests --sign-up true`)
+  $ huly workspace guests --sign-up true
+
+Note: 'guests' (plural) is for workspace-level guest *settings*.
+For individual guest role assignment, use \`huly workspace member add --role GUEST\`.`)
     .action(async (opts, cmd) => {
       try {
         const readOnly = opts.readOnly === undefined ? undefined : opts.readOnly !== 'false' && opts.readOnly !== '0'
@@ -274,20 +282,37 @@ Examples:
     })
 
   const user = program.command('user').description('Manage user profile')
-  user.command('get').description('Show the current user profile (or `--ref <id>`)')
-    .option('--ref <id>')
-    .action(async (opts, cmd) => {
-      try { await getUser({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+  // N7: harmonize ref spec — accept positional <ref> OR --ref flag (matches project get).
+  user.command('get [ref]').description('Show user profile (current user by default, or by ref/uuid)')
+    .option('--ref <id>', 'account uuid (overrides positional ref)')
+    .addHelpText('after', `
+Examples:
+  $ huly user get                      # current user profile
+  $ huly user get --ref 86d46120-594e-4c10-8996-821ac2a7001a
+  $ huly user get 86d46120-594e-4c10-8996-821ac2a7001a  # positional form (N7)`)
+    .action(async (ref, opts, cmd) => {
+      try { await getUser({ ...opts, ref, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
   user.command('update').description('Update current user profile')
     .option('--name <name>')
     .option('--bio <text>')
     .option('--city <city>')
     .option('--country <country>')
+    .addHelpText('after', `
+Examples:
+  $ huly user update --city "Berlin"
+  $ huly user update --bio "New bio" --country "DE"`)
     .action(async (opts, cmd) => {
       try { await updateUser({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
-  user.command('find <email>').description('Look up a user by email (requires server permission)')
+  user.command('find <email>').description('Look up a user by email (account-level or workspace-local)')
+    .addHelpText('after', `
+Examples:
+  $ huly user find alice@example.com
+  $ huly user find alice@example.com --json
+
+Resolution order: accountClient.findPersonBySocialKey → workspace-local
+Person scan by name. Either may fail if the user is not in your workspace.`)
     .action(async (email, _o, cmd) => {
       try { await findUser(email, globalsFrom(cmd)) } catch (e) { handleError(e) }
     })
@@ -796,14 +821,38 @@ Examples:
   dm.command('create').description('Create a DM (with --person or --members)')
     .option('--person <email>')
     .option('--members <email...>')
+    .addHelpText('after', `
+Examples:
+  $ huly dm create --person alice@example.com
+  $ huly dm create --members alice@.. bob@..   # group DM`)
     .action(async (opts, cmd) => {
       try { await createDm({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
-  dm.command('messages <dm>').description('List messages in a DM')
+  // N1: dm.message mirrors channel.message (consistent nesting). The flat
+  // 'dm messages' and 'dm send' commands remain as backward-compatible aliases.
+  const dmMsg = dm.command('message').description('Manage messages within a DM (alias for `dm messages`/`dm send`)')
+  dmMsg.command('list <dm>').description('List messages in a DM')
     .action(async (dm, opts, cmd) => {
       try { await listDmMessages(dm, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
-  dm.command('send <dm>').description('Send a DM message (or to <email> via --person)')
+  dmMsg.command('send <dm>').description('Send a DM message (or to <email> via --person)')
+    .option('--body <md>')
+    .option('--body-file <path>')
+    .option('--person <email>', 'recipient email (auto-creates DM if needed)')
+    .addHelpText('after', `
+Examples:
+  $ huly dm message send <dmId> --body "hello"
+  $ huly dm message send placeholder --person alice@.. --body "hi"
+  $ huly dm message list <dmId>`)
+    .action(async (dm, opts, cmd) => {
+      try { await sendDmMessage(dm, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  // Backward-compatible flat commands (deprecated; use dm message <verb>)
+  dm.command('messages <dm>').description('[alias] List messages in a DM (use `dm message list`)')
+    .action(async (dm, opts, cmd) => {
+      try { await listDmMessages(dm, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
+  dm.command('send <dm>').description('[alias] Send a DM message (use `dm message send`)')
     .option('--body <md>')
     .option('--body-file <path>')
     .option('--person <email>', 'recipient email (auto-creates DM if needed)')
@@ -856,11 +905,21 @@ Examples:
     .command('create')
     .description('Create a card (requires --master-tag)')
     .requiredOption('--title <t>')
-    .requiredOption('--master-tag <ref>')
-    .option('--card-space <ref>', 'defaults to card:space:Default')
+    .requiredOption('--master-tag <name|ref>', 'master-tag name (e.g. "Task") or _id')
+    .option('--card-space <ref>', 'card space; defaults to card:space:Default')
     .option('--description <text>')
     .option('--body <md>')
     .option('--body-file <path>')
+    .addHelpText('after', `
+Examples:
+  $ huly card create --title "My card" --master-tag "Task"
+  $ huly card create --title "..." --master-tag card:master-tag.Task \\
+      --card-space card:space:Default --body-file ./spec.md
+
+N9: --master-tag is REQUIRED. First-time setup usually requires creating a
+master-tag via the web UI (the CLI doesn't expose master-tag creation).
+
+List available tags with \`huly master-tag list\`.`)
     .action(async (opts, cmd) => {
       try { await createCard({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
@@ -1020,12 +1079,24 @@ Examples:
   doc.command('delete <ref...>').description('Delete documents').action(async (refs, opts, cmd) => {
     try { await deleteDocuments(refs, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
   })
-  doc.command('snapshots <ref>').description('List snapshots for a document')
+  doc.command('snapshots <ref>').description('List all snapshots for a document')
+    .addHelpText('after', `
+Examples:
+  $ huly document snapshots <docRef>
+  $ huly document snapshots <docRef> --json
+
+Use \`document snapshot --snapshot-id <id>\` to fetch a specific snapshot.`)
     .action(async (ref, opts, cmd) => {
       try { await listSnapshots(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
-  doc.command('snapshot <ref>').description('Get a specific snapshot')
+  doc.command('snapshot <ref>').description('Get a specific snapshot (by --snapshot-id)')
     .requiredOption('--snapshot-id <id>')
+    .addHelpText('after', `
+Examples:
+  $ huly document snapshot <docRef> --snapshot-id 6a41527f12a078ec98cf64d5
+  $ huly document snapshot <docRef> --snapshot-id 6a41527f12a078ec98cf64d5 --markdown
+
+N4: \`snapshot\` (singular) gets one; \`snapshots\` (plural) lists all.`)
     .action(async (ref, opts, cmd) => {
       try { await getSnapshot(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
@@ -1063,15 +1134,25 @@ Examples:
   })
 
   const cal = program.command('calendar').description('Manage calendar events, schedules, calendars'); withGlobalHelp(cal)
-  cal.command('calendars').description('List calendars')
+  // N5: 'calendars' (plural noun) lists CALENDAR OBJECTS; 'list' (verb) lists EVENTS.
+  // 'get' (verb) gets an EVENT. To fetch a calendar's metadata, use 'calendars --json'.
+  cal.command('calendars').description('List calendar objects (not events — see `calendar list` for events)')
+    .addHelpText('after', `
+Examples:
+  $ huly calendar calendars
+  $ huly calendar calendars --json | jq -r '.[].name'`)
     .action(async (_o, cmd) => {
       try { await listCalendars(globalsFrom(cmd)) } catch (e) { handleError(e) }
     })
   cal.command('create-calendar').description('Create a calendar')
     .requiredOption('--name <name>')
     .option('--description <text>')
-    .option('--private')
-    .option('--access <a>')
+    .option('--private', 'private calendar (members only)')
+    .option('--access <a>', 'owner|team|public')
+    .addHelpText('after', `
+Examples:
+  $ huly calendar create-calendar --name "Work"
+  $ huly calendar create-calendar --name "Personal" --private --access owner`)
     .action(async (opts, cmd) => {
       try { await createCalendar({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
@@ -1081,15 +1162,28 @@ Examples:
     })
   cal
     .command('list')
-    .description('List events')
-    .option('--start <iso>')
-    .option('--end <iso>')
-    .option('--calendar <id|name>')
+    .description('List EVENTS (not calendars — see `calendar calendars` for calendars)')
+    .option('--start <iso>', 'ISO 8601 start date filter')
+    .option('--end <iso>', 'ISO 8601 end date filter')
+    .option('--calendar <id|name>', 'filter to a specific calendar')
     .option('--limit <n>', 'limit', (v) => parseInt(v, 10))
+    .addHelpText('after', `
+Examples:
+  $ huly calendar list
+  $ huly calendar list --start 2026-06-01 --end 2026-06-30
+  $ huly calendar list --calendar "Work" --limit 20
+  $ huly calendar list --json | jq -r '.[] | "\(.title): \(.date)"'`)
     .action(async (opts, cmd) => {
       try { await listEvents({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
-  cal.command('get <ref>').description('Get an event')
+  cal.command('get <ref>').description('Get an EVENT (not a calendar)')
+    .addHelpText('after', `
+Examples:
+  $ huly calendar get <eventRef>
+  $ huly calendar get <eventRef> --markdown
+
+To fetch a calendar (the container, not an event inside it), use
+\`calendar calendars --json\` and grep for the calendar id.`)
     .action(async (ref, opts, cmd) => {
       try { await getEvent(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
