@@ -294,12 +294,21 @@ export async function updateCard(ref: string, opts: {
   title?: string
   description?: string
   body?: string
+  bodyFile?: string
   json?: boolean
   ci?: boolean
   dryRun?: boolean
   workspace?: string
   url?: string
 }): Promise<void> {
+  if (opts.body && opts.bodyFile) {
+    throw new CliError(ExitCode.Validation, 'ambiguous body input', 'pass only one of --body or --body-file')
+  }
+  let bodyFromFile: string | undefined
+  if (opts.bodyFile) {
+    const fs = await import('node:fs/promises')
+    bodyFromFile = (await fs.readFile(opts.bodyFile, 'utf8')).trim()
+  }
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const account = await client.getAccount()
@@ -313,8 +322,9 @@ export async function updateCard(ref: string, opts: {
     const ops: Record<string, unknown> = {}
     if (opts.title) ops.title = opts.title
     if (opts.body) ops.content = opts.body
+    else if (bodyFromFile !== undefined) ops.content = bodyFromFile
     else if (opts.description !== undefined) ops.content = opts.description ? opts.description : ''
-    if (Object.keys(ops).length === 0) throw new CliError(ExitCode.Validation, 'nothing to update', 'pass --title, --description, or --body')
+    if (Object.keys(ops).length === 0) throw new CliError(ExitCode.Validation, 'nothing to update', 'pass --title, --description, --body, or --body-file')
     if (opts.dryRun) {
       console.log(`would update card ${id}:`)
       console.log(JSON.stringify({ _class: CLASS.Card, objectId: id, space: doc.space, ops }, null, 2))

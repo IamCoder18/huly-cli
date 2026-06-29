@@ -88,8 +88,8 @@ export function globalsFrom(cmd: Command): GlobalOpts {
   return cmd.optsWithGlobals() as GlobalOpts
 }
 
-function attachGlobalOpts(cmd: Command): Command {
-  return cmd
+function attachGlobalOpts(cmd: Command, opts: { skipNonInteractive?: boolean } = {}): Command {
+  let c = cmd
     .option('--url <url>', 'Huly server URL')
     .option('--workspace <name>', 'workspace URL name or UUID')
     .option('--json', 'output JSON')
@@ -98,7 +98,10 @@ function attachGlobalOpts(cmd: Command): Command {
     .option('--dry-run', 'print intended tx, do not apply')
     .option('--minimal', 'minimal payload (no smart defaults)')
     .option('-y, --yes', 'skip confirmation prompts')
-    .option('--non-interactive', 'disable interactive prompts')
+  if (!opts.skipNonInteractive) {
+    c = c.option('--non-interactive', 'disable interactive prompts')
+  }
+  return c
 }
 
 function attachToChildren(cmd: Command): void {
@@ -646,9 +649,10 @@ export async function run(argv: string[] = process.argv): Promise<void> {
     .action(async (dm, opts, cmd) => {
       try { await listDmMessages(dm, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
-  dm.command('send <dm>').description('Send a DM message')
+  dm.command('send <dm>').description('Send a DM message (or to <email> via --person)')
     .option('--body <md>')
     .option('--body-file <path>')
+    .option('--person <email>', 'recipient email (auto-creates DM if needed)')
     .action(async (dm, opts, cmd) => {
       try { await sendDmMessage(dm, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
@@ -710,6 +714,7 @@ export async function run(argv: string[] = process.argv): Promise<void> {
     .option('--title <t>')
     .option('--description <text>')
     .option('--body <md>')
+    .option('--body-file <path>')
     .action(async (ref, opts, cmd) => {
       try { await updateCard(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
@@ -1059,5 +1064,6 @@ export async function run(argv: string[] = process.argv): Promise<void> {
     })
 
   attachToChildren(program)
+  attachGlobalOpts(program, { skipNonInteractive: true })
   await program.parseAsync(argv)
 }
