@@ -6,6 +6,8 @@ import { resolveRef } from '../transport/ref-resolver.js'
 import { shouldJson, json, table, kv } from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
+import { accountClient, resolveToken } from '../auth/client.js'
+import { readEnv } from '../auth/env.js'
 import type { GlobalOpts } from '../cli.js'
 
 type Person = Doc & {
@@ -124,12 +126,33 @@ export async function updateUser(opts: {
 }
 
 export async function findUser(email: string, opts: GlobalOpts = {}): Promise<void> {
-  // findPersonBySocialKey returns Forbidden on this selfhost; use a
-  // workspace-local Person scan (matches by name).
+  // Try account-level findPersonBySocialKey first (works after Fix #1).
+  // Fall back to workspace-local Person scan on Forbidden / error.
+  const env = readEnv()
+  const url = opts.url ?? env.url
+  try {
+    const token = await resolveToken({ email: env.email, url: opts.url })
+    const acc = await accountClient(url!, token)
+    const result = await withSpinner(
+      `Looking up ${email} (account)…`,
+      () => acc.findPersonBySocialKey(email, false),
+      opts
+    ) as { personUuid?: string } | undefined
+    if (result?.personUuid !== undefined) {
+      if (shouldJson({ json: opts.json, ci: opts.ci })) {
+        json({ email, personUuid: result.personUuid, source: 'account' })
+        return
+      }
+      console.log(`${email}\t${result.personUuid}`)
+      return
+    }
+  } catch {
+    // fall through to workspace scan
+  }
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const persons = (await withSpinner(
-      `Looking up ${email}…`,
+      `Looking up ${email} (workspace)…`,
       () => client.findAll('contact:class:Person' as Ref<Class<Doc>>, {}, { limit: 200 }),
       opts
     )) as Array<Doc & { name?: string }>
@@ -137,7 +160,7 @@ export async function findUser(email: string, opts: GlobalOpts = {}): Promise<vo
     const hit = persons.find((p) => p.name?.toLowerCase() === lower || (p.name ?? '').toLowerCase().includes(lower))
     if (!hit) throw new CliError(ExitCode.NotFound, `no person matching ${email} in this workspace`)
     if (shouldJson({ json: opts.json, ci: opts.ci })) {
-      json({ email, personId: hit._id, name: hit.name })
+      json({ email, personId: hit._id, name: hit.name, source: 'workspace' })
       return
     }
     console.log(`${email}\t${hit._id}`)
