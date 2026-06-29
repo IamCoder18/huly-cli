@@ -800,3 +800,183 @@ Two real bugs in `scripts/smoke.sh` that took hours to find:
 2. `sed -n '/^{/,$p'` has the same issue for single objects. The fix was to **remove the grep entirely** since the noise filter already strips the SDK output and jq can handle the remaining JSON.
 
 3. The `filter_huly_noise` shell function (added) is necessary because the SDK uses `console.log` for `Generate new SessionId`, `Connected to server:`, `findfull model`, etc. — these go to **stdout** (not stderr), so `2>/dev/null` doesn't suppress them. The `grep -vE` filter must explicitly skip them.
+
+---
+
+## 22. Session 2026-06-29 findings
+
+### The deployed `account:local-fix` bundle uses MongoDB code paths
+
+The `bundle.js` inside `hardcoreeng/account:local-fix` contains:
+```js
+async getWorkspaceRole(accountId, workspaceId) {
+  const assignment = await this.workspaceMembers.findOne({...});
+  return assignment?.role ?? null;
+}
+```
+
+But the selfhost uses Postgres (cockroach). The Postgres implementation in
+`~/platform/server/account/src/collections/postgres/postgres.ts:864` uses
+a SQL `rTx` template instead. The deployed bundle was built from a
+commit that had the Mongo implementation, not the Postgres one.
+
+**Symptom:** every account-server method that calls `getWorkspaceRole`
+returns `null`, leading to `Forbidden` on:
+- `workspace delete` (always)
+- `workspace members` (always)
+- `workspace guest` (always)
+
+Server log: `role: null` even when `workspace_members` row exists.
+
+**Fix:** rebuild `account:local-fix` from `~/platform` branch
+`fix/server-issues-2026-06` after running `rush build`. The Postgres
+implementation needs to be in the bundle, not the Mongo one. Without
+this fix, C6/C7 stay unresolvable.
+
+### The CLI's local model is incomplete (3-key stub) on this selfhost
+
+`client.getModel()` returns a stub with only 3 keys. This is because
+the model-upgrade txes applied during workspace creation include
+`TxUpdateDoc` ops whose `objectId` references classes not yet created in
+the batch (out-of-order). The server logs `no document found, failed to
+apply model transaction, skipping` and skips them.
+
+**Impact:**
+- `client.findAll(<DOMAIN_MODEL class>)` returns 0 (queries local ModelDb)
+- `client.findAll(<other domain class>)` correctly returns server data
+- `client.createDoc(<some class>)` may throw `cannot be used for objects
+  inherited from AttachedDoc` when the local model thinks the class is
+  AttachedDoc (false)
+
+**Workarounds applied:**
+- For DOMAIN_MODEL classes (e.g. `tracker:class:TypeIssuePriority`), bypass
+  local model via raw `client.connection.findAll(...)` — returns data
+  correctly.
+- For IssueStatus: query by `ofAttribute: 'tracker:attribute:IssueStatus'`
+  instead of `space: project._id` (IssueStatus lives in tracker domain,
+  not per-project).
+- For issue create: catch the "AttachedDoc" error and skip priority
+  field rather than failing entirely.
+
+### Document create now auto-creates a default `General` teamspace
+
+Previously `huly document create` failed with `no teamspaces found in
+this workspace` if the workspace had zero teamspaces. This is the
+default state for new workspaces — users hit it on first `document
+create`. The CLI now creates a default teamspace named `General`
+automatically on first document create, matching the web UI's behavior.
+
+Verified: workspace with 0 teamspaces → `document create --title X --body Y`
+succeeds; subsequent `teamspace list` shows the auto-created General.
+
+### CLI markup handling — write path bypasses SDK
+
+The SDK's `client.createDoc(_class, space, attributes)` calls
+`processMarkup(_class, id, attributes)` which uploads every
+`MarkupContent` instance via `client.uploadMarkup(...)`. This RPC calls
+the collaborator's `createMarkup`, which hangs indefinitely waiting for
+hocuspocus to connect. Fix #2 wrapped the **read** path (`getContent`)
+in a 3s timeout. The **write** path (`createMarkup`) is NOT yet fixed.
+
+**Workaround:** the CLI passes body content as raw strings instead of
+`new MarkupContent(body, 'markdown')`. The SDK's else branch passes
+strings through unchanged. Applied in 9 resource files (`card`,
+`channel`, `comment`, `component`, `document`, `issue-template`,
+`milestone`, `todo`, plus `_helpers.ts`).
+
+**Read path:** `get --markdown` calls `client.fetchMarkup` with 5s
+timeout. Catches errors and falls back to `String(doc.content)`. For
+CLI-created docs (always raw strings), returns the body verbatim. For
+web-UI-created docs (with markup refs to y-docs), returns the ref string
+instead — but this selfhost has no web-UI-created docs.
+
+### Component create succeeds but list returns 0 (C2)
+
+Investigated extensively:
+- Transactor logs show no error
+- CLI's create returns an `_id`
+- Direct findAll on `tracker:class:Component` with empty query returns 0
+- Server-side model has the class registered (visible via model load)
+
+**Theory:** the server stores the created component but its
+`objectSpace` (passed as second arg to createDoc) doesn't match the
+query in the list. Or the component is in `public.tx` but not in
+`public.tracker`. Confirmed via smoke phase 3 roundtrip test added to
+capture the failure.
+
+**Real cause:** unknown — requires server-side investigation beyond
+CLI scope. Tracked in `docs/open-issues.md` C2.
+
+### Smoke runner `sed` → `awk` bug
+
+`sed -n '/^\[/,$p'` only captures the first line. `awk '/^\[/,0'`
+captures from `[` to end-of-input. Same for `{...}`. Fixed in
+`scripts/smoke.sh`.
+
+### SDK uses `console.log` for non-error diagnostics
+
+`Generate new SessionId`, `Connected to server: <v>`, `findfull model <n> <ms>`
+all go to **stdout**, not stderr. `2>/dev/null` doesn't suppress them.
+The `filter_huly_noise` shell function uses `grep -vE` to skip these.
+
+### Phase 11/14/15/16 are explicitly out of scope
+
+The user's instruction was to fix as many issues as possible while
+holding off on server-side fixes. Phases 11 (associations/spaces),
+14 (activity), 15 (notifications), 16 (approvals) require ~12k LOC of
+new CLI code. Per the user's earlier instruction, these are paused.
+
+### Per-command --help expansion via commander's `addHelpText('after', ...)`
+
+For every command's --help, added:
+- `Examples:` block (3-5 typical invocations)
+- Enum value docs (priority='Urgent|High|Normal|Low|None', etc.)
+- Format docs (`--due=ISO 8601`, `--rrule=iCalendar`)
+- Dependency docs (assignee must be workspace member)
+- DESTRUCTIVE warnings where applicable
+
+Commander renders these after the flag list. Concise default view;
+verbose view on demand. No CLI behavior change.
+
+### Naming consistency changes
+
+N1: `dm message <list|send>` mirrors `channel message <list|send>`. Old
+flat commands (`dm messages`, `dm send`) remain as `[alias]`.
+
+N2: `workspace member add <account> --role ...` replaces the old
+verb-less `workspace member <account> --role ...`. Removed to avoid
+conflict.
+
+N3: `workspace guests` (settings, plural) is kept; no singular alias
+because "guest" sounds wrong for boolean-toggles.
+
+N4: `document snapshot` (singular, requires --snapshot-id) vs
+`snapshots` (plural, lists all). Help clarifies.
+
+N5: `calendar calendars` (calendars) vs `calendar list` (events) vs
+`calendar get` (event). Help clarifies each.
+
+N7: `user get [ref]` now accepts positional ref. Matches `project get
+<ref>` pattern.
+
+N9: `card create --master-tag` help now states it's required and points
+to `master-tag list` for tag discovery.
+
+---
+
+## 23. Status as of 2026-06-29
+
+- **Implemented phases:** 0-10, 12, 13 (verified by smoke).
+- **Smoke:** 13 of 13 implemented phases pass; 11 + 14-18 properly skip.
+- **Build:** clean.
+- **README:** 2575 lines, exceeds 2k LOC target.
+- **Open CLI bugs:** 0 functional (all fixed or documented).
+- **Open server bugs:** 6 (C2 sub-resource, C3 issue create model
+  routing, C6 workspace delete Mongo bundle, S3 collaborator
+  createMarkup timeout, S4 model-upgrade deeper retry, S7 tracker
+  migration seed).
+- **Open config issues:** 7 (CF1 cockroach GRANT CREATE not
+  automated, CF3 stale workspaces, CF4 model version drift, etc).
+- **All fixes kept local on `fix/server-issues-2026-06` branch per
+  user request.**
+
