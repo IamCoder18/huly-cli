@@ -60,43 +60,52 @@ jobs:
 
       - name: Determine target version
         id: version
+        # Compute the next version in pure bash. `npm version --dry-run`
+        # actually mutates package.json/package-lock.json in npm 11.x, so
+        # we don't use it.
         run: |
           set -euo pipefail
           CURRENT=$(node -p "require('./package.json').version")
-          echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
+
+          bump_semver() {
+            local ver="$1" kind="$2"
+            # Strip a leading 'v' and any pre-release/build metadata for math.
+            local core="${ver%%-+}" # drop pre-release/build
+            core="${core#v}"
+            local IFS='.'
+            read -r major minor patch <<< "$core"
+            case "$kind" in
+              major) major=$((major + 1)); minor=0; patch=0 ;;
+              minor) minor=$((minor + 1)); patch=0 ;;
+              patch) patch=$((patch + 1)) ;;
+              *) echo "::error::Unknown bump kind: $kind" >&2; return 1 ;;
+            esac
+            printf '%d.%d.%d' "$major" "$minor" "$patch"
+          }
 
           if [ -n "${{ inputs.version }}" ]; then
             TARGET="${{ inputs.version }}"
             BUMP_KIND="custom"
           elif [ "${{ inputs.bump }}" != "none" ]; then
-            # Strip a leading 'v' if the user typed one.
-            BUMP_INPUT="${{ inputs.bump }}"
-            NEW=$(npm version "$BUMP_INPUT" --no-git-tag-version --dry-run 2>/dev/null \
-                  | tail -n1 | sed -E 's/^v//')
-            if [ -z "$NEW" ] || [ "$NEW" = "$CURRENT" ]; then
-              echo "::error::Could not determine bumped version from '$BUMP_INPUT'"
-              exit 1
-            fi
-            TARGET="$NEW"
-            BUMP_KIND="$BUMP_INPUT"
+            TARGET=$(bump_semver "$CURRENT" "${{ inputs.bump }}")
+            BUMP_KIND="${{ inputs.bump }}"
           else
             TARGET="$CURRENT"
             BUMP_KIND="none"
           fi
 
+          echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
           echo "target=$TARGET" >> "$GITHUB_OUTPUT"
           echo "bump=$BUMP_KIND" >> "$GITHUB_OUTPUT"
 
       - name: Bump version in package.json
         if: steps.version.outputs.target != steps.version.outputs.current
+        # Always set package.json to the exact TARGET — never rely on
+        # `npm version <bump>` which could mutate twice if the file was
+        # touched by a prior step.
         run: |
           set -euo pipefail
-          TARGET="${{ steps.version.outputs.target }}"
-          if [ "${{ steps.version.outputs.bump }}" = "custom" ]; then
-            npm version "$TARGET" --no-git-tag-version
-          else
-            npm version "${{ steps.version.outputs.bump }}" --no-git-tag-version
-          fi
+          npm version "${{ steps.version.outputs.target }}" --no-git-tag-version
 
       - name: Build
         run: npm run build
