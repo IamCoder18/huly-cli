@@ -85,14 +85,30 @@ and the underlying SDK calls.
 ### From npm
 
 ```bash
-npm install -g huly-cli
+npm i -g @iamcoder18/huly-cli
 huly --version
+```
+
+#### Other package managers
+
+```bash
+# pnpm
+pnpm add -g @iamcoder18/huly-cli
+
+# yarn (classic)
+yarn global add @iamcoder18/huly-cli
+
+# yarn (berry / modern)
+yarn global add @iamcoder18/huly-cli
+
+# bun
+bun add -g @iamcoder18/huly-cli
 ```
 
 ### From source
 
 ```bash
-git clone https://github.com/your-org/huly-cli.git
+git clone https://github.com/iamcoder18/huly-cli.git
 cd huly-cli
 npm install
 npm run build
@@ -1320,7 +1336,7 @@ If any of these don't hold, the CLI's threat model is violated.
 ### Setup
 
 ```bash
-git clone https://github.com/your-org/huly-cli.git
+git clone https://github.com/iamcoder18/huly-cli.git
 cd huly-cli
 npm install
 npm run build       # compile TS → dist/
@@ -1791,7 +1807,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: npm install -g huly-cli
+      - run: npm install -g @iamcoder18/huly-cli
       - name: Sync status to Huly
         env:
           HULY_URL: ${{ secrets.HULY_URL }}
@@ -2029,7 +2045,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: npm install -g huly-cli
+      - run: npm install -g @iamcoder18/huly-cli
       - name: Sync status to Huly
         env:
           HULY_URL: ${{ secrets.HULY_URL }}

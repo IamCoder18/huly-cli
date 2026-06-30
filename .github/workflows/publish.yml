@@ -1,0 +1,130 @@
+name: Publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version bump type (ignored if version is set)"
+        required: false
+        type: choice
+        default: "patch"
+        options:
+          - patch
+          - minor
+          - major
+          - none
+      version:
+        description: "Custom version (e.g. 1.2.3) — overrides bump"
+        required: false
+        type: string
+        default: ""
+      tag:
+        description: "npm dist-tag (default: latest)"
+        required: false
+        type: string
+        default: "latest"
+      dry_run:
+        description: "Dry run — bump the version but do not publish"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  publish:
+    name: Build & Publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.11"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Determine target version
+        id: version
+        run: |
+          set -euo pipefail
+          CURRENT=$(node -p "require('./package.json').version")
+          echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
+
+          if [ -n "${{ inputs.version }}" ]; then
+            TARGET="${{ inputs.version }}"
+            BUMP_KIND="custom"
+          elif [ "${{ inputs.bump }}" != "none" ]; then
+            # Strip a leading 'v' if the user typed one.
+            BUMP_INPUT="${{ inputs.bump }}"
+            NEW=$(npm version "$BUMP_INPUT" --no-git-tag-version --dry-run 2>/dev/null \
+                  | tail -n1 | sed -E 's/^v//')
+            if [ -z "$NEW" ] || [ "$NEW" = "$CURRENT" ]; then
+              echo "::error::Could not determine bumped version from '$BUMP_INPUT'"
+              exit 1
+            fi
+            TARGET="$NEW"
+            BUMP_KIND="$BUMP_INPUT"
+          else
+            TARGET="$CURRENT"
+            BUMP_KIND="none"
+          fi
+
+          echo "target=$TARGET" >> "$GITHUB_OUTPUT"
+          echo "bump=$BUMP_KIND" >> "$GITHUB_OUTPUT"
+
+      - name: Bump version in package.json
+        if: steps.version.outputs.target != steps.version.outputs.current
+        run: |
+          set -euo pipefail
+          TARGET="${{ steps.version.outputs.target }}"
+          if [ "${{ steps.version.outputs.bump }}" = "custom" ]; then
+            npm version "$TARGET" --no-git-tag-version
+          else
+            npm version "${{ steps.version.outputs.bump }}" --no-git-tag-version
+          fi
+
+      - name: Build
+        run: npm run build
+
+      - name: Publish to npm
+        if: ${{ !inputs.dry_run }}
+        # OIDC trusted publishing — npm exchanges a short-lived GitHub
+        # OIDC token for a publish token. No NPM_TOKEN secret required.
+        run: |
+          set -euo pipefail
+          npm publish --access public --tag "${{ inputs.tag }}"
+
+      - name: Commit & tag version bump
+        if: ${{ !inputs.dry_run && steps.version.outputs.target != steps.version.outputs.current }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          git commit -m "chore(release): v${{ steps.version.outputs.target }}"
+          git tag "v${{ steps.version.outputs.target }}"
+          git push
+          git push --tags
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Publish summary"
+            echo
+            echo "- Previous version: \`${{ steps.version.outputs.current }}\`"
+            echo "- Target version:   \`${{ steps.version.outputs.target }}\`"
+            echo "- Bump kind:        \`${{ steps.version.outputs.bump }}\`"
+            echo "- Tag:              \`${{ inputs.tag }}\`"
+            echo "- Dry run:          \`${{ inputs.dry_run }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

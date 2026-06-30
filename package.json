@@ -1,5 +1,5 @@
 {
-  "name": "huly-cli",
+  "name": "@iamcoder18/huly-cli",
   "version": "0.1.0",
   "description": "AI-agent-first CLI for self-hosted Huly",
   "type": "module",
