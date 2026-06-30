@@ -73,7 +73,12 @@ function stripRef(value: unknown): string {
 }
 
 function shortId(id: unknown): string {
-  return String(id ?? '').slice(-12)
+  const s = String(id ?? '')
+  if (s === '') return ''
+  // For ref-style IDs like "tracker:project:TEST" or "space:General",
+  // return the last segment for readability. Otherwise return the last 12 chars.
+  if (s.includes(':')) return s.split(':').slice(-1)[0] ?? s
+  return s.length > 12 ? s.slice(-12) : s
 }
 
 function trim(s: unknown, n: number): string {
