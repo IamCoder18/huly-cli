@@ -5,7 +5,7 @@ const { MarkupContent } = pkg
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, buildIndex, invalidateIndex } from '../transport/ref-resolver.js'
-import { shouldJson, json, table, kv, header, withTimeout, COLUMNS, C, colorizeStatus, colorizePriority, statusGlyph, priorityGlyph, relTime, isoDate, isoDay } from '../output/format.js'
+import { shouldJson, json, table, kv, header, withTimeout, COLUMNS, C, colorizeStatus, colorizePriority, statusGlyph, priorityGlyph, relTime, isoDate, isoDay, success, updated } from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { deleteDoc } from '../commands/dry-run.js'
 import { CliError, ExitCode } from '../output/errors.js'
@@ -534,7 +534,7 @@ export async function updateIssue(
     await withSpinner('Updating…', () =>
       client.updateDoc(CLASS.Issue as Ref<Class<Issue>>, issue.space as unknown as Ref<Space>, issue._id, ops as any)
     )
-    console.log(`updated issue: ${issue.identifier} (${issue._id})`)
+    updated(`updated issue`, issue._id)
   } finally { await client.close() }
 }
 
@@ -615,7 +615,7 @@ export async function addIssueLabel(ref: string, labelName: string, opts: { json
       opts
     )
     invalidateIndex(account.uuid, CLASS.Issue)
-    console.log(`added label: ${labelName}`)
+    success(`added label`, labelName)
   } finally { await client.close() }
 }
 
@@ -650,7 +650,7 @@ export async function removeIssueLabel(ref: string, labelName: string, opts: { j
       )
     }
     invalidateIndex(account.uuid, CLASS.Issue)
-    console.log(`removed label: ${labelName}`)
+    success(`removed label`, labelName)
   } finally { await client.close() }
 }
 
@@ -692,7 +692,7 @@ export async function addIssueRelation(ref: string, type: RelationType, targetRe
       () => client.updateDoc(CLASS.Issue as Ref<Class<Issue>>, issue.space as unknown as Ref<Space>, issue._id, { [field]: updated } as any),
       opts
     )
-    console.log(`added ${type}: ${ref} → ${targetRef}`)
+    success(`added ${type}`, ref + ' → ' + targetRef)
   } finally { await client.close() }
 }
 
@@ -722,7 +722,7 @@ export async function removeIssueRelation(ref: string, type: RelationType, targe
       () => client.updateDoc(CLASS.Issue as Ref<Class<Issue>>, issue.space as unknown as Ref<Space>, issue._id, { [field]: updated } as any),
       opts
     )
-    console.log(`removed ${type}: ${ref} → ${targetRef}`)
+    success(`removed ${type}`, ref + ' → ' + targetRef)
   } finally { await client.close() }
 }
 
@@ -774,7 +774,7 @@ export async function linkDocument(issueRef: string, docRef: string, opts: { jso
     if (!issue) throw new CliError(ExitCode.NotFound, `issue ${issueRef} not found`)
     const relations = ((issue as unknown as { relations?: RelatedDoc[] }).relations ?? [])
     if (relations.some((r) => r._id === docId)) {
-      console.log(`document already linked`)
+      console.log(C.warn('⚠ document already linked'))
       return
     }
     const updated = [...relations, { _id: docId as string, _class: CLASS.Document }]
@@ -783,7 +783,7 @@ export async function linkDocument(issueRef: string, docRef: string, opts: { jso
       () => client.updateDoc(CLASS.Issue as Ref<Class<Issue>>, issue.space as unknown as Ref<Space>, issue._id, { relations: updated } as any),
       opts
     )
-    console.log(`linked document: ${docRef} → ${issueRef}`)
+    console.log(C.ok('linked document') + C.muted('  ') + C.emphasis(docRef) + C.muted('  →  ') + C.emphasis(issueRef))
   } finally { await client.close() }
 }
 
@@ -811,7 +811,7 @@ export async function unlinkDocument(issueRef: string, docRef: string, opts: { j
       () => client.updateDoc(CLASS.Issue as Ref<Class<Issue>>, issue.space as unknown as Ref<Space>, issue._id, { relations: updated } as any),
       opts
     )
-    console.log(`unlinked document: ${docRef}`)
+    success(`unlinked document`, docRef)
   } finally { await client.close() }
 }
 
