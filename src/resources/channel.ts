@@ -5,7 +5,7 @@ const { MarkupContent } = pkg
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli, connectAccountCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, buildIndex, invalidateIndex } from '../transport/ref-resolver.js'
-import { shouldJson, json, table, COLUMNS, C, success, updated } from '../output/format.js'
+import { shouldJson, json, table, COLUMNS, C, success, updated, bulkRemoved } from "../output/format.js"
 import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
 import { readEnv } from '../auth/env.js'
@@ -268,7 +268,7 @@ export async function deleteChannels(refs: string[], opts: { workspace?: string;
         skipped++
       }
     }
-    console.log(`deleted: ${deleted}, skipped: ${skipped}`)
+    bulkRemoved(deleted, skipped)
   } finally { await client.close() }
 }
 
@@ -520,7 +520,7 @@ export async function deleteChannelMessages(ref: string, messageIds: string[], o
         skipped++
       }
     }
-    console.log(`deleted: ${deleted}, skipped: ${skipped}`)
+    bulkRemoved(deleted, skipped)
   } finally { await client.close() }
 }
 
@@ -649,7 +649,7 @@ export async function deleteThreadReplies(replyIds: string[], opts: { workspace?
         skipped++
       }
     }
-    console.log(`deleted: ${deleted}, skipped: ${skipped}`)
+    bulkRemoved(deleted, skipped)
   } finally { await client.close() }
 }
 

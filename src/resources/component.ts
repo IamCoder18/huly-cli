@@ -5,7 +5,7 @@ const { MarkupContent } = pkg
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, invalidateIndex } from '../transport/ref-resolver.js'
-import { shouldJson, json, table, kv, header, COLUMNS, C, success, updated, relTime, isoDate } from '../output/format.js'
+import { shouldJson, json, table, kv, header, COLUMNS, C, success, updated, relTime, isoDate, bulkRemoved } from "../output/format.js"
 import { withSpinner } from '../output/progress.js'
 import { deleteDoc } from '../commands/dry-run.js'
 import { CliError, ExitCode } from '../output/errors.js'
@@ -144,6 +144,6 @@ export async function deleteComponents(refs: string[], opts: { dryRun?: boolean;
       if (r.skipped) skipped++
       else { deleted++; await new Promise((res) => setTimeout(res, 100)) }
     }
-    console.log(`deleted: ${deleted}, skipped: ${skipped}`)
+    bulkRemoved(deleted, skipped)
   } finally { await client.close() }
 }

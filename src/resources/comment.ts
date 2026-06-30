@@ -4,7 +4,7 @@ const { MarkupContent } = pkg
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, invalidateIndex } from '../transport/ref-resolver.js'
-import { shouldJson, json, table, COLUMNS, success, updated } from '../output/format.js'
+import { shouldJson, json, table, COLUMNS, success, updated, bulkRemoved } from "../output/format.js"
 import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
 import { readEnv } from '../auth/env.js'
@@ -172,6 +172,6 @@ export async function deleteComments(refs: string[], opts: { workspace?: string;
         skipped++
       }
     }
-    console.log(`deleted: ${deleted}, skipped: ${skipped}`)
+    bulkRemoved(deleted, skipped)
   } finally { await client.close() }
 }

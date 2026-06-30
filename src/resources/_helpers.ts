@@ -4,7 +4,7 @@ import pkg from '@hcengineering/api-client'
 const { MarkupContent } = pkg
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, buildIndex } from '../transport/ref-resolver.js'
-import {shouldJson, json, table, type TableColumn, success } from '../output/format.js'
+import { shouldJson, json, table, type TableColumn, success, bulkRemoved } from "../output/format.js"
 import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
 import { deleteDoc } from '../commands/dry-run.js'
@@ -269,7 +269,7 @@ export function makeDelete<T extends Doc>(opts: DeleteOpts<T>) {
         if (r.skipped) skipped++
         else { deleted++; await new Promise((res) => setTimeout(res, DELETE_GAP_MS)) }
       }
-      console.log(`deleted: ${deleted}, skipped: ${skipped}`)
+      bulkRemoved(deleted, skipped)
     } finally {
       await client.close()
     }

@@ -2,7 +2,7 @@ import type { Doc, Ref, Class, Space } from '@hcengineering/core'
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, invalidateIndex } from '../transport/ref-resolver.js'
-import { shouldJson, json, table, COLUMNS } from '../output/format.js'
+import { shouldJson, json, table, COLUMNS, success, bulkRemoved } from "../output/format.js"
 import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
 import { readEnv } from '../auth/env.js'
@@ -110,7 +110,7 @@ export async function logTime(opts: {
     if (shouldJson({ json: opts.json, ci: opts.ci })) {
       json({ _id: id, attachedTo: issueId, ...data })
     } else {
-      console.log(`logged time: ${totalMinutes}min on ${opts.issue} (${id})`)
+      success('logged time', `${totalMinutes}min on ${opts.issue}`, id)
     }
   } finally { await client.close() }
 }
@@ -146,7 +146,7 @@ export async function deleteTimeEntries(refs: string[], opts: { workspace?: stri
         skipped++
       }
     }
-    console.log(`deleted: ${deleted}, skipped: ${skipped}`)
+    bulkRemoved(deleted, skipped)
   } finally { await client.close() }
 }
 

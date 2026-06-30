@@ -3,7 +3,7 @@ import type { PlatformClient } from '@hcengineering/api-client'
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, buildIndex, invalidateIndex } from '../transport/ref-resolver.js'
-import { shouldJson, json, table, kv, header, COLUMNS, C, success, relTime } from '../output/format.js'
+import { shouldJson, json, table, kv, header, COLUMNS, C, success, relTime, bulkRemoved } from "../output/format.js"
 import { withSpinner } from '../output/progress.js'
 import { deleteDoc } from '../commands/dry-run.js'
 import { CliError, ExitCode } from '../output/errors.js'
@@ -234,7 +234,7 @@ export async function deleteProjects(refs: string[], opts: { dryRun?: boolean; w
       else { deleted++; await new Promise((res) => setTimeout(res, 100)) }
     }
     invalidateIndex(account.uuid, CLASS.Project)
-    console.log(`deleted: ${deleted}, skipped: ${skipped}`)
+    bulkRemoved(deleted, skipped)
   } finally {
     await client.close()
   }

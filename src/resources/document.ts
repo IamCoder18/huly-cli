@@ -5,7 +5,7 @@ const { MarkupContent } = pkg
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, buildIndex, invalidateIndex } from '../transport/ref-resolver.js'
-import {shouldJson, json, table, kv, header, COLUMNS, C, relTime, isoDate, withTimeout, success , updated } from '../output/format.js'
+import { shouldJson, json, table, kv, header, COLUMNS, C, relTime, isoDate, withTimeout, success, updated, bulkRemoved } from "../output/format.js"
 import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
 import { readEnv } from '../auth/env.js'
@@ -269,7 +269,7 @@ export async function deleteTeamspaces(refs: string[], opts: { dryRun?: boolean;
         skipped++
       }
     }
-    console.log(`deleted: ${deleted}, skipped: ${skipped}`)
+    bulkRemoved(deleted, skipped)
   } finally { await client.close() }
 }
 
@@ -531,7 +531,7 @@ export async function deleteDocuments(refs: string[], opts: { dryRun?: boolean; 
         skipped++
       }
     }
-    console.log(`deleted: ${deleted}, skipped: ${skipped}`)
+    bulkRemoved(deleted, skipped)
   } finally { await client.close() }
 }
 

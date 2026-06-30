@@ -5,7 +5,7 @@ const { MarkupContent } = pkg
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, buildIndex, invalidateIndex } from '../transport/ref-resolver.js'
-import { shouldJson, json, table, kv, header, withTimeout, COLUMNS, C, colorizeStatus, colorizePriority, statusGlyph, priorityGlyph, relTime, isoDate, isoDay, success, updated } from '../output/format.js'
+import { shouldJson, json, table, kv, header, withTimeout, COLUMNS, C, colorizeStatus, colorizePriority, statusGlyph, priorityGlyph, relTime, isoDate, isoDay, success, updated, bulkRemoved } from "../output/format.js"
 import { withSpinner } from '../output/progress.js'
 import { deleteDoc } from '../commands/dry-run.js'
 import { CliError, ExitCode } from '../output/errors.js'
@@ -323,19 +323,39 @@ export async function getIssue(ref: string, opts: { json?: boolean; ci?: boolean
     const identifier = String(issue.identifier ?? '') || '—'
     const title = String(issue.title ?? '(untitled)')
 
+    // Resolve project and parent to friendly names
+    let projectName: string | null = null
+    if (issue.space) {
+      const p = await client.findOne(CLASS.Project as Ref<Class<Project>>, { _id: issue.space as Ref<Project> })
+      projectName = p ? String((p as Project).identifier ?? (p as Project).name ?? '') : null
+    }
+    let parentRef: string | null = null
+    if (issue.parent) {
+      const p = await client.findOne(CLASS.Issue as Ref<Class<Issue>>, { _id: issue.parent as Ref<Issue> })
+      parentRef = p ? String((p as Issue).identifier ?? (p as Issue).title ?? (p as Issue)._id) : null
+    }
+    // Resolve assignee to email from cache
+    let assigneeLabel: string | null = null
+    if (issue.assignee) {
+      const a = await client.findOne(CLASS.Account as Ref<Class<Doc>>, { _id: issue.assignee as Ref<Doc> })
+      if (a) {
+        const a2 = a as { email?: string; name?: string }
+        assigneeLabel = a2.email ?? a2.name ?? null
+      }
+    }
+
     header(`Issue ${identifier} — ${title}`, { subtitle: `created ${relTime(issue.createdOn as number | null)} · updated ${relTime(issue.modifiedOn as number | null)}` })
 
     kv([
       ['ID', identifier !== '—' ? C.emphasis(identifier) : C.muted('—')],
       ['Status', `${statusGlyph(status)} ${colorizeStatus(status)}`],
       ['Priority', priorityGlyph(priority)],
-      ['Kind', String(issue.kind ?? '—')],
-      ['Project', String(issue.project ?? '—')],
-      ['Parent', String(issue.parent ?? '—')],
+      ['Kind', String(issue.kind ?? '—').replace(/^tracker:issue:/, '')],
+      ['Project', projectName != null ? C.emphasis(projectName) : C.muted('—')],
+      ['Parent', parentRef != null ? C.emphasis(parentRef) : C.muted('—')],
       ['Due', issue.dueDate != null ? isoDay(issue.dueDate) : C.muted('none')],
       ['Labels', Array.isArray(issue.labels) && (issue.labels as unknown[]).length > 0 ? (issue.labels as string[]).join(', ') : C.muted('none')],
-      ['Assignee', issue.assignee != null && issue.assignee !== '' ? String(issue.assignee) : C.muted('unassigned')],
-      ['Created by', String(issue.createdBy ?? '—')],
+      ['Assignee', assigneeLabel != null ? assigneeLabel : C.muted('unassigned')],
       ['Created', issue.createdOn != null ? `${isoDate(issue.createdOn)} (${relTime(issue.createdOn as number | null)})` : C.muted('—')],
       ['Modified', issue.modifiedOn != null ? `${isoDate(issue.modifiedOn)} (${relTime(issue.modifiedOn as number | null)})` : C.muted('—')],
       ['_id', C.id(String(issue._id))]
@@ -572,7 +592,7 @@ export async function deleteIssues(refs: string[], opts: { dryRun?: boolean; wor
       if (r.skipped) skipped++
       else { deleted++; await new Promise((res) => setTimeout(res, 100)) }
     }
-    console.log(`deleted: ${deleted}, skipped: ${skipped}`)
+    bulkRemoved(deleted, skipped)
   } finally { await client.close() }
 }
 

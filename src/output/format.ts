@@ -374,6 +374,22 @@ export function updated(kind: string, id: string): void {
   console.log(line)
 }
 
+export function removed(kind: string, name: string, id?: string): void {
+  const line = C.fail(kind) + C.muted('  ') + C.emphasis(name) + (id != null ? C.muted('  ') + C.id(`(${id})`) : '')
+  console.log(line)
+}
+
+export function bulkRemoved(deleted: number, skipped: number, kind = 'items'): void {
+  if (deleted === 0 && skipped === 0) {
+    console.log(C.muted(`  (nothing to delete)`))
+    return
+  }
+  const parts: string[] = []
+  if (deleted > 0) parts.push(C.ok(`${deleted} ${kind} deleted`))
+  if (skipped > 0) parts.push(C.warn(`${skipped} skipped`))
+  console.log('  ' + parts.join(C.muted(' · ')))
+}
+
 export const COLUMNS = {
   idShort: <T>(): TableColumn<T>[] => [
     { key: '_id', header: '_ID', format: (r) => C.id(shortId((r as Record<string, unknown>)._id)) }

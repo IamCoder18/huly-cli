@@ -4,7 +4,7 @@ const { MarkupContent } = pkg
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, invalidateIndex } from '../transport/ref-resolver.js'
-import {shouldJson, json, table, COLUMNS, withTimeout, success , updated } from '../output/format.js'
+import { shouldJson, json, table, COLUMNS, withTimeout, success, updated, bulkRemoved } from "../output/format.js"
 import { withSpinner } from '../output/progress.js'
 import { deleteDoc } from '../commands/dry-run.js'
 import { CliError, ExitCode } from '../output/errors.js'
@@ -130,7 +130,7 @@ export async function deleteCardSpaces(refs: string[], opts: { workspace?: strin
       if (r.skipped) skipped++
       else { deleted++; await new Promise((res) => setTimeout(res, 100)) }
     }
-    console.log(`deleted: ${deleted}, skipped: ${skipped}`)
+    bulkRemoved(deleted, skipped)
   } finally { await client.close() }
 }
 
@@ -357,6 +357,6 @@ export async function deleteCards(refs: string[], opts: { workspace?: string; ur
       if (r.skipped) skipped++
       else { deleted++; await new Promise((res) => setTimeout(res, 100)) }
     }
-    console.log(`deleted: ${deleted}, skipped: ${skipped}`)
+    bulkRemoved(deleted, skipped)
   } finally { await client.close() }
 }
