@@ -32,10 +32,12 @@ export async function connectAccountCli(opts: ConnectOpts = {}): Promise<Account
   const env = readEnv()
   const url = opts.url ?? env.url
   let token = await resolveToken(opts)
-  // If a workspace is in scope, prefer the workspace-scoped token so methods
-  // like getWorkspaceMembers / getWorkspaceInfo (which require workspace
-  // authorization) succeed.
-  const workspace = opts.workspace ?? env.workspace
+  // If a workspace is in scope (flag, env var, or active workspace file),
+  // prefer the workspace-scoped token so methods like getWorkspaceMembers /
+  // getWorkspaceInfo (which require workspace authorization) succeed.
+  // Workspace-scoped tokens have the workspace UUID which server-side
+  // permission gates (e.g. deleteWorkspace) require.
+  const workspace = opts.workspace ?? env.workspace ?? (await readActiveWorkspace())
   if (workspace) {
     try {
       const email = env.email
