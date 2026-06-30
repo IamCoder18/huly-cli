@@ -344,7 +344,8 @@ export async function getIssue(ref: string, opts: { json?: boolean; ci?: boolean
       }
     }
 
-    header(`Issue ${identifier} — ${title}`, { subtitle: `created ${relTime(issue.createdOn as number | null)} · updated ${relTime(issue.modifiedOn as number | null)}` })
+    const headerTitle = identifier !== '—' ? `Issue ${identifier} — ${title}` : `Issue · ${title}`
+    header(headerTitle, { subtitle: `created ${relTime(issue.createdOn as number | null)} · updated ${relTime(issue.modifiedOn as number | null)}` })
 
     kv([
       ['ID', identifier !== '—' ? C.emphasis(identifier) : C.muted('—')],
