@@ -4,7 +4,7 @@ const { MarkupContent } = pkg
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, invalidateIndex } from '../transport/ref-resolver.js'
-import {shouldJson, json, table, COLUMNS, withTimeout, success , updated } from '../output/format.js'
+import { shouldJson, json, table, kv, header, COLUMNS, C, withTimeout, success, updated, relTime, isoDate } from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { deleteDoc } from '../commands/dry-run.js'
 import { CliError, ExitCode } from '../output/errors.js'
@@ -57,7 +57,26 @@ export async function getIssueTemplate(ref: string, opts: { json?: boolean; ci?:
       } catch { console.log(String(doc.description)); return }
     }
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json(doc); return }
-    table([doc as unknown as Record<string, unknown>], COLUMNS.issueTemplate())
+
+    header(`Issue template — ${doc.title ?? '(untitled)'}`, { subtitle: `created ${relTime(doc.createdOn as number | null)}` })
+    kv([
+      ['ID', C.emphasis(String(doc._id))],
+      ['Title', String(doc.title ?? '—')],
+      ['Kind', String(doc.kind ?? '—')],
+      ['Priority', String(doc.priority ?? '—')],
+      ['Assignee', String(doc.assignee ?? C.muted('none'))],
+      ['Project', String(doc.space ?? '—')],
+      ['Created', doc.createdOn != null ? `${isoDate(doc.createdOn)} (${relTime(doc.createdOn as number | null)})` : C.muted('—')],
+      ['Modified', doc.modifiedOn != null ? `${isoDate(doc.modifiedOn)} (${relTime(doc.modifiedOn as number | null)})` : C.muted('—')],
+      ['_class', C.id(String(doc._class))]
+    ])
+    if (doc.description && doc.description !== '' && !opts.markdown) {
+      console.log()
+      console.log(C.emphasis('Description'))
+      console.log(C.muted('─'.repeat(20)))
+      const desc = String(doc.description)
+      console.log(desc.length > 500 ? desc.slice(0, 500) + '…' : desc)
+    }
   } finally { await client.close() }
 }
 

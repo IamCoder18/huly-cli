@@ -3,7 +3,7 @@ import type { PlatformClient } from '@hcengineering/api-client'
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, buildIndex, invalidateIndex } from '../transport/ref-resolver.js'
-import {shouldJson, json, table, kv, COLUMNS, success } from '../output/format.js'
+import { shouldJson, json, table, kv, header, COLUMNS, C, success, relTime } from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { deleteDoc } from '../commands/dry-run.js'
 import { CliError, ExitCode } from '../output/errors.js'
@@ -59,12 +59,16 @@ export async function getProject(ref: string, opts: { json?: boolean; ci?: boole
     const doc = await client.findOne(CLASS.Project as Ref<Class<Project>>, { _id: id as Ref<Project> })
     if (!doc) throw new CliError(ExitCode.NotFound, `project ${ref} not found`)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json(doc); return }
+    header(`Project — ${doc.name ?? '(unnamed)'}`, { subtitle: `created ${relTime(doc.createdOn as number | null)}` })
     kv([
-      ['ID', doc.identifier],
-      ['Name', doc.name],
-      ['Description', doc.description ?? '(none)'],
-      ['_id', doc._id],
-      ['Space', doc._id]
+      ['ID', C.emphasis(doc.identifier ?? '—')],
+      ['Name', String(doc.name ?? '—')],
+      ['Description', doc.description ? String(doc.description) : C.muted('(none)')],
+      ['Archived', doc.archived ? C.warn('yes') : C.muted('no')],
+      ['Private', doc.private ? C.warn('yes') : C.muted('no')],
+      ['Members', doc.members != null ? C.muted(`${(doc.members as unknown[]).length}`) : C.muted('—')],
+      ['_id', C.id(String(doc._id))],
+      ['Space', C.id(String(doc._id))]
     ])
   } finally {
     await client.close()
