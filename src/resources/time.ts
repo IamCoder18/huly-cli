@@ -57,7 +57,10 @@ export async function listTimeEntries(opts: {
     if (opts.offset && opts.offset > 0) r = r.slice(opts.offset)
     if (opts.limit && opts.limit > 0) r = r.slice(0, opts.limit)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json(r); return }
-    table(r as unknown as Record<string, unknown>[], COLUMNS.timeReport(), { count: true, title: 'time-entries' })
+    const totalMinutes = docs.reduce((s, t) => s + Number(t.value ?? 0) * 60, 0)
+    const totalHours = totalMinutes / 60
+    const footer = totalMinutes > 0 ? `total: ${totalHours.toFixed(2)}h (${Math.round(totalMinutes)}min)` : undefined
+    table(r as unknown as Record<string, unknown>[], COLUMNS.timeReport(), { count: true, title: 'time-entries', footer })
   } finally { await client.close() }
 }
 
