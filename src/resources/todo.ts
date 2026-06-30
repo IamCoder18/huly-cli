@@ -68,7 +68,7 @@ async function resolveEmployeeId(client: Awaited<ReturnType<typeof connectCli>>,
     // a workspace-local Person scan (by email or by name).
     const persons = (await client.findAll('contact:class:Person' as Ref<Class<Doc>>, {}, { limit: 200 })) as Array<Doc & { name?: string }>
     const lower = email.toLowerCase()
-    const hit = persons.find((p) => p.name?.toLowerCase() === lower || (p.name ?? '').toLowerCase().includes(lower))
+    const hit = persons.find((p) => (p.name ?? '').toLowerCase() === lower)
     if (!hit) throw new CliError(ExitCode.NotFound, `no person matching ${email} in this workspace`)
     return hit._id
   }
@@ -113,7 +113,7 @@ export async function listActions(opts: ListActionsOpts = {}): Promise<void> {
       }
       query.visibility = opts.visibility
     }
-    if (opts.title) query.title = { $regex: opts.title, $options: 'i' }
+    if (opts.title) query.title = { $regex: opts.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' }
     if (opts.dueFrom || opts.dueTo) {
       const range: Record<string, number> = {}
       if (opts.dueFrom) range.$gte = parseDate(opts.dueFrom, '--due-from')

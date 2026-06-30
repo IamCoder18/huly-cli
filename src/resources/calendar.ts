@@ -689,13 +689,6 @@ async function resolveCalendarId(client: PlatformClient, arg?: string): Promise<
   return all[0]._id as Ref<Doc>
 }
 
-async function resolveCalendarSpace(_arg?: string): Promise<Ref<Space>> {
-  // Personal calendar events live in the workspace space. Reccuring in
-  // a dedicated space (set in plugin/model). For one-off events we use
-  // the personal calendar's space — typically the workspace itself.
-  return 'calendar:space:Personal' as Ref<Space>
-}
-
 function generateEventId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 }

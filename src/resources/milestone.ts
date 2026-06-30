@@ -55,9 +55,6 @@ export async function getMilestone(ref: string, opts: { json?: boolean; ci?: boo
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json(doc); return }
 
     const status = String(doc.status ?? 'planned')
-    const progress = typeof doc.targetDate === 'number'
-      ? Math.min(100, Math.max(0, Math.round(((Date.now() - (doc.createdOn as number ?? 0)) / ((doc.targetDate as number) - (doc.createdOn as number ?? 0))) * 100)))
-      : 0
     header(`Milestone — ${doc.label ?? '(unnamed)'}`, { subtitle: `target ${relTime(doc.targetDate as number | null)}` })
     kv([
       ['ID', C.emphasis(String(doc._id))],

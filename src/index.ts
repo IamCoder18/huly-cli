@@ -14,7 +14,7 @@ const proc = process as unknown as { emit: (event: string, ...args: unknown[]) =
 const origEmit = proc.emit
 proc.emit = function (this: unknown, event: string, ...args: unknown[]) {
   if (event === 'warning') return false
-  return origEmit.call(this, event, args as never)
+  return origEmit.apply(this, [event, ...args] as never)
 } as typeof origEmit
 
 // Polyfill `window` for Node.js >= 22 where `sessionStorage` is provided as a

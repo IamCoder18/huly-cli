@@ -85,6 +85,9 @@ export async function logTime(opts: {
   url?: string
 }): Promise<void> {
   if (!opts.issue) throw new CliError(ExitCode.Validation, 'missing --issue')
+  if (opts.minutes !== undefined && opts.hours !== undefined) {
+    throw new CliError(ExitCode.Validation, 'pass only one of --minutes or --hours')
+  }
   const totalMinutes = opts.minutes ?? (opts.hours !== undefined ? Math.round(opts.hours * 60) : 0)
   if (totalMinutes <= 0) throw new CliError(ExitCode.Validation, 'missing --minutes (or --hours)', 'pass one of --minutes or --hours')
   const description = opts.description ?? ''

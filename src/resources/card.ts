@@ -295,6 +295,7 @@ export async function updateCard(ref: string, opts: {
   description?: string
   body?: string
   bodyFile?: string
+  replaceContent?: boolean
   json?: boolean
   ci?: boolean
   dryRun?: boolean
@@ -303,6 +304,16 @@ export async function updateCard(ref: string, opts: {
 }): Promise<void> {
   if (opts.body && opts.bodyFile) {
     throw new CliError(ExitCode.Validation, 'ambiguous body input', 'pass only one of --body or --body-file')
+  }
+  if (opts.body && opts.description !== undefined) {
+    throw new CliError(ExitCode.Validation, 'ambiguous: pass either --body (full content) OR --description (with --replace-content), not both')
+  }
+  if (opts.description !== undefined && !opts.replaceContent && !opts.body && !opts.bodyFile) {
+    throw new CliError(
+      ExitCode.Validation,
+      '--description would overwrite the card body',
+      'use --body or --body-file to set content, or pass --replace-content to confirm overwriting the existing body with --description'
+    )
   }
   let bodyFromFile: string | undefined
   if (opts.bodyFile) {
@@ -323,8 +334,8 @@ export async function updateCard(ref: string, opts: {
     if (opts.title) ops.title = opts.title
     if (opts.body) ops.content = opts.body
     else if (bodyFromFile !== undefined) ops.content = bodyFromFile
-    else if (opts.description !== undefined) ops.content = opts.description ? opts.description : ''
-    if (Object.keys(ops).length === 0) throw new CliError(ExitCode.Validation, 'nothing to update', 'pass --title, --description, --body, or --body-file')
+    else if (opts.description !== undefined && opts.replaceContent) ops.content = opts.description ? opts.description : ''
+    if (Object.keys(ops).length === 0) throw new CliError(ExitCode.Validation, 'nothing to update', 'pass --title, --description (with --replace-content), --body, or --body-file')
     if (opts.dryRun) {
       console.log(`would update card ${id}:`)
       console.log(JSON.stringify({ _class: CLASS.Card, objectId: id, space: doc.space, ops }, null, 2))

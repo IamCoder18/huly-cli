@@ -42,9 +42,7 @@ export async function buildIndex<T extends Doc>(
   workspaceId: string,
   identifierField: keyof T | string = 'identifier'
 ): Promise<Map<string, Ref<Doc>>> {
-  // A9: prefer workspace-scoped UUID if attached to the client.
-  const wsId = (client as PlatformClient & { __workspaceId?: string }).__workspaceId ?? workspaceId
-  const key = cacheKey(wsId, classId)
+  const key = cacheKey(workspaceId, classId)
   const cached = REFS.get(key)
   if (cached) return cached
 

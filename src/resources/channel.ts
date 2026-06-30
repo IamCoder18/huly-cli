@@ -67,14 +67,16 @@ async function resolvePersonId(
 ): Promise<Ref<Doc>> {
   // Strategy 1: scan workspace-local Person docs (works for multi-user
   // selfhosts and production workspaces where each user has a
-  // contact:class:Person doc).
+  // contact:class:Person doc). Require exact (case-insensitive) match on
+  // email or name — substring matches risk silently misrouting DMs to the
+  // wrong person when callers pass a typo or a partial name.
   const lower = emailOrName.toLowerCase()
   try {
     const persons = (await client.findAll('contact:class:Person' as Ref<Class<Doc>>, {}, { limit: 200 })) as Array<Doc & { name?: string; email?: string }>
     const hit = persons.find((p) => {
       const n = String(p.name ?? '').toLowerCase()
       const e = String(p.email ?? '').toLowerCase()
-      return n === lower || n.startsWith(lower) || n.includes(lower) || e === lower
+      return n === lower || e === lower
     })
     if (hit) return hit._id
   } catch {
@@ -102,11 +104,9 @@ async function resolvePersonId(
       if (/^[0-9a-f-]{36}$/i.test(emailOrName)) {
         return emailOrName as Ref<Doc>
       }
-      // Last resort: if the workspace has exactly one other member and
-      // the caller passed a non-empty identifier, return that member's
-      // person UUID.
+      // If the workspace has zero other members, fail loudly so the caller
+      // doesn't silently DM themselves / get a misleading success.
       const otherMembers = members.filter((m: { person: string }) => m.person !== myUuid)
-      if (otherMembers.length === 1) return otherMembers[0].person as Ref<Doc>
       if (otherMembers.length === 0) {
         throw new CliError(
           ExitCode.NotFound,

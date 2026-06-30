@@ -26,7 +26,8 @@ interface Member {
 }
 
 export async function listWorkspaces(g: GlobalOpts = {}): Promise<void> {
-  const ac = await connectAccountCli({ url: g.url, workspace: g.workspace })
+  // account-level: don't scope to a workspace token
+  const ac = await connectAccountCli({ url: g.url })
   const workspaces = await withSpinner('Fetching workspaces…', () => ac.getUserWorkspaces(), g)
 
   if (shouldJson({ json: g.json, ci: g.ci })) {
@@ -120,7 +121,7 @@ export async function deleteWorkspace(opts: {
   if (!target) {
     throw new CliError(ExitCode.Validation, 'no workspace resolved', 'pass --workspace, a positional name, or run `huly workspace use <n>` first')
   }
-  if (!opts.force && (env.workspace || target === (env.workspace ?? active))) {
+  if (!opts.force && target === (env.workspace ?? active)) {
     throw new CliError(
       ExitCode.Validation,
       `cannot delete workspace ${target} while it is the active --workspace/HULY_WORKSPACE`,
@@ -156,6 +157,12 @@ export async function listMembers(g: GlobalOpts & { role?: string } = {}): Promi
   }
   const cached = await findAnyCachedCreds(g.url ?? readEnv().url)
   const myEmail = cached?.email ?? null
+  let myUuid: string | null = null
+  try {
+    const acMe = await connectAccountCli({ url: g.url })
+    const me = await acMe.getPerson().catch(() => null)
+    myUuid = me?.uuid ?? null
+  } catch { /* best effort */ }
   const rows = filtered.map((m) => {
     const mAny = m as Record<string, unknown>
     const acc = mAny.account as Record<string, unknown> | undefined
@@ -163,9 +170,12 @@ export async function listMembers(g: GlobalOpts & { role?: string } = {}): Promi
     const email = (fullAcc?.email as string | undefined) ?? (mAny.email as string | undefined) ?? null
     const fullName = (fullAcc?.name as string | undefined) ?? (mAny.name as string | undefined) ?? email
     // On selfhost with a single account, the account-client may not return
-    // email/name. Fall back to the cached login email if the uuid matches.
+    // email/name. Fall back to the cached login email ONLY when the uuid
+    // matches the operator (otherwise we'd leak the caller's email to every
+    // member whose uuid is non-null but not equal to self).
     const uuid = (acc?.uuid as string | undefined) ?? (mAny.person as string | undefined) ?? (mAny._id as string | undefined) ?? null
-    const finalEmail = email ?? (uuid != null && myEmail != null ? myEmail : null)
+    const isSelf = myUuid !== null && uuid !== null && uuid === myUuid
+    const finalEmail = email ?? (isSelf && myEmail != null ? myEmail : null)
     return {
       name: fullName ?? finalEmail,
       role: (acc?.role as string | undefined) ?? (mAny.role as string | undefined) ?? null,
@@ -352,7 +362,8 @@ export async function createAccessLink(opts: {
 }
 
 export async function listRegions(g: GlobalOpts = {}): Promise<void> {
-  const ac = await connectAccountCli({ url: g.url, workspace: g.workspace })
+  // account-level: don't scope to a workspace token
+  const ac = await connectAccountCli({ url: g.url })
   const regions = await withSpinner('Fetching regions…', () => ac.getRegionInfo(), g)
   if (shouldJson({ json: g.json, ci: g.ci })) {
     json(regions)

@@ -15,8 +15,9 @@ export async function resolveProjectForCommand(client: PlatformClient, ref?: str
     const account = await client.getAccount()
     const idx = await buildIndex<Project>(client, CLASS.Project as Ref<Class<Project>>, account.uuid)
     const hit = idx.get(candidate)
-    if (hit) {
-      const doc = await client.findOne(CLASS.Project as Ref<Class<Project>>, { _id: hit as Ref<Project> })
+      ?? [...idx.keys()].find((k) => k.toLowerCase() === candidate.toLowerCase())
+    if (hit != null) {
+      const doc = await client.findOne(CLASS.Project as Ref<Class<Project>>, { _id: idx.get(hit) as Ref<Project> })
       if (doc) return doc
     }
   }

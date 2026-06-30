@@ -95,7 +95,6 @@ async function resolveTeamspace(client: PlatformClient, ref?: string): Promise<T
       {
         name: 'General',
         description: 'Default teamspace (auto-created)',
-        type: 'space-type:default' as Ref<Doc>,
         private: false,
         archived: false,
         members: [],
@@ -161,7 +160,7 @@ export async function getTeamspace(ref: string, opts: { json?: boolean; ci?: boo
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json(doc); return }
     kv([
       ['name', doc.name],
-      ['description', doc.description !== '' ? doc.description : '(no description)'],
+      ['description', doc.description ? doc.description : '(no description)'],
       ['type', doc.type],
       ['state', doc.archived ? 'archived' : 'active'],
       ['_id', doc._id]
@@ -293,11 +292,12 @@ export async function listDocuments(opts: {
       const ts = await resolveTeamspace(client, opts.teamspace)
       query.space = ts._id
     }
-    if (opts.titleSearch) query.title = { $regex: opts.titleSearch, $options: 'i' }
+    const escapeRegex = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    if (opts.titleSearch) query.title = { $regex: escapeRegex(opts.titleSearch), $options: 'i' }
     if (opts.contentSearch) {
       // Best-effort: best to use searchFulltext on REST, but websocket
       // client doesn't expose it. Use regex on the content field.
-      query.content = { $regex: opts.contentSearch, $options: 'i' }
+      query.content = { $regex: escapeRegex(opts.contentSearch), $options: 'i' }
     }
     const docs = (await withSpinner('Loading documents…', () =>
       client.findAll(DOCUMENT_CLASS, query as any), opts

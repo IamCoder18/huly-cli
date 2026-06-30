@@ -278,7 +278,7 @@ export async function listIssues(opts: {
     // possible. If the server doesn't support that pattern, results will be
     // an empty set, which is no worse than not searching.
     if (opts.descriptionSearch) {
-      query.description = { $regex: opts.descriptionSearch, $options: 'i' }
+      query.description = { $regex: opts.descriptionSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' }
     }
 
     // Parent filter
@@ -518,9 +518,11 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
     // The id from createDoc may differ from the server-assigned _id (the bypass
     // path uses the locally-computed tx._id). Look up the actual stored doc so
     // users can immediately `huly issue get <id>` to inspect their creation.
+    // Query by _id (not title, which is not unique) to verify the create
+    // succeeded and capture the authoritative _id.
     let actualId = id as string
     try {
-      const fresh = (await client.findOne(CLASS.Issue as Ref<Class<Issue>>, { title })) as { _id?: string } | null
+      const fresh = (await client.findOne(CLASS.Issue as Ref<Class<Issue>>, { _id: id as Ref<Issue> })) as { _id?: string } | null
       if (fresh?._id != null) actualId = fresh._id
     } catch { /* fall through with the local id */ }
     console.log(C.ok('created issue') + C.muted('  ') + C.emphasis(title) + C.muted('  ') + C.id(`(${actualId})`))
