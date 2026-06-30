@@ -1,4 +1,4 @@
-import { red, yellow } from './format.js'
+import { C, red, yellow } from './format.js'
 
 export const ExitCode = {
   Ok: 0,
@@ -33,10 +33,15 @@ const codeHints: Record<number, string> = {
   429: 'hint: rate-limited; retries exhausted'
 }
 
+function printError(code: number, msg: string, hint?: string): void {
+  const head = C.fail(`error [${code}]`) + C.muted('  ') + C.emphasis(msg)
+  console.error(head)
+  if (hint) console.error(C.muted('  ' + hint))
+}
+
 export function handleError(err: unknown): never {
   if (err instanceof CliError) {
-    console.error(red(`error: ${err.code === ExitCode.Ok ? 'ok' : err.code}: ${err.message}`))
-    if (err.hint) console.error(yellow(err.hint))
+    printError(err.code, err.message, err.hint)
     process.exit(err.code)
   }
 
@@ -44,42 +49,35 @@ export function handleError(err: unknown): never {
   const msg = anyErr?.message ?? String(err)
 
   if (anyErr?.code === 'PLATFORM_ALREADY_EXISTS' || /already exists/i.test(msg)) {
-    console.error(red(`error: 6: ${msg}`))
-    console.error(yellow('hint: resource already exists'))
+    printError(ExitCode.Conflict, msg, 'hint: resource already exists')
     process.exit(ExitCode.Conflict)
   }
   if (anyErr?.code === 'PLATFORM_NOT_FOUND' || /not found/i.test(msg)) {
-    console.error(red(`error: 2: ${msg}`))
-    console.error(yellow('hint: check the ref or run `huly <resource> list`'))
+    printError(ExitCode.NotFound, msg, 'hint: check the ref or run `huly <resource> list`')
     process.exit(ExitCode.NotFound)
   }
   if (anyErr?.code === 'PLATFORM_UNAUTHORIZED' || anyErr?.code === 401) {
-    console.error(red(`error: 3: ${msg}`))
-    console.error(yellow(codeHints[401]!))
+    printError(ExitCode.Auth, msg, codeHints[401])
     process.exit(ExitCode.Auth)
   }
   if (anyErr?.code === 'PLATFORM_FORBIDDEN' || anyErr?.code === 403) {
-    console.error(red(`error: 3: ${msg}`))
-    console.error(yellow(codeHints[403]!))
+    printError(ExitCode.Auth, msg, codeHints[403])
     process.exit(ExitCode.Auth)
   }
   if (anyErr?.code === 'PLATFORM_RATE_LIMITED' || anyErr?.code === 429) {
-    console.error(red(`error: 5: ${msg}`))
-    console.error(yellow(codeHints[429]!))
+    printError(ExitCode.RateLimited, msg, codeHints[429])
     process.exit(ExitCode.RateLimited)
   }
   if (anyErr?.code === 'PLATFORM_VALIDATION' || anyErr?.code === 400) {
-    console.error(red(`error: 4: ${msg}`))
+    printError(ExitCode.Validation, msg)
     process.exit(ExitCode.Validation)
   }
   if (typeof anyErr?.code === 'number' && anyErr.code >= 500) {
-    console.error(red(`error: 7: ${msg}`))
+    printError(ExitCode.Server, msg)
     process.exit(ExitCode.Server)
   }
 
-  console.error(red(`error: 1: ${msg}`))
-  const hint = typeof anyErr?.code === 'number' ? codeHints[anyErr.code] : undefined
-  if (hint) console.error(yellow(hint))
+  printError(ExitCode.Generic, msg, typeof anyErr?.code === 'number' ? codeHints[anyErr.code] : undefined)
   process.exit(ExitCode.Generic)
 }
 
