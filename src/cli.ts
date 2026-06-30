@@ -371,10 +371,10 @@ Examples:
   project.command('delete <ref...>').description('Delete projects (DESTRUCTIVE; requires --yes)').action(async (refs, opts, cmd) => {
     try { await deleteProjects(refs, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
   })
-  project.command('statuses').description('List issue statuses for a project (defaults to $HULY_PROJECT)')
+  project.command('statuses [ref]').description('List issue statuses for a project (defaults to $HULY_PROJECT or first arg)')
     .option('--project <ref>')
-    .action(async (opts, cmd) => {
-      try { await listStatuses({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    .action(async (ref, opts, cmd) => {
+      try { await listStatuses({ project: ref ?? opts.project, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
   project.command('target-preferences').description('List project target preferences (alias for `target-preference list`)')
     .option('--project <ref>')

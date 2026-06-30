@@ -459,7 +459,7 @@ export const COLUMNS = {
       const content = (m as { content?: unknown }).content
       return trim(typeof content === 'string' ? content : '', 80) || C.muted('(no content)')
     } },
-    { key: 'createOn', header: 'CREATED', width: 12, format: (r) => relTime((r as Record<string, unknown>).createOn as number | null) },
+    { key: 'createdOn', header: 'CREATED', width: 12, format: (r) => relTime((r as Record<string, unknown>).createdOn as number | null) },
     { key: '_id', header: '_ID', width: 12, align: 'right', format: (r) => C.id(shortId((r as Record<string, unknown>)._id)) }
   ],
   channel: <T>(): TableColumn<T>[] => [
@@ -494,7 +494,7 @@ export const COLUMNS = {
         return trim(typeof content === 'string' ? content : '', 80) || C.muted('(no content)')
       }
     },
-    { key: 'createOn', header: 'CREATED', width: 12, format: (r) => relTime((r as Record<string, unknown>).createOn as number | null) },
+    { key: 'createdOn', header: 'CREATED', width: 12, format: (r) => relTime((r as Record<string, unknown>).createdOn as number | null) },
     { key: '_id', header: '_ID', width: 12, align: 'right', format: (r) => C.id(shortId((r as Record<string, unknown>)._id)) }
   ],
   timeReport: <T>(): TableColumn<T>[] => [
@@ -527,13 +527,13 @@ export const COLUMNS = {
   ],
   activity: <T>(): TableColumn<T>[] => [
     { key: 'message', header: 'MESSAGE', format: (r) => trim((r as Record<string, unknown>).message, 80) || C.muted('(no message)') },
-    { key: 'createOn', header: 'CREATED', width: 12, format: (r) => relTime((r as Record<string, unknown>).createOn as number | null) },
+    { key: 'createdOn', header: 'CREATED', width: 12, format: (r) => relTime((r as Record<string, unknown>).createdOn as number | null) },
     { key: '_id', header: '_ID', width: 12, align: 'right', format: (r) => C.id(shortId((r as Record<string, unknown>)._id)) }
   ],
   approval: <T>(): TableColumn<T>[] => [
     { key: 'status', header: 'STATUS', format: (r) => colorizeStatus(String((r as Record<string, unknown>).status ?? '')) },
     { key: 'title', header: 'TITLE', format: (r) => trim((r as Record<string, unknown>).title, 60) || C.muted('(untitled)') },
-    { key: 'createOn', header: 'CREATED', width: 12, format: (r) => relTime((r as Record<string, unknown>).createOn as number | null) },
+    { key: 'createdOn', header: 'CREATED', width: 12, format: (r) => relTime((r as Record<string, unknown>).createdOn as number | null) },
     { key: '_id', header: '_ID', width: 12, align: 'right', format: (r) => C.id(shortId((r as Record<string, unknown>)._id)) }
   ],
   component: <T>(): TableColumn<T>[] => [
