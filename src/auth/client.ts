@@ -1,18 +1,100 @@
 import pkg from '@hcengineering/api-client'
 import accountPkg from '@hcengineering/account-client'
-import { readEnv } from './env.js'
-import { getCachedCreds, setCachedCreds, setCachedWorkspaceToken, findAnyCachedToken, writeActiveAccount } from './cache.js'
+import type { PlatformClient, ConnectOptions } from '@hcengineering/api-client'
+import type { AccountClient } from '@hcengineering/account-client'
+import { createRequire } from 'node:module'
+import { readEnv, insecureTLS } from './env.js'
+import { getCachedCreds, setCachedCreds, setCachedWorkspaceToken, findAnyCachedToken, findAnyCachedCreds, readActiveAccount, writeActiveAccount } from './cache.js'
+
+const require = createRequire(import.meta.url)
+const wsModule = require('ws') as typeof import('ws')
+
+// `NodeWebSocketFactory` lives in `@hcengineering/api-client/lib/socket/node.js`
+// but the package's `exports` field does not expose it. We recreate the small
+// shim inline so we don't need to bypass the exports map.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyClientSocket = any
+const NodeWebSocketFactory = (url: string): AnyClientSocket => {
+  const wsOpts = insecureTLS() ? { rejectUnauthorized: false } : {}
+  const ws = new wsModule.WebSocket(url, wsOpts)
+  const client: AnyClientSocket = {
+    get readyState (): number {
+      return ws.readyState
+    },
+    send: (data: string | ArrayBufferLike | Blob | ArrayBufferView): void => {
+      if (data instanceof Blob) {
+        void data.arrayBuffer().then((buffer) => { ws.send(buffer) })
+      } else {
+        ws.send(data as any)
+      }
+    },
+    close: (code?: number): void => {
+      ws.close(code)
+    }
+  }
+  ws.on('message', (data: any) => {
+    if (client.onmessage != null) {
+      let eventData: string | ArrayBuffer | SharedArrayBuffer = data
+      if (typeof Buffer !== 'undefined' && data instanceof Buffer) {
+        eventData = new Uint8Array(data).buffer
+      }
+      const event = { data: eventData, type: 'message', target: client }
+      client.onmessage(event)
+    }
+  })
+  ws.on('close', (code: number, _reason: string) => {
+    if (client.onclose != null) {
+      const evt = { code, reason: '', wasClean: code === 1000, type: 'close', target: client }
+      client.onclose(evt)
+    }
+  })
+  ws.on('open', () => {
+    if (client.onopen != null) {
+      const evt = { type: 'open', target: client }
+      client.onopen(evt)
+    }
+  })
+  ws.on('error', (err: Error) => {
+    if (client.onerror != null) {
+      const evt = { type: 'error', target: client, error: err }
+      client.onerror(evt)
+    }
+  })
+  return client
+}
+
+// Polyfills for `window` / `WebSocket` are installed in src/index.ts before
+// the SDK is loaded; no need to repeat here.
 
 const { connect } = pkg
 const { getClient } = accountPkg
 
-import type { PlatformClient, ConnectOptions } from '@hcengineering/api-client'
-import type { AccountClient } from '@hcengineering/account-client'
-
 export type { AccountClient, PlatformClient }
 
+const accountsUrlCache = new Map<string, string>()
+
+async function resolveAccountsUrl(url: string): Promise<string> {
+  const host = url.replace(/\/$/, '')
+  if (accountsUrlCache.has(host)) return accountsUrlCache.get(host)!
+  let accountsUrl = `${host}/_accounts`
+  try {
+    // CLI-08: HULY_INSECURE_TLS is enforced globally via applyInsecureTLS()
+    // (Node's built-in undici fetch ignores per-request `agent`), so we no
+    // longer pass an `agent` here. The fetch below honors NODE_TLS_REJECT_UNAUTHORIZED.
+    const r = await fetch(`${host}/config.json`)
+    if (r.ok) {
+      const cfg = (await r.json()) as { ACCOUNTS_URL?: string }
+      if (cfg.ACCOUNTS_URL) accountsUrl = cfg.ACCOUNTS_URL
+    }
+  } catch {
+    // fall through to default
+  }
+  accountsUrlCache.set(host, accountsUrl)
+  return accountsUrl
+}
+
 export async function accountClient(url: string, token?: string): Promise<AccountClient> {
-  const accountsUrl = `${url.replace(/\/$/, '')}/_accounts`
+  const accountsUrl = await resolveAccountsUrl(url)
   return getClient(accountsUrl, token)
 }
 
@@ -33,7 +115,12 @@ export async function loginAndCache(
   password: string
 ): Promise<{ token: string; account: string }> {
   const result = await login(url, email, password)
-  await setCachedCreds(url, email, { accountToken: result.token, workspaces: {} })
+  // Preserve any cached workspace tokens — only refresh the account token.
+  const existing = await getCachedCreds(url, email)
+  await setCachedCreds(url, email, {
+    accountToken: result.token,
+    workspaces: existing?.workspaces ?? {}
+  })
   await writeActiveAccount(url, email)
   return result
 }
@@ -95,8 +182,8 @@ export async function connectPlatform(opts: ConnectArgs): Promise<PlatformClient
   }
 
   const connectOpts: ConnectOptions = token
-    ? { token, workspace }
-    : { email: email!, password: password!, workspace }
+    ? { token, workspace, socketFactory: NodeWebSocketFactory }
+    : { email: email!, password: password!, workspace, socketFactory: NodeWebSocketFactory }
 
   const client = await connect(url, connectOpts)
 
@@ -120,17 +207,19 @@ export async function connectPlatform(opts: ConnectArgs): Promise<PlatformClient
 export async function resolveToken(opts: { url?: string; token?: string; email?: string; password?: string }): Promise<string> {
   const env = readEnv()
   const url = opts.url ?? env.url
-  let token = opts.token ?? env.token
+  const token = opts.token ?? env.token
   if (token) return token
   const email = opts.email ?? env.email
   const password = opts.password ?? env.password
-  if (email && password) {
-    const r = await loginAndCache(url, email, password)
-    return r.token
-  }
+  // Prefer cached credentials over re-authenticating. Re-login would clobber
+  // any cached workspace tokens.
   if (email) {
     const cached = await getCachedCreds(url, email)
     if (cached) return cached.accountToken
+  }
+  if (email && password) {
+    const r = await loginAndCache(url, email, password)
+    return r.token
   }
   const any = await findAnyCachedToken(url)
   if (any) return any.token

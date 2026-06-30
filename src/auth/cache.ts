@@ -2,6 +2,18 @@ import { promises as fs } from 'node:fs'
 import { dirname } from 'node:path'
 import { activeAccountPath, activeWorkspacePath, configDir, credentialsPath } from './env.js'
 
+/** Normalize a Huly host URL: lowercase hostname, strip trailing slash, drop default ports. */
+export function normalizeHost(s: string): string {
+  try {
+    const u = new URL(s)
+    const isDefault = (u.protocol === 'https:' && u.port === '443') || (u.protocol === 'http:' && u.port === '80')
+    const port = isDefault || u.port === '' ? '' : `:${u.port}`
+    return `${u.protocol}//${u.hostname.toLowerCase()}${port}${u.pathname.replace(/\/$/, '')}`
+  } catch {
+    return s.replace(/\/$/, '')
+  }
+}
+
 export interface WorkspaceCreds {
   token: string
   role?: string
@@ -33,6 +45,8 @@ export async function loadCredentials(): Promise<CredentialsFile> {
 export async function saveCredentials(creds: CredentialsFile): Promise<void> {
   await fs.mkdir(configDir(), { recursive: true })
   await fs.writeFile(credentialsPath(), JSON.stringify(creds, null, 2), { mode: 0o600 })
+  // mode is only applied on file creation; harden existing files too.
+  await fs.chmod(credentialsPath(), 0o600).catch(() => { /* not all platforms support chmod */ })
 }
 
 export async function getCachedCreds(
@@ -40,7 +54,7 @@ export async function getCachedCreds(
   email: string
 ): Promise<HostCreds[string] | undefined> {
   const all = await loadCredentials()
-  return all[host]?.[email]
+  return all[normalizeHost(host)]?.[email]
 }
 
 export async function setCachedCreds(
@@ -49,8 +63,9 @@ export async function setCachedCreds(
   data: HostCreds[string]
 ): Promise<void> {
   const all = await loadCredentials()
-  all[host] = all[host] ?? {}
-  all[host][email] = data
+  const key = normalizeHost(host)
+  all[key] = all[key] ?? {}
+  all[key][email] = data
   await saveCredentials(all)
 }
 
@@ -61,9 +76,19 @@ export async function setCachedWorkspaceToken(
   data: WorkspaceCreds
 ): Promise<void> {
   const all = await loadCredentials()
-  if (!all[host]?.[email]) return
-  all[host][email].workspaces[workspaceKey] = data
+  const key = normalizeHost(host)
+  if (!all[key]?.[email]) return
+  all[key][email].workspaces[workspaceKey] = data
   await saveCredentials(all)
+}
+
+export async function getCachedWorkspaceToken(
+  host: string,
+  email: string,
+  workspaceKey: string
+): Promise<WorkspaceCreds | undefined> {
+  const all = await loadCredentials()
+  return all[normalizeHost(host)]?.[email]?.workspaces[workspaceKey]
 }
 
 export async function readActiveWorkspace(): Promise<string | undefined> {
@@ -80,14 +105,18 @@ export async function readActiveWorkspace(): Promise<string | undefined> {
 export async function writeActiveWorkspace(name: string): Promise<void> {
   await fs.mkdir(dirname(activeWorkspacePath()), { recursive: true })
   await fs.writeFile(activeWorkspacePath(), name + '\n', { mode: 0o600 })
+  await fs.chmod(activeWorkspacePath(), 0o600).catch(() => { /* */ })
 }
 
 export async function readActiveAccount(host: string): Promise<string | undefined> {
   try {
     const raw = await fs.readFile(activeAccountPath(), 'utf8')
     const lines = raw.split('\n').map((l) => l.trim()).filter(Boolean)
-    const entry = lines.find((l) => l.startsWith(host + '|'))
-    return entry ? entry.slice(host.length + 1) : undefined
+    const key = normalizeHost(host)
+    const entry = lines.find((l) => l.startsWith(key + '|') || l.startsWith(host + '|'))
+    if (!entry) return undefined
+    const sepIdx = entry.indexOf('|')
+    return sepIdx >= 0 ? entry.slice(sepIdx + 1) : undefined
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return undefined
     throw err
@@ -96,6 +125,7 @@ export async function readActiveAccount(host: string): Promise<string | undefine
 
 export async function writeActiveAccount(host: string, email: string): Promise<void> {
   await fs.mkdir(dirname(activeAccountPath()), { recursive: true })
+  const key = normalizeHost(host)
   let lines: string[] = []
   try {
     const raw = await fs.readFile(activeAccountPath(), 'utf8')
@@ -103,15 +133,20 @@ export async function writeActiveAccount(host: string, email: string): Promise<v
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
   }
-  const entry = `${host}|${email}`
-  const filtered = lines.filter((l) => !l.startsWith(host + '|'))
+  const entry = `${key}|${email}`
+  const filtered = lines.filter((l) => {
+    const sep = l.indexOf('|')
+    return sep <= 0 || normalizeHost(l.slice(0, sep)) !== key
+  })
   filtered.push(entry)
   await fs.writeFile(activeAccountPath(), filtered.join('\n') + '\n', { mode: 0o600 })
+  await fs.chmod(activeAccountPath(), 0o600).catch(() => { /* */ })
 }
 
 export async function findAnyCachedCreds(host: string): Promise<{ email: string; data: HostCreds[string] } | undefined> {
   const all = await loadCredentials()
-  const hostCreds = all[host]
+  const key = normalizeHost(host)
+  const hostCreds = all[key]
   if (!hostCreds) return undefined
   const active = await readActiveAccount(host)
   const emails = Object.keys(hostCreds)
