@@ -244,8 +244,14 @@ export async function createAction(opts: CreateActionOpts): Promise<void> {
   try {
     const account = await client.getAccount()
     const user = await resolveEmployeeId(client, opts.owner)
-    const priority = opts.priority && TODO_PRIORITIES.has(opts.priority) ? opts.priority : 'NoPriority'
-    const visibility = opts.visibility && TODO_VISIBILITIES.has(opts.visibility) ? opts.visibility : 'public'
+    if (opts.priority && !TODO_PRIORITIES.has(opts.priority)) {
+      throw new CliError(ExitCode.Validation, `invalid --priority: ${opts.priority}`, `expected one of ${[...TODO_PRIORITIES].join(' | ')}`)
+    }
+    if (opts.visibility && !TODO_VISIBILITIES.has(opts.visibility)) {
+      throw new CliError(ExitCode.Validation, `invalid --visibility: ${opts.visibility}`, `expected one of ${[...TODO_VISIBILITIES].join(' | ')}`)
+    }
+    const priority = opts.priority ?? 'NoPriority'
+    const visibility = opts.visibility ?? 'public'
 
     let attachedTo: Ref<Doc>
     let attachedToClass: Ref<Class<Doc>>
@@ -296,6 +302,7 @@ export interface UpdateActionOpts {
   title?: string
   description?: string
   body?: string
+  bodyFile?: string
   due?: string
   priority?: string
   visibility?: string
@@ -321,7 +328,8 @@ export async function updateAction(ref: string, opts: UpdateActionOpts): Promise
 
     const ops: Record<string, unknown> = {}
     if (opts.title) ops.title = opts.title
-    if (opts.body) ops.description = opts.body
+    const body = await readBodyText({ body: opts.body, bodyFile: opts.bodyFile })
+    if (body !== undefined) ops.description = body
     else if (opts.description !== undefined) ops.description = opts.description ? opts.description : ''
     if (opts.due) ops.dueDate = parseDate(opts.due, '--due')
     if (opts.priority) {
@@ -369,12 +377,6 @@ export async function updateAction(ref: string, opts: UpdateActionOpts): Promise
 // ---- complete / reopen ----
 
 export async function completeAction(ref: string, opts: { dryRun?: boolean; json?: boolean; ci?: boolean; workspace?: string; url?: string } = {}): Promise<void> {
-  return updateAction(ref, { ...opts } as UpdateActionOpts)
-    .then(() => Promise.resolve())
-    .catch(() => {
-      // not used — explicit complete below
-    })
-  // Use direct setDoneOn semantics:
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const account = await client.getAccount()
@@ -449,7 +451,7 @@ export async function deleteActions(refs: string[], opts: { dryRun?: boolean; wo
       classId: TODO_CLASS as Ref<Class<Doc>>,
       workspaceId: account.uuid
     })
-    if (!opts.yes && ids.length > 1) console.error(`warning: deleting ${refs.length} actions; pass --yes to confirm`)
+    if (!opts.yes && ids.length > 1) throw new CliError(ExitCode.Validation, `destructive: deleting ${refs.length} actions requires --yes`, 're-run with --yes to confirm')
     let deleted = 0, skipped = 0
     for (const id of ids) {
       const todo = await client.findOne(TODO_CLASS, { _id: id as Ref<ToDo> })
@@ -560,7 +562,13 @@ export async function unscheduleAction(ref: string, opts: { slotId?: string; yes
       return
     }
     if (!opts.yes && slots.length > 1) {
-      console.error(`warning: removing ${slots.length} work-slots; pass --yes to confirm`)
+      // CLI-17: warning-and-proceed silently removed all slots. Throw so the
+      // user must explicitly confirm with --yes.
+      throw new CliError(
+        ExitCode.Validation,
+        `destructive: unscheduling ${slots.length} work-slots requires --yes`,
+        're-run with --yes to confirm'
+      )
     }
     let removed = 0, skipped = 0
     for (const s of slots) {

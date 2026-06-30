@@ -6,6 +6,7 @@ import { CLASS } from '../transport/identifiers.js'
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, buildIndex, invalidateIndex } from '../transport/ref-resolver.js'
 import { shouldJson, json, table, kv, header, withTimeout, COLUMNS, C, colorizeStatus, colorizePriority, statusGlyph, priorityGlyph, relTime, isoDate, isoDay, success, updated, bulkRemoved } from "../output/format.js"
+import { resolveAssignee } from "./_helpers.js"
 import { withSpinner } from '../output/progress.js'
 import { deleteDoc } from '../commands/dry-run.js'
 import { CliError, ExitCode } from '../output/errors.js'
@@ -170,9 +171,14 @@ async function resolvePriority(client: PlatformClient, name?: string): Promise<R
     const all = await queryAll()
     const hit = all.find((p) => p.label?.toLowerCase() === name.toLowerCase() || p.name?.toLowerCase() === name.toLowerCase())
     if (hit) return hit._id
-    // If user specified a priority but it doesn't exist on this workspace,
-    // we cannot reliably create one (model routing bug). Skip priority.
-    return undefined
+    // CLI-13: explicit --priority with no matching priority must throw
+    // rather than silently dropping the user input.
+    const available = all.map((p) => p.label ?? p.name ?? '').filter(Boolean)
+    throw new CliError(
+      ExitCode.Validation,
+      `priority "${name}" not found in this workspace`,
+      `available priorities: ${available.length > 0 ? available.join(', ') : '(none — workspace may not have tracker migration applied)'}`
+    )
   }
   const all = await queryAll()
   const normal = all.find((p) => p.label === 'Normal')
@@ -219,7 +225,7 @@ export async function listIssues(opts: {
     const project = opts.project ? await resolveProject(client, opts.project) : null
     const query: Record<string, unknown> = {}
     if (project) query.space = project._id
-    if (opts.assignee) query.assignee = opts.assignee
+    if (opts.assignee) query.assignee = await resolveAssignee(client, opts.assignee)
     if (opts.label && opts.label.length > 0) query.labels = { $in: opts.label }
 
     // Status filter — either direct name or by category
@@ -242,13 +248,22 @@ export async function listIssues(opts: {
       if (!valid.includes(wanted)) {
         throw new CliError(ExitCode.Validation, `invalid --status-category: ${wanted}`, `expected one of ${valid.join(' | ')}`)
       }
-      const statusQuery: Record<string, unknown> = { space: project?._id }
+      // CLI-11: statusCategory values are stored as "task:statusCategory:Active".
+      // Strip the prefix before comparing. Also resolve a project when one
+      // wasn't supplied (statuses are not workspace-global).
+      let proj = project
+      if (!proj) {
+        const all = (await client.findAll(CLASS.Project as Ref<Class<Project>>, {})) as Project[]
+        proj = all[0] ?? null
+      }
+      if (!proj) throw new CliError(ExitCode.Validation, '--status-category requires a project (use --project)')
       const statuses = (await client.findAll(
         CLASS.IssueStatus as Ref<Class<Doc>>,
-        statusQuery as any
+        { space: proj._id } as any
       )) as Array<Doc & { category?: string; label?: string; name?: string }>
+      const stripPrefix = (cat: string): string => cat.replace(/^task:statusCategory:/, '')
       const matchingIds = statuses
-        .filter((s) => String(s.category ?? '').toLowerCase() === wanted.toLowerCase())
+        .filter((s) => stripPrefix(String(s.category ?? '')).toLowerCase() === wanted.toLowerCase())
         .map((s) => s._id)
       if (matchingIds.length === 0) {
         console.log('(no statuses in that category)')
@@ -409,11 +424,18 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
         defaultProjectIdentifier: readEnv().project
       }) as Ref<Doc>
     } else if (!opts.minimal) {
-      data.parent = (project._id as unknown) as Ref<Doc>
+      // CLI-12: top-level issues must have parent=null so that
+      // `issue list --parent null` matches them. Setting parent=project._id
+      // would create a phantom parent and break the CLI's own filter.
+      data.parent = null
     }
 
     if (!opts.minimal) {
       data.project = (project._id as unknown) as Ref<Project>
+    }
+
+    if (opts.assignee) {
+      data.assignee = await resolveAssignee(client, opts.assignee) as Ref<Doc>
     }
 
     if (body) data.description = body
@@ -543,7 +565,8 @@ export async function updateIssue(
       if (eq < 0) throw new CliError(ExitCode.Validation, `invalid --set entry (expected key=value): ${item}`)
       const k = item.slice(0, eq).trim()
       let v: unknown = item.slice(eq + 1).trim()
-      if (v === 'true') v = true
+      if (v === 'null') v = null
+      else if (v === 'true') v = true
       else if (v === 'false') v = false
       else if (/^-?\d+(\.\d+)?$/.test(String(v))) v = Number(v)
       ops[k] = v
@@ -555,6 +578,7 @@ export async function updateIssue(
       const p = await resolvePriority(client, opts.priority)
       if (p !== undefined) ops.priority = p
     }
+    if (opts.assignee) ops.assignee = await resolveAssignee(client, opts.assignee) as Ref<Doc>
     if (opts.title) ops.title = opts.title
     if (opts.description) ops.description = opts.description
     if (opts.taskType) ops.kind = await resolveTaskType(client, opts.taskType, project)
@@ -583,7 +607,11 @@ export async function deleteIssues(refs: string[], opts: { dryRun?: boolean; wor
       defaultProjectIdentifier: readEnv().project
     })
     if (!opts.yes && ids.length > 1) {
-      console.error(`warning: deleting ${ids.length} issues; pass --yes to confirm`)
+      throw new CliError(
+        ExitCode.Validation,
+        `destructive: deleting ${ids.length} issues requires --yes`,
+        're-run with --yes to confirm'
+      )
     }
     let deleted = 0, skipped = 0
     for (const id of ids) {
@@ -690,6 +718,15 @@ export async function removeIssueLabel(ref: string, labelName: string, opts: { j
 
 export type RelationType = 'blocks' | 'isBlockedBy' | 'relatesTo'
 
+const RELATION_TYPES: ReadonlyArray<RelationType> = ['blocks', 'isBlockedBy', 'relatesTo']
+
+export function validateRelationType(type: string): RelationType {
+  if (!(RELATION_TYPES as ReadonlyArray<string>).includes(type)) {
+    throw new CliError(ExitCode.Validation, `invalid --type: ${type}`, `expected one of ${RELATION_TYPES.join(' | ')}`)
+  }
+  return type as RelationType
+}
+
 function relationField(type: RelationType): 'relations' | 'blockedBy' {
   return type === 'isBlockedBy' ? 'blockedBy' : 'relations'
 }
@@ -700,7 +737,8 @@ function relationTag(type: RelationType): string {
   return 'relatesTo'
 }
 
-export async function addIssueRelation(ref: string, type: RelationType, targetRef: string, opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string }): Promise<void> {
+export async function addIssueRelation(ref: string, type: string, targetRef: string, opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string }): Promise<void> {
+  const rel = validateRelationType(type)
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const account = await client.getAccount()
@@ -718,19 +756,20 @@ export async function addIssueRelation(ref: string, type: RelationType, targetRe
     })
     const issue = await client.findOne(CLASS.Issue as Ref<Class<Issue>>, { _id: sourceId as Ref<Issue> })
     if (!issue) throw new CliError(ExitCode.NotFound, `issue ${ref} not found`)
-    const field = relationField(type)
+    const field = relationField(rel)
     const existing = (issue as unknown as Record<string, RelatedDoc[] | undefined>)[field] ?? []
     const updated = [...existing, { _id: targetId as string, _class: CLASS.Issue }]
     await withSpinner(
-      `Adding ${type} → ${targetRef}…`,
+      `Adding ${rel} → ${targetRef}…`,
       () => client.updateDoc(CLASS.Issue as Ref<Class<Issue>>, issue.space as unknown as Ref<Space>, issue._id, { [field]: updated } as any),
       opts
     )
-    success(`added ${type}`, ref + ' → ' + targetRef)
+    success(`added ${rel}`, ref + ' → ' + targetRef)
   } finally { await client.close() }
 }
 
-export async function removeIssueRelation(ref: string, type: RelationType, targetRef: string, opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string }): Promise<void> {
+export async function removeIssueRelation(ref: string, type: string, targetRef: string, opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string }): Promise<void> {
+  const rel = validateRelationType(type)
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const account = await client.getAccount()
@@ -748,15 +787,15 @@ export async function removeIssueRelation(ref: string, type: RelationType, targe
     })
     const issue = await client.findOne(CLASS.Issue as Ref<Class<Issue>>, { _id: sourceId as Ref<Issue> })
     if (!issue) throw new CliError(ExitCode.NotFound, `issue ${ref} not found`)
-    const field = relationField(type)
+    const field = relationField(rel)
     const existing = (issue as unknown as Record<string, RelatedDoc[] | undefined>)[field] ?? []
     const updated = existing.filter((r) => r._id !== targetId)
     await withSpinner(
-      `Removing ${type} → ${targetRef}…`,
+      `Removing ${rel} → ${targetRef}…`,
       () => client.updateDoc(CLASS.Issue as Ref<Class<Issue>>, issue.space as unknown as Ref<Space>, issue._id, { [field]: updated } as any),
       opts
     )
-    success(`removed ${type}`, ref + ' → ' + targetRef)
+    success(`removed ${rel}`, ref + ' → ' + targetRef)
   } finally { await client.close() }
 }
 

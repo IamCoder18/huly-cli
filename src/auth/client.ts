@@ -3,8 +3,8 @@ import accountPkg from '@hcengineering/account-client'
 import type { PlatformClient, ConnectOptions } from '@hcengineering/api-client'
 import type { AccountClient } from '@hcengineering/account-client'
 import { createRequire } from 'node:module'
-import { readEnv } from './env.js'
-import { getCachedCreds, setCachedCreds, setCachedWorkspaceToken, findAnyCachedToken, writeActiveAccount } from './cache.js'
+import { readEnv, insecureTLS } from './env.js'
+import { getCachedCreds, setCachedCreds, setCachedWorkspaceToken, findAnyCachedToken, findAnyCachedCreds, readActiveAccount, writeActiveAccount } from './cache.js'
 
 const require = createRequire(import.meta.url)
 const wsModule = require('ws') as typeof import('ws')
@@ -15,7 +15,8 @@ const wsModule = require('ws') as typeof import('ws')
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyClientSocket = any
 const NodeWebSocketFactory = (url: string): AnyClientSocket => {
-  const ws = new wsModule.WebSocket(url)
+  const wsOpts = insecureTLS() ? { rejectUnauthorized: false } : {}
+  const ws = new wsModule.WebSocket(url, wsOpts)
   const client: AnyClientSocket = {
     get readyState (): number {
       return ws.readyState
@@ -70,8 +71,30 @@ const { getClient } = accountPkg
 
 export type { AccountClient, PlatformClient }
 
+const accountsUrlCache = new Map<string, string>()
+
+async function resolveAccountsUrl(url: string): Promise<string> {
+  const host = url.replace(/\/$/, '')
+  if (accountsUrlCache.has(host)) return accountsUrlCache.get(host)!
+  let accountsUrl = `${host}/_accounts`
+  try {
+    // CLI-08: HULY_INSECURE_TLS is enforced globally via applyInsecureTLS()
+    // (Node's built-in undici fetch ignores per-request `agent`), so we no
+    // longer pass an `agent` here. The fetch below honors NODE_TLS_REJECT_UNAUTHORIZED.
+    const r = await fetch(`${host}/config.json`)
+    if (r.ok) {
+      const cfg = (await r.json()) as { ACCOUNTS_URL?: string }
+      if (cfg.ACCOUNTS_URL) accountsUrl = cfg.ACCOUNTS_URL
+    }
+  } catch {
+    // fall through to default
+  }
+  accountsUrlCache.set(host, accountsUrl)
+  return accountsUrl
+}
+
 export async function accountClient(url: string, token?: string): Promise<AccountClient> {
-  const accountsUrl = `${url.replace(/\/$/, '')}/_accounts`
+  const accountsUrl = await resolveAccountsUrl(url)
   return getClient(accountsUrl, token)
 }
 

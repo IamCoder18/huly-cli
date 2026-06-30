@@ -167,7 +167,7 @@ export async function deleteMilestones(refs: string[], opts: { dryRun?: boolean;
       classId: CLASS.Milestone as Ref<Class<Doc>>,
       workspaceId: account.uuid
     })
-    if (!opts.yes && ids.length > 1) console.error(`warning: deleting ${ids.length} milestones; pass --yes to confirm`)
+    if (!opts.yes && ids.length > 1) throw new CliError(ExitCode.Validation, `destructive: deleting ${ids.length} milestones requires --yes`, 're-run with --yes to confirm')
     let deleted = 0, skipped = 0
     for (const id of ids) {
       const doc = await client.findOne(CLASS.Milestone as Ref<Class<Milestone>>, { _id: id as Ref<Milestone> })

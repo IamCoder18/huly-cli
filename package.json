@@ -12,14 +12,14 @@
     "bin"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && chmod +x dist/index.js",
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
-    "smoke": "node -e \"console.log('see src/__manual__/smoke.md')\""
+    "smoke": "bash scripts/smoke.sh all"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22.11"
   },
   "dependencies": {
     "@hcengineering/account-client": "^0.7.423",

@@ -29,13 +29,22 @@ export interface BuildIndexOpts<T extends Doc> {
   titleField?: keyof T
 }
 
+/**
+ * Identity-bearing field names that CLI commands advertise as accepting
+ * refs (e.g. "name", "label", "title"). Index them alongside the configured
+ * `identifierField` so callers don't have to specify which field they used.
+ */
+const COMMON_IDENTITY_KEYS = ['identifier', 'name', 'label'] as const
+
 export async function buildIndex<T extends Doc>(
   client: PlatformClient,
   classId: Ref<Class<T>>,
   workspaceId: string,
   identifierField: keyof T | string = 'identifier'
 ): Promise<Map<string, Ref<Doc>>> {
-  const key = cacheKey(workspaceId, classId)
+  // A9: prefer workspace-scoped UUID if attached to the client.
+  const wsId = (client as PlatformClient & { __workspaceId?: string }).__workspaceId ?? workspaceId
+  const key = cacheKey(wsId, classId)
   const cached = REFS.get(key)
   if (cached) return cached
 
@@ -44,8 +53,21 @@ export async function buildIndex<T extends Doc>(
   for (const d of docs) {
     const id = d._id
     const rec = d as Record<string, unknown>
-    const ident = identifierField as string
-    if (rec[ident] != null) map.set(String(rec[ident]), id)
+    // CLI-02: index the configured identifier plus common identity fields.
+    // We only set the bare key (no `title:` prefix) so callers can look up
+    // by either "name" or "label" interchangeably, matching what help text
+    // advertises.
+    const indexed = new Set<string>()
+    const fields = [identifierField as string, ...COMMON_IDENTITY_KEYS]
+    for (const f of fields) {
+      if (rec[f] != null) {
+        const v = String(rec[f])
+        if (!indexed.has(v)) {
+          map.set(v, id)
+          indexed.add(v)
+        }
+      }
+    }
     if (rec.title != null) map.set(`title:${String(rec.title).toLowerCase()}`, id)
     map.set(id, id)
   }
@@ -64,6 +86,12 @@ export function invalidateIndex(workspaceId?: string, classId?: string): void {
     return
   }
   REFS.delete(cacheKey(workspaceId, classId))
+}
+
+/** Invalidate every cache entry for a given workspaceId, including entries
+ *  keyed by the legacy account-uuid alias. */
+export function invalidateIndexForWorkspace(workspaceId: string): void {
+  for (const k of [...REFS.keys()]) if (k.startsWith(`${workspaceId}|`)) REFS.delete(k)
 }
 
 export interface ResolveOpts {

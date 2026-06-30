@@ -256,7 +256,7 @@ export async function deleteTeamspaces(refs: string[], opts: { dryRun?: boolean;
       classId: TEAMSPACE_CLASS as Ref<Class<Doc>>,
       workspaceId: account.uuid
     })
-    if (!opts.yes && ids.length > 1) console.error(`warning: deleting ${ids.length} teamspaces; pass --yes to confirm`)
+    if (!opts.yes && ids.length > 1) throw new CliError(ExitCode.Validation, `destructive: deleting ${ids.length} teamspaces requires --yes`, 're-run with --yes to confirm')
     let deleted = 0, skipped = 0
     for (const id of ids) {
       const doc = await client.findOne(TEAMSPACE_CLASS, { _id: id as Ref<Teamspace> })
@@ -456,6 +456,9 @@ export async function updateDocument(ref: string, opts: UpdateDocumentOpts): Pro
     if (!doc) throw new CliError(ExitCode.NotFound, `document ${ref} not found`)
 
     let body: string | undefined
+    if (opts.body && opts.bodyFile) {
+      throw new CliError(ExitCode.Validation, 'ambiguous body input', 'pass only one of --body or --body-file')
+    }
     if (opts.bodyFile) {
       const fs = await import('node:fs/promises')
       body = (await fs.readFile(opts.bodyFile, 'utf8')).trim()
@@ -525,7 +528,7 @@ export async function deleteDocuments(refs: string[], opts: { dryRun?: boolean; 
       classId: DOCUMENT_CLASS as Ref<Class<Doc>>,
       workspaceId: account.uuid
     })
-    if (!opts.yes && ids.length > 1) console.error(`warning: deleting ${ids.length} documents; pass --yes to confirm`)
+    if (!opts.yes && ids.length > 1) throw new CliError(ExitCode.Validation, `destructive: deleting ${ids.length} documents requires --yes`, 're-run with --yes to confirm')
     let deleted = 0, skipped = 0
     for (const id of ids) {
       const d = await client.findOne(DOCUMENT_CLASS, { _id: id as Ref<Document> })

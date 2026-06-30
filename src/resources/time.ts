@@ -46,8 +46,16 @@ export async function listTimeEntries(opts: {
     }
     if (opts.start || opts.end) {
       const range: Record<string, number> = {}
-      if (opts.start) range.$gte = new Date(opts.start).getTime()
-      if (opts.end) range.$lte = new Date(opts.end).getTime()
+      if (opts.start) {
+        const t = new Date(opts.start).getTime()
+        if (Number.isNaN(t)) throw new CliError(ExitCode.Validation, `invalid --start: ${opts.start} (expected ISO date)`)
+        range.$gte = t
+      }
+      if (opts.end) {
+        const t = new Date(opts.end).getTime()
+        if (Number.isNaN(t)) throw new CliError(ExitCode.Validation, `invalid --end: ${opts.end} (expected ISO date)`)
+        range.$lte = t
+      }
       query.date = range
     }
     const docs = (await withSpinner('Loading time entries…', () =>
@@ -72,6 +80,7 @@ export async function logTime(opts: {
   date?: string
   json?: boolean
   ci?: boolean
+  dryRun?: boolean
   workspace?: string
   url?: string
 }): Promise<void> {
@@ -79,6 +88,10 @@ export async function logTime(opts: {
   const totalMinutes = opts.minutes ?? (opts.hours !== undefined ? Math.round(opts.hours * 60) : 0)
   if (totalMinutes <= 0) throw new CliError(ExitCode.Validation, 'missing --minutes (or --hours)', 'pass one of --minutes or --hours')
   const description = opts.description ?? ''
+  if (opts.dryRun) {
+    console.log(`would log ${totalMinutes}min on ${opts.issue} (description: "${description}")`)
+    return
+  }
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const account = await client.getAccount()
@@ -90,10 +103,17 @@ export async function logTime(opts: {
     })
     const issue = await client.findOne(CLASS.Issue as Ref<Class<Doc>>, { _id: issueId })
     if (!issue) throw new CliError(ExitCode.NotFound, `issue ${opts.issue} not found`)
+    const dateMs = opts.date
+      ? (() => {
+          const t = new Date(opts.date).getTime()
+          if (Number.isNaN(t)) throw new CliError(ExitCode.Validation, `invalid --date: ${opts.date} (expected ISO date)`)
+          return t
+        })()
+      : Date.now()
     const data: Record<string, unknown> = {
       value: totalMinutes / 60, // TimeSpendReport stores man hours
       description,
-      date: opts.date ? new Date(opts.date).getTime() : Date.now(),
+      date: dateMs,
       employee: account.uuid,
       space: (issue as Doc).space
     }
@@ -128,7 +148,11 @@ export async function deleteTimeEntries(refs: string[], opts: { workspace?: stri
       workspaceId: account.uuid
     })
     if (!opts.yes && ids.length > 1) {
-      console.error(`warning: deleting ${ids.length} time entries; pass --yes to confirm`)
+      throw new CliError(
+        ExitCode.Validation,
+        `destructive: deleting ${ids.length} time entries requires --yes`,
+        're-run with --yes to confirm'
+      )
     }
     let deleted = 0, skipped = 0
     for (const id of ids) {

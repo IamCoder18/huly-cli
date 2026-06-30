@@ -135,7 +135,7 @@ export async function deleteComponents(refs: string[], opts: { dryRun?: boolean;
       classId: CLASS.Component as Ref<Class<Doc>>,
       workspaceId: account.uuid
     })
-    if (!opts.yes && ids.length > 1) console.error(`warning: deleting ${ids.length} components; pass --yes to confirm`)
+    if (!opts.yes && ids.length > 1) throw new CliError(ExitCode.Validation, `destructive: deleting ${ids.length} components requires --yes`, 're-run with --yes to confirm')
     let deleted = 0, skipped = 0
     for (const id of ids) {
       const doc = await client.findOne(CLASS.Component as Ref<Class<Component>>, { _id: id as Ref<Component> })

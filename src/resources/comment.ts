@@ -151,7 +151,7 @@ export async function deleteComments(refs: string[], opts: { workspace?: string;
       workspaceId: account.uuid
     })
     if (!opts.yes && ids.length > 1) {
-      console.error(`warning: deleting ${ids.length} comments; pass --yes to confirm`)
+      throw new CliError(ExitCode.Validation, `destructive: deleting ${ids.length} comments requires --yes`, 're-run with --yes to confirm')
     }
     let deleted = 0, skipped = 0
     for (const id of ids) {

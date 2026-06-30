@@ -165,7 +165,7 @@ export async function deleteIssueTemplates(refs: string[], opts: { dryRun?: bool
       classId: CLASS.IssueTemplate as Ref<Class<Doc>>,
       workspaceId: account.uuid
     })
-    if (!opts.yes && ids.length > 1) console.error(`warning: deleting ${ids.length} templates; pass --yes to confirm`)
+    if (!opts.yes && ids.length > 1) throw new CliError(ExitCode.Validation, `destructive: deleting ${ids.length} templates requires --yes`, 're-run with --yes to confirm')
     let deleted = 0, skipped = 0
     for (const id of ids) {
       const doc = await client.findOne(CLASS.IssueTemplate as Ref<Class<IssueTemplate>>, { _id: id as Ref<IssueTemplate> })

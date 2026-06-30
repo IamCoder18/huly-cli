@@ -3,13 +3,18 @@ import { createRequire } from 'node:module'
 const require = createRequire(import.meta.url)
 const wsModule = require('ws') as typeof import('ws')
 
+// CLI-08: apply HULY_INSECURE_TLS before any fetch/SDK connect so the global
+// Node TLS state and the built-in undici fetch both honor it.
+import { applyInsecureTLS } from './auth/env.js'
+applyInsecureTLS()
+
 // Suppress Node experimental/deprecation warnings on stderr.
 // Node 22+ prints these for things like `localStorage` availability checks.
 const proc = process as unknown as { emit: (event: string, ...args: unknown[]) => boolean }
 const origEmit = proc.emit
 proc.emit = function (this: unknown, event: string, ...args: unknown[]) {
   if (event === 'warning') return false
-  return origEmit.call(this, event, ...args)
+  return origEmit.call(this, event, args as never)
 } as typeof origEmit
 
 // Polyfill `window` for Node.js >= 22 where `sessionStorage` is provided as a

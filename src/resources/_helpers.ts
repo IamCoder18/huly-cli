@@ -9,6 +9,8 @@ import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
 import { deleteDoc } from '../commands/dry-run.js'
 
+type ResolverClient = PlatformClient & { __workspaceId?: string }
+
 const DELETE_GAP_MS = 100
 
 export interface GlobalRunOpts {
@@ -257,7 +259,11 @@ export function makeDelete<T extends Doc>(opts: DeleteOpts<T>) {
         defaultProjectIdentifier: deleteOpts.defaultProjectIdentifier
       })
       if (!deleteOpts.yes && ids.length > 1) {
-        console.error(`warning: deleting ${ids.length} ${opts.label ?? 'records'}; pass --yes to confirm`)
+        throw new CliError(
+          ExitCode.Validation,
+          `destructive: deleting ${ids.length} ${opts.label ?? 'records'} requires --yes`,
+          're-run with --yes to confirm'
+        )
       }
       let deleted = 0
       let skipped = 0
@@ -302,6 +308,37 @@ export async function resolveByTitle<T extends Doc>(
   const docs = (await client.findAll(classId, { ...extraQuery })) as unknown as T[]
   const lower = title.toLowerCase()
   return docs.find((d) => String((d as Record<string, unknown>).title ?? '').toLowerCase() === lower)
+}
+
+/**
+ * Resolve an assignee (email or name) to a contact:class:Person _id by scanning
+ * workspace-local Persons. Falls back to the current account's own _id if the
+ * input is empty or matches the current user.
+ */
+export async function resolveAssignee(client: PlatformClient, ref: string): Promise<Ref<Doc>> {
+  const trimmed = ref.trim()
+  if (trimmed === '' || trimmed === 'me') {
+    const me = await client.getAccount()
+    return me.uuid as Ref<Doc>
+  }
+  // Already a ref-like id?
+  if (/^[a-z0-9]+:[a-z0-9]+:[A-Za-z0-9_-]+$/.test(trimmed)) {
+    return trimmed as Ref<Doc>
+  }
+  const lower = trimmed.toLowerCase()
+  const persons = (await client.findAll(
+    'contact:class:Person' as Ref<Class<Doc>>, {}, { limit: 500 }
+  )) as Array<Doc & { name?: string; email?: string }>
+  const hit = persons.find(
+    (p) => (p.email ?? '').toLowerCase() === lower || (p.name ?? '').toLowerCase() === lower
+  )
+  if (hit) return hit._id
+  // Loose contains match
+  const fuzzy = persons.find(
+    (p) => (p.name ?? '').toLowerCase().includes(lower) || (p.email ?? '').toLowerCase().includes(lower)
+  )
+  if (fuzzy) return fuzzy._id
+  throw new CliError(ExitCode.NotFound, `assignee ${ref} not found in workspace`)
 }
 
 export { buildIndex, resolveRef, resolveRefs }

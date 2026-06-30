@@ -74,6 +74,8 @@ const pkg = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf8
 export interface GlobalOpts {
   url?: string
   workspace?: string
+  email?: string
+  password?: string
   json?: boolean
   ci?: boolean
   markdown?: boolean
@@ -148,10 +150,20 @@ export async function run(argv: string[] = process.argv): Promise<void> {
     .command('login')
     .description('Log in and cache credentials')
     .option('--headless', 'use env vars only, no prompts')
+    .option('--email <email>')
+    .option('--password <pwd>')
     .action(async (opts, cmd) => {
       try {
         const g = globalsFrom(cmd)
-        await loginCommand({ headless: opts.headless ?? g.headless ?? g.nonInteractive })
+        await loginCommand({
+          url: g.url,
+          workspace: g.workspace,
+          email: opts.email ?? g.email,
+          password: opts.password ?? g.password,
+          nonInteractive: g.nonInteractive,
+          headless: opts.headless ?? g.headless,
+          json: g.json ?? g.ci
+        })
       } catch (e) { handleError(e) }
     })
 
@@ -159,7 +171,10 @@ export async function run(argv: string[] = process.argv): Promise<void> {
     .command('whoami')
     .description('Show current account and workspace')
     .action(async (_opts, cmd) => {
-      try { await whoamiCommand({ json: cmd.optsWithGlobals()?.json }) } catch (e) { handleError(e) }
+      try {
+        const g = globalsFrom(cmd)
+        await whoamiCommand({ url: g.url, workspace: g.workspace, json: g.json ?? g.ci })
+      } catch (e) { handleError(e) }
     })
 
   const ws = program.command('workspace').description('Manage workspaces'); withGlobalHelp(ws)
@@ -195,7 +210,7 @@ Note: workspace creation runs the tracker migration. May take 30-60s.`)
     .action(async (opts, cmd) => {
       try { await createWorkspace({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
-  ws.command('delete').description('Delete the current workspace (DESTRUCTIVE; requires --yes; --force to delete the active workspace)')
+  ws.command('delete [name]').description('Delete a workspace (DESTRUCTIVE; requires --yes; --force to delete the active workspace)')
     .option('--force', 'delete even if this is the active workspace')
     .addHelpText('after', `
 Examples:
@@ -204,8 +219,8 @@ Examples:
 
 WARNING: server-side hard-delete may take several minutes. Worker calls
 doCleanup which drops all docs in all per-workspace tables.`)
-    .action(async (opts, cmd) => {
-      try { await deleteWorkspace({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    .action(async (name, opts, cmd) => {
+      try { await deleteWorkspace({ ...opts, ...globalsFrom(cmd), name }) } catch (e) { handleError(e) }
     })
   ws.command('members').description('List workspace members')
     .option('--role <r>', 'filter by role (Owner|Admin|Guest|ReadOnlyGuest|DocGuest)')
@@ -434,7 +449,7 @@ Examples:
   issue
     .command('create')
     .description('Create an issue')
-    .option('--project <id>')
+    .option('--project <id>', 'project identifier (defaults to $HULY_PROJECT or interactive selection)')
     .requiredOption('--title <t>')
     .option('--description <text>')
     .option('--body <md>')
@@ -485,29 +500,24 @@ Pass any combination of --status/--priority/--assignee/--title/--description/--s
   issue.command('delete <ref...>').description('Delete issues (requires --yes for multiple)').action(async (refs, opts, cmd) => {
     try { await deleteIssues(refs, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
   })
-  const issueLabel = issue.command('label <ref>').description('Manage labels on an issue')
-  issueLabel.command('add <ref>').description('Add a label to an issue').action(async (ref, _opts, cmd) => {
-    const o = cmd.optsWithGlobals() as { label?: string }
-    if (!o.label) {
-      console.error('error: missing --label')
-      process.exit(2)
-    }
-    try { await addIssueLabel(ref, o.label, globalsFrom(cmd)) } catch (e) { handleError(e) }
-  })
-  issueLabel.command('remove <ref>').description('Remove a label from an issue').action(async (ref, _opts, cmd) => {
-    const o = cmd.optsWithGlobals() as { label?: string }
-    if (!o.label) {
-      console.error('error: missing --label')
-      process.exit(2)
-    }
-    try { await removeIssueLabel(ref, o.label, globalsFrom(cmd)) } catch (e) { handleError(e) }
-  })
-  issueLabel.option('--label <name>', 'label name (required for add/remove)')
-  issueLabel.hook('preAction', (thisCmd) => {
-    const o = thisCmd.opts() as Record<string, unknown>
-    const parent = thisCmd.parent
-    if (parent) Object.assign(o, parent.opts())
-  })
+  const issueLabel = issue.command('label').description('Manage labels on an issue')
+  issueLabel.command('add <ref>').description('Add a label to an issue')
+    .requiredOption('--label <name>')
+    .addHelpText('after', `
+Examples:
+  $ huly issue label add TSK-1 --label bug
+  $ huly issue label add TSK-1 --label auth --label backend`)
+    .action(async (ref, opts, cmd) => {
+      try { await addIssueLabel(ref, opts.label, globalsFrom(cmd)) } catch (e) { handleError(e) }
+    })
+  issueLabel.command('remove <ref>').description('Remove a label from an issue')
+    .requiredOption('--label <name>')
+    .addHelpText('after', `
+Examples:
+  $ huly issue label remove TSK-1 --label bug`)
+    .action(async (ref, opts, cmd) => {
+      try { await removeIssueLabel(ref, opts.label, globalsFrom(cmd)) } catch (e) { handleError(e) }
+    })
   const issueRel = issue.command('relation').description('Manage relations on an issue')
   issueRel.command('add <ref>').description('Add a relation')
     .requiredOption('--type <t>', 'blocks|isBlockedBy|relatesTo')
@@ -549,7 +559,8 @@ Pass any combination of --status/--priority/--assignee/--title/--description/--s
     .action(async (opts, cmd) => {
       try { await relatedTargets('', { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
-  issue.command('related-target set').description('Create a related-issue-target for a project')
+  const relatedTarget = issue.command('related-target').description('Manage related-issue targets')
+  relatedTarget.command('set').description('Create a related-issue-target for a project')
     .option('--project <ref>')
     .requiredOption('--source <name>')
     .requiredOption('--target <name>')
@@ -680,7 +691,7 @@ Pass any combination of --status/--priority/--assignee/--title/--description/--s
 
   const channel = program.command('channel').description('Manage chunter channels (and their messages/threads)'); withGlobalHelp(channel)
   channel.command('list').description('List channels')
-    .option('--archived <bool>', 'filter by archived state (true|false)')
+    .option('--archived <bool>', 'filter by archived state (true|false)', (v) => v !== 'false' && v !== '0')
     .option('--limit <n>', 'limit', (v) => parseInt(v, 10))
     .addHelpText('after', `
 Examples:
@@ -720,8 +731,8 @@ Required: --name. Optional: --description, --topic, --private,
     .option('--name <n>')
     .option('--description <text>')
     .option('--topic <text>')
-    .option('--private <bool>', 'true|false')
-    .option('--auto-join <bool>', 'true|false')
+    .option('--private <bool>', 'true|false', (v) => v !== 'false' && v !== '0')
+    .option('--auto-join <bool>', 'true|false', (v) => v !== 'false' && v !== '0')
     .addHelpText('after', `
 Examples:
   $ huly channel update engineering --topic "New topic"
@@ -809,9 +820,9 @@ Examples:
     .action(async (ref, id, opts, cmd) => {
       try { await updateChannelMessage(ref, id, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
-  cmsg.command('delete <ref>').description('Delete one or more messages')
-    .action(async (ref, opts, cmd) => {
-      try { await deleteChannelMessages(ref, opts.messageIds ?? [], globalsFrom(cmd)) } catch (e) { handleError(e) }
+  cmsg.command('delete <ref> <messageIds...>').description('Delete one or more messages')
+    .action(async (ref, messageIds, opts, cmd) => {
+      try { await deleteChannelMessages(ref, messageIds, globalsFrom(cmd)) } catch (e) { handleError(e) }
     })
 
   const dm = program.command('dm').description('Manage direct messages'); withGlobalHelp(dm)
@@ -1126,7 +1137,7 @@ N4: \`snapshot\` (singular) gets one; \`snapshots\` (plural) lists all.`)
   ts.command('update <ref>').description('Update a teamspace')
     .option('--name <n>')
     .option('--description <text>')
-    .option('--archived <bool>')
+    .option('--archived <bool>', 'true|false', (v) => v !== 'false' && v !== '0')
     .action(async (ref, opts, cmd) => {
       try { await updateTeamspace(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
@@ -1302,11 +1313,10 @@ To fetch a calendar (the container, not an event inside it), use
       try { await apiCommand(method, path, opts) } catch (e) { handleError(e) }
     })
 
-  const wsCmd = program.command('ws').description('Raw WebSocket escape hatch')
+  const wsCmd = program.command('ws').description('Raw WebSocket escape hatch (text JSON only)')
     wsCmd
     .argument('<method>', 'RPC method (e.g. findAll, tx)')
-    .argument('[params]', 'JSON-encoded params')
-    .option('--binary')
+    .argument('[params]', 'JSON-encoded array of positional params')
     .option('--no-ping', 'disable ping/pong')
     .action(async (method, params, opts) => {
       try { await wsCommand(method, params, opts) } catch (e) { handleError(e) }

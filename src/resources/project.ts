@@ -224,7 +224,7 @@ export async function deleteProjects(refs: string[], opts: { dryRun?: boolean; w
       workspaceId: account.uuid
     })
     if (!opts.yes && ids.length > 1) {
-      console.error(`warning: deleting ${ids.length} projects; pass --yes to confirm`)
+      throw new CliError(ExitCode.Validation, `destructive: deleting ${ids.length} projects requires --yes`, 're-run with --yes to confirm')
     }
     let deleted = 0
     let skipped = 0

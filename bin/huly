@@ -1,3 +1,9 @@
 #!/usr/bin/env bash
 set -e
-exec node "$(cd "$(dirname "$0")/.." && pwd)/dist/index.js" "$@"
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+  DIR="$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ "$SOURCE" != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+exec node "$(cd "$(dirname "$SOURCE")/.." && pwd)/dist/index.js" "$@"

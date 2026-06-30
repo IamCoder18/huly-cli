@@ -101,7 +101,7 @@
 - `huly action update <ref> --title X` — update
 - `huly action complete <ref>` — mark done
 - `huly action reopen <ref>` — clear done
-- `huly action schedule <ref>` — create WorkSlot
+- `huly action schedule <ref> --start ISO --duration MIN` — create WorkSlot (`--duration` is required)
 - `huly action delete <ref> --yes` — delete
 
 ### Document
@@ -134,7 +134,8 @@
 
 ### Time
 - `huly time log --issue TSK-1 --minutes N [--hours N] [--description]` — log time
-- `huly time report --from ISO --to ISO [--user] [--project]` — report
+- `huly time report <issue>` — report entries for one issue
+- `huly time list [--issue X] [--start] [--end]` — list entries (filterable)
 - `huly time delete <ref> --yes` — delete
 
 ### Escape hatches

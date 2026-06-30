@@ -121,7 +121,7 @@ export async function deleteCardSpaces(refs: string[], opts: { workspace?: strin
       classId: CLASS.CardSpace as Ref<Class<Doc>>,
       workspaceId: account.uuid
     })
-    if (!opts.yes && ids.length > 1) console.error(`warning: deleting ${ids.length} card-spaces; pass --yes to confirm`)
+    if (!opts.yes && ids.length > 1) throw new CliError(ExitCode.Validation, `destructive: deleting ${ids.length} card-spaces requires --yes`, 're-run with --yes to confirm')
     let deleted = 0, skipped = 0
     for (const id of ids) {
       const doc = await client.findOne(CLASS.CardSpace as Ref<Class<CardSpace>>, { _id: id as Ref<CardSpace> })
@@ -348,7 +348,7 @@ export async function deleteCards(refs: string[], opts: { workspace?: string; ur
       classId: CLASS.Card as Ref<Class<Doc>>,
       workspaceId: account.uuid
     })
-    if (!opts.yes && ids.length > 1) console.error(`warning: deleting ${refs.length} cards; pass --yes to confirm`)
+    if (!opts.yes && ids.length > 1) throw new CliError(ExitCode.Validation, `destructive: deleting ${refs.length} cards requires --yes`, 're-run with --yes to confirm')
     let deleted = 0, skipped = 0
     for (const id of ids) {
       const doc = await client.findOne(CLASS.Card as Ref<Class<CardDoc>>, { _id: id as Ref<CardDoc> })

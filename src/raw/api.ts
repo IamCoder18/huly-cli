@@ -45,7 +45,7 @@ export async function apiCommand(method: string, path: string, opts: ApiOpts = {
     ...parseKv(opts.header)
   }
 
-  const token = opts.token ?? env.token ?? await resolveToken({}).catch(() => undefined)
+  const token = opts.token ?? env.token ?? await resolveToken({ url }).catch(() => undefined)
   if (token) headers['Authorization'] = `Bearer ${token}`
 
   const init: RequestInit = { method, headers }

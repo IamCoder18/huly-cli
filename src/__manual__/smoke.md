@@ -61,8 +61,10 @@ Cleanup: `huly project list --json | jq '[.[] | select(.name=="smoke-prj")] | le
 huly component create --project <pick> --label "smoke-comp"
 huly milestone create --project <pick> --label "smoke-ms" --target-date 2027-01-01
 huly issue-template create --project <pick> --title "smoke-tmpl"
-huly issue label <issue-ref> add --label bug
-huly issue relation <issue-ref> add --type blocks --target <other-issue-ref>
+huly issue label add <issue-ref> --label bug
+huly issue label remove <issue-ref> --label bug
+huly issue relation add <issue-ref> --type blocks --target <other-issue-ref>
+huly issue relation list <issue-ref>
 huly issue move <issue-ref> --parent null
 ```
 
@@ -104,9 +106,9 @@ Cleanup: `huly document list --json | jq '[.[] | select(.title=="smoke-doc")] | 
 
 ```bash
 CID=$(huly channel create --name "smoke-chn-$(date +%s)" --json | jq -r '._id')
-huly channel members --channel "$CID"
-huly channel archive --channel "$CID"
-huly channel unarchive --channel "$CID"
+huly channel members "$CID"
+huly channel archive "$CID"
+huly channel unarchive "$CID"
 huly channel delete "$CID" --yes
 ```
 
@@ -115,9 +117,11 @@ Cleanup: `huly channel list --json | jq '[.[] | select(.name | test("smoke-chn")
 ## Phase 8 — Channels messages + DMs
 
 ```bash
-huly channel message send --channel <ref> --message "smoke msg"
+huly channel message send <ref> --body "smoke msg"
 huly dm create --person <email>
-huly thread list --target <message-id>
+huly dm message send <dm-id> --body "smoke dm"
+huly thread list <message-id>
+huly thread add <message-id> --body "smoke reply"
 ```
 
 Cleanup: message-listing filters return 0.
@@ -127,7 +131,7 @@ Cleanup: message-listing filters return 0.
 ```bash
 huly calendar calendars
 huly schedule list
-EID=$(huly calendar recurring create --title "smoke-rec" --start 2027-01-01T10:00:00Z --duration 60 --rrule "FREQ=DAILY;COUNT=3" --json | jq -r '._id')
+EID=$(huly calendar create --title "smoke-rec" --start 2027-01-01T10:00:00Z --end 2027-01-01T11:00:00Z --rrule "FREQ=DAILY;COUNT=3" --json | jq -r '._id')
 huly calendar recurring-instances "$EID"
 huly calendar delete "$EID" --yes
 ```
@@ -139,11 +143,9 @@ Cleanup: calendar list returns 0 smoke entries.
 ```bash
 huly time log --issue <ref> --minutes 15 --description "smoke time"
 huly time report <ref>
-huly time timer start --issue <ref>
-huly time timer stop --issue <ref>
 ```
 
-Cleanup: `huly time entries --json | jq '[.[] | select(.description | test("smoke time"))] | length'` = 0.
+Cleanup: `huly time list --json | jq '[.[] | select(.description | test("smoke time"))] | length'` = 0.
 
 ## Phase 11 — Associations, Spaces, Task Management
 
@@ -163,7 +165,7 @@ Cleanup: per-resource filters return 0.
 ```bash
 huly card-space list
 huly master-tag list --card-space <ref>
-CID=$(huly card create --space <ref> --master-tag <ref> --title "smoke-card" --json | jq -r '._id')
+CID=$(huly card create --master-tag <ref> --title "smoke-card" --json | jq -r '._id')
 huly card get "$CID" --markdown
 huly card delete "$CID" --yes
 ```

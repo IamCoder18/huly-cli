@@ -4,22 +4,23 @@ import { readActiveWorkspace, findAnyCachedCreds } from '../auth/cache.js'
 import { shouldJson, json, kv, header, C, colorizeStatus } from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 
-export async function whoamiCommand(opts: { json?: boolean } = {}): Promise<void> {
+export async function whoamiCommand(opts: { url?: string; workspace?: string; json?: boolean; ci?: boolean } = {}): Promise<void> {
   const env = readEnv()
+  const url = opts.url ?? env.url
   const active = await readActiveWorkspace()
-  const workspace = env.workspace ?? active
+  const workspace = opts.workspace ?? env.workspace ?? active
 
-  const token = await resolveToken({})
-  const cached = await findAnyCachedCreds(env.url)
+  const token = await resolveToken({ url })
+  const cached = await findAnyCachedCreds(url)
   const email = cached?.email ?? env.email
 
-  const ac = await withSpinner('Loading account…', () => accountClient(env.url, token))
+  const ac = await withSpinner('Loading account…', () => accountClient(url, token))
   const socialIds = await ac.getSocialIds(false)
   const primary = socialIds.find((s) => s.isPrimary) ?? socialIds[0]
   const workspaces = await withSpinner('Fetching workspaces…', () => ac.getUserWorkspaces())
 
   const result = {
-    url: env.url,
+    url,
     account: primary?.key ?? email,
     active_workspace: workspace ?? null,
     workspaces: workspaces.map((w: any) => ({
@@ -30,7 +31,7 @@ export async function whoamiCommand(opts: { json?: boolean } = {}): Promise<void
     }))
   }
 
-  if (opts.json) {
+  if (shouldJson({ json: opts.json, ci: opts.ci })) {
     json(result)
     return
   }
@@ -56,7 +57,7 @@ export async function whoamiCommand(opts: { json?: boolean } = {}): Promise<void
 
   if (workspace) {
     try {
-      const client = await connectPlatform({ token, workspace })
+      const client = await connectPlatform({ token, workspace, url })
       const account = await client.getAccount()
       console.log()
       console.log(C.muted(`connected to workspace: ${C.emphasis(account.uuid)} (role: ${C.emphasis(account.role)})`))

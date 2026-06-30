@@ -28,8 +28,8 @@ export const CLASS = {
   // task
   Task: 'task:class:Task' as const,
 
-  // board (the Card module — distinct from the Board module which is out of scope)
-  Card: 'board:class:Card' as const,
+  // card module (kanban cards live under `card:`, not `board:`)
+  Card: 'card:class:Card' as const,
   CardSpace: 'card:class:CardSpace' as const,
   MasterTag: 'card:class:MasterTag' as const,
 

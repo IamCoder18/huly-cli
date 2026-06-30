@@ -450,20 +450,33 @@ case "$PHASE" in
     ;;
 
   all)
+    skipped=0
+    failed=0
+    passed=0
     for p in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18; do
       if bash "$0" "$p"; then
-        :
+        passed=$((passed + 1))
       else
         rc=$?
         if [[ $rc -eq 2 ]]; then
           # phase deliberately skipped (not implemented yet in CLI)
           echo "  · phase $p skipped (not implemented in CLI yet)"
+          skipped=$((skipped + 1))
         else
           echo "phase $p failed" >&2
-          exit 1
+          failed=$((failed + 1))
         fi
       fi
     done
+    echo ""
+    echo "smoke summary: passed=$passed skipped=$skipped failed=$failed"
+    if [[ "${HULY_SMOKE_STRICT:-0}" == "1" && $skipped -gt 0 ]]; then
+      echo "strict mode: failing because $skipped phases were skipped" >&2
+      exit 1
+    fi
+    if [[ $failed -gt 0 ]]; then
+      exit 1
+    fi
     ;;
 
   11|14|15|16|17|18)

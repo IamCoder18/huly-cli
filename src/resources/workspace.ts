@@ -26,7 +26,7 @@ interface Member {
 }
 
 export async function listWorkspaces(g: GlobalOpts = {}): Promise<void> {
-  const ac = await connectAccountCli({ url: g.url })
+  const ac = await connectAccountCli({ url: g.url, workspace: g.workspace })
   const workspaces = await withSpinner('Fetching workspaces…', () => ac.getUserWorkspaces(), g)
 
   if (shouldJson({ json: g.json, ci: g.ci })) {
@@ -71,7 +71,9 @@ export async function createWorkspace(opts: {
   region?: string
   json?: boolean
   ci?: boolean
+  dryRun?: boolean
   url?: string
+  workspace?: string
   yes?: boolean
 }): Promise<void> {
   if (!opts.name) throw new CliError(ExitCode.Validation, 'missing --name')
@@ -82,7 +84,11 @@ export async function createWorkspace(opts: {
       'pass --yes to confirm; or use `huly workspace create --name <n> --region <r> --yes`'
     )
   }
-  const ac = await connectAccountCli({ url: opts.url })
+  if (opts.dryRun) {
+    console.log(`would create workspace "${opts.name}" (region=${opts.region ?? 'default'})`)
+    return
+  }
+  const ac = await connectAccountCli({ url: opts.url, workspace: opts.workspace })
   const result = await withSpinner(
     `Creating workspace "${opts.name}"…`,
     () => ac.createWorkspace(opts.name!, opts.region),
@@ -99,8 +105,10 @@ export async function createWorkspace(opts: {
 }
 
 export async function deleteWorkspace(opts: {
+  name?: string
   json?: boolean
   ci?: boolean
+  dryRun?: boolean
   url?: string
   workspace?: string
   yes?: boolean
@@ -108,9 +116,9 @@ export async function deleteWorkspace(opts: {
 }): Promise<void> {
   const env = readEnv()
   const active = await readActiveWorkspace()
-  const target = opts.workspace ?? env.workspace ?? active
+  const target = opts.name ?? opts.workspace ?? env.workspace ?? active
   if (!target) {
-    throw new CliError(ExitCode.Validation, 'no workspace resolved', 'pass --workspace or run `huly workspace use <n>` first')
+    throw new CliError(ExitCode.Validation, 'no workspace resolved', 'pass --workspace, a positional name, or run `huly workspace use <n>` first')
   }
   if (!opts.force && (env.workspace || target === (env.workspace ?? active))) {
     throw new CliError(
@@ -122,7 +130,11 @@ export async function deleteWorkspace(opts: {
   if (!opts.yes) {
     throw new CliError(ExitCode.Validation, 'destructive: pass --yes to confirm workspace deletion')
   }
-  const ac = await connectAccountCli({ url: opts.url })
+  if (opts.dryRun) {
+    console.log(`would delete workspace ${target}`)
+    return
+  }
+  const ac = await connectAccountCli({ url: opts.url, workspace: target })
   await withSpinner(
     `Deleting workspace ${target}…`,
     () => ac.deleteWorkspace(),
@@ -132,7 +144,7 @@ export async function deleteWorkspace(opts: {
 }
 
 export async function listMembers(g: GlobalOpts & { role?: string } = {}): Promise<void> {
-  const ac = await connectAccountCli({ url: g.url })
+  const ac = await connectAccountCli({ url: g.url, workspace: g.workspace })
   const members = (await withSpinner('Fetching members…', () => ac.getWorkspaceMembers(), g)) as Member[]
   let filtered = members
   if (g.role) {
@@ -190,22 +202,38 @@ export async function updateMemberRole(opts: {
   target?: string
   role?: string
   url?: string
+  workspace?: string
   json?: boolean
   ci?: boolean
+  dryRun?: boolean
 }): Promise<void> {
   if (!opts.target) throw new CliError(ExitCode.Validation, 'missing <account>')
   if (!opts.role) throw new CliError(ExitCode.Validation, 'missing --role (Owner|Admin|Guest|DocGuest|ReadOnlyGuest)')
-  const ac = await connectAccountCli({ url: opts.url })
+  const ROLE_MAP: Record<string, string> = {
+    owner: 'Owner', admin: 'Admin', guest: 'Guest', docguest: 'DocGuest',
+    readonlyguest: 'ReadOnlyGuest', read_only_guest: 'ReadOnlyGuest',
+    maintainer: 'Admin'
+  }
+  const normalized = ROLE_MAP[opts.role.toLowerCase()] ?? opts.role
+  const VALID = new Set(['Owner', 'Admin', 'Guest', 'ReadOnlyGuest', 'DocGuest'])
+  if (!VALID.has(normalized)) {
+    throw new CliError(ExitCode.Validation, `invalid --role: ${opts.role}`, `expected one of ${[...VALID].join(' | ')}`)
+  }
+  if (opts.dryRun) {
+    console.log(`would set role=${normalized} for ${opts.target}`)
+    return
+  }
+  const ac = await connectAccountCli({ url: opts.url, workspace: opts.workspace })
   await withSpinner(
-    `Setting role=${opts.role} for ${opts.target}…`,
-    () => ac.updateWorkspaceRole(opts.target!, opts.role!),
+    `Setting role=${normalized} for ${opts.target}…`,
+    () => ac.updateWorkspaceRole(opts.target!, normalized),
     opts
   )
-  console.log(`updated member role: ${opts.target} → ${opts.role}`)
+  console.log(`updated member role: ${opts.target} → ${normalized}`)
 }
 
 export async function workspaceInfo(g: GlobalOpts = {}): Promise<void> {
-  const ac = await connectAccountCli({ url: g.url })
+  const ac = await connectAccountCli({ url: g.url, workspace: g.workspace })
   const info = (await withSpinner('Fetching workspace info…', () => ac.getWorkspaceInfo(false), g)) as WorkspaceInfo
   if (shouldJson({ json: g.json, ci: g.ci })) {
     json(info)
@@ -223,11 +251,17 @@ export async function workspaceInfo(g: GlobalOpts = {}): Promise<void> {
 export async function updateWorkspaceName(opts: {
   name?: string
   url?: string
+  workspace?: string
   json?: boolean
   ci?: boolean
+  dryRun?: boolean
 }): Promise<void> {
   if (!opts.name) throw new CliError(ExitCode.Validation, 'missing --name')
-  const ac = await connectAccountCli({ url: opts.url })
+  if (opts.dryRun) {
+    console.log(`would rename workspace to "${opts.name}"`)
+    return
+  }
+  const ac = await connectAccountCli({ url: opts.url, workspace: opts.workspace })
   await withSpinner(
     `Renaming workspace to "${opts.name}"…`,
     () => ac.updateWorkspaceName(opts.name!),
@@ -240,10 +274,24 @@ export async function workspaceGuests(opts: {
   readOnly?: boolean
   signUp?: boolean
   url?: string
+  workspace?: string
   json?: boolean
   ci?: boolean
+  dryRun?: boolean
 }): Promise<void> {
-  const ac = await connectAccountCli({ url: opts.url })
+  if (opts.readOnly === undefined && opts.signUp === undefined) {
+    throw new CliError(
+      ExitCode.Validation,
+      'no flags given',
+      'pass --read-only true|false or --sign-up true|false to update guest settings'
+    )
+  }
+  if (opts.dryRun) {
+    if (opts.readOnly !== undefined) console.log(`would set allowReadOnlyGuests=${opts.readOnly}`)
+    if (opts.signUp !== undefined) console.log(`would set allowGuestSignUp=${opts.signUp}`)
+    return
+  }
+  const ac = await connectAccountCli({ url: opts.url, workspace: opts.workspace })
   if (opts.readOnly !== undefined) {
     await withSpinner(
       `Setting allowReadOnlyGuests=${opts.readOnly}…`,
@@ -275,15 +323,22 @@ export async function createAccessLink(opts: {
   autoJoin?: boolean
   email?: string
   url?: string
+  workspace?: string
   json?: boolean
   ci?: boolean
+  dryRun?: boolean
 }): Promise<void> {
   if (!opts.role) throw new CliError(ExitCode.Validation, 'missing --role (Guest|ReadOnlyGuest|DocGuest|Admin|Owner)')
-  const ac = await connectAccountCli({ url: opts.url })
   const options: Record<string, unknown> = {}
   if (opts.expHours !== undefined) options.expHours = opts.expHours
   if (opts.autoJoin !== undefined) options.autoJoin = opts.autoJoin
   if (opts.email !== undefined) options.email = opts.email
+  if (opts.dryRun) {
+    console.log(`would create access link (role=${opts.role})`)
+    console.log(JSON.stringify({ options }, null, 2))
+    return
+  }
+  const ac = await connectAccountCli({ url: opts.url, workspace: opts.workspace })
   const result = await withSpinner(
     `Creating access link (role=${opts.role})…`,
     () => ac.createAccessLink(opts.role!, options),
@@ -297,7 +352,7 @@ export async function createAccessLink(opts: {
 }
 
 export async function listRegions(g: GlobalOpts = {}): Promise<void> {
-  const ac = await connectAccountCli({ url: g.url })
+  const ac = await connectAccountCli({ url: g.url, workspace: g.workspace })
   const regions = await withSpinner('Fetching regions…', () => ac.getRegionInfo(), g)
   if (shouldJson({ json: g.json, ci: g.ci })) {
     json(regions)
