@@ -4,7 +4,7 @@ const { MarkupContent } = pkg
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, invalidateIndex } from '../transport/ref-resolver.js'
-import { shouldJson, json, table, COLUMNS } from '../output/format.js'
+import { shouldJson, json, table, kv, header, COLUMNS, C, isoDate, relTime, statusGlyph, colorizeStatus } from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { deleteDoc } from '../commands/dry-run.js'
 import { CliError, ExitCode } from '../output/errors.js'
@@ -37,7 +37,7 @@ export async function listMilestones(opts: { project?: string; limit?: number; o
     if (opts.offset && opts.offset > 0) r = r.slice(opts.offset)
     if (opts.limit && opts.limit > 0) r = r.slice(0, opts.limit)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json(r); return }
-    table(r as unknown as Record<string, unknown>[], COLUMNS.milestone())
+    table(r as unknown as Record<string, unknown>[], COLUMNS.milestone(), { count: true, title: 'milestones' })
   } finally { await client.close() }
 }
 
@@ -53,7 +53,27 @@ export async function getMilestone(ref: string, opts: { json?: boolean; ci?: boo
     const doc = await client.findOne(CLASS.Milestone as Ref<Class<Milestone>>, { _id: id as Ref<Milestone> })
     if (!doc) throw new CliError(ExitCode.NotFound, `milestone ${ref} not found`)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json(doc); return }
-    table([doc as unknown as Record<string, unknown>], COLUMNS.milestone())
+
+    const status = String(doc.status ?? 'planned')
+    const progress = typeof doc.targetDate === 'number'
+      ? Math.min(100, Math.max(0, Math.round(((Date.now() - (doc.createdOn as number ?? 0)) / ((doc.targetDate as number) - (doc.createdOn as number ?? 0))) * 100)))
+      : 0
+    header(`Milestone — ${doc.label ?? '(unnamed)'}`, { subtitle: `target ${relTime(doc.targetDate as number | null)}` })
+    kv([
+      ['ID', C.emphasis(String(doc._id))],
+      ['Label', String(doc.label ?? '—')],
+      ['Status', statusGlyph(status) + ' ' + colorizeStatus(status)],
+      ['Project', String(doc.space ?? '—')],
+      ['Target date', doc.targetDate != null ? `${isoDate(doc.targetDate)} (${relTime(doc.targetDate as number | null)})` : C.muted('—')],
+      ['Created', doc.createdOn != null ? `${isoDate(doc.createdOn)} (${relTime(doc.createdOn as number | null)})` : C.muted('—')],
+      ['_class', C.id(String(doc._class))]
+    ])
+    if (doc.description && doc.description !== '') {
+      console.log()
+      console.log(C.emphasis('Description'))
+      console.log(C.muted('─'.repeat(20)))
+      console.log(String(doc.description))
+    }
   } finally { await client.close() }
 }
 

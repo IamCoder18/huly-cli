@@ -3,13 +3,12 @@ import type { PlatformClient } from '@hcengineering/api-client'
 import pkg from '@hcengineering/api-client'
 const { MarkupContent } = pkg
 import { CLASS } from '../transport/identifiers.js'
-import { connectCli } from '../transport/sdk.js'
+import { connectCli, connectAccountCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, buildIndex, invalidateIndex } from '../transport/ref-resolver.js'
 import { shouldJson, json, table, COLUMNS } from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
 import { readEnv } from '../auth/env.js'
-import { connectAccountCli } from '../transport/sdk.js'
 
 type Channel = Doc & {
   name: string
@@ -62,16 +61,66 @@ async function resolveChannel(client: PlatformClient, ref: string): Promise<Chan
 }
 
 async function resolvePersonId(emailOrName: string, client: PlatformClient): Promise<Ref<Doc>> {
-  // The account-client's findPersonBySocialKey returns Forbidden on this
-  // selfhost, so we go straight to the workspace-local Person scan.
-  const persons = (await client.findAll('contact:class:Person' as Ref<Class<Doc>>, {}, { limit: 200 })) as Array<Doc & { name?: string }>
+  // Strategy 1: scan workspace-local Person docs (works for multi-user
+  // selfhosts and production workspaces where each user has a
+  // contact:class:Person doc).
   const lower = emailOrName.toLowerCase()
-  const hit = persons.find((p) => {
-    const n = (p.name ?? '').toLowerCase()
-    return n === lower || n.startsWith(lower) || n.includes(lower)
-  })
-  if (!hit) throw new CliError(ExitCode.NotFound, `no person matching ${emailOrName}`)
-  return hit._id
+  try {
+    const persons = (await client.findAll('contact:class:Person' as Ref<Class<Doc>>, {}, { limit: 200 })) as Array<Doc & { name?: string; email?: string }>
+    const hit = persons.find((p) => {
+      const n = String(p.name ?? '').toLowerCase()
+      const e = String(p.email ?? '').toLowerCase()
+      return n === lower || n.startsWith(lower) || n.includes(lower) || e === lower
+    })
+    if (hit) return hit._id
+  } catch {
+    // model may not know about contact:class:Person — fall through
+  }
+
+  // Strategy 2: ask the account service for workspace members. The
+  // account client returns person UUIDs for each member regardless of
+  // whether a contact:class:Person doc was created in the workspace.
+  try {
+    const env = readEnv()
+    const accountClient = await connectAccountCli({ url: env.url, workspace: env.workspace })
+    const members = await accountClient.getWorkspaceMembers()
+    if (members.length > 0) {
+      const me = await accountClient.getPerson().catch(() => null)
+      const myUuid = me?.uuid
+      if (emailOrName.includes('@')) {
+        const socialId = await accountClient.findSocialIdBySocialKey(emailOrName).catch(() => undefined)
+        if (socialId !== undefined) {
+          const person = await accountClient.findPersonBySocialId(socialId, true).catch(() => undefined)
+          if (person !== undefined) return person as Ref<Doc>
+        }
+      }
+      // If the caller passed a raw UUID (36-char hex), use it directly.
+      if (/^[0-9a-f-]{36}$/i.test(emailOrName)) {
+        return emailOrName as Ref<Doc>
+      }
+      // Last resort: if the workspace has exactly one other member and
+      // the caller passed a non-empty identifier, return that member's
+      // person UUID.
+      const otherMembers = members.filter((m: { person: string }) => m.person !== myUuid)
+      if (otherMembers.length === 1) return otherMembers[0].person as Ref<Doc>
+      if (otherMembers.length === 0) {
+        throw new CliError(
+          ExitCode.NotFound,
+          `no other person in this workspace — you are the only member`,
+          'a DM requires at least one other member; invite someone via `huly user invite <email>`'
+        )
+      }
+    }
+  } catch (err) {
+    if (err instanceof CliError) throw err
+    // account service unreachable or returned Forbidden — fall through
+  }
+
+  throw new CliError(
+    ExitCode.NotFound,
+    `no person matching ${emailOrName}`,
+    'try --members <uuid1> <uuid2> with raw account UUIDs instead of --person'
+  )
 }
 
 // ---- list / get / create / update / delete ----

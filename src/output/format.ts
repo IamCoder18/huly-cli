@@ -6,36 +6,31 @@ const c: typeof chalk = useColor ? chalk : (Object.fromEntries(
   Object.keys(chalk).map((k) => [k, noColor])
 ) as unknown as typeof chalk)
 
-export function dim(s: string): string {
-  return useColor ? chalk.dim(s) : s
-}
+export function dim(s: string): string { return useColor ? chalk.dim(s) : s }
+export function bold(s: string): string { return useColor ? chalk.bold(s) : s }
+export function italic(s: string): string { return useColor ? chalk.italic(s) : s }
+export function red(s: string): string { return useColor ? chalk.red(s) : s }
+export function green(s: string): string { return useColor ? chalk.green(s) : s }
+export function yellow(s: string): string { return useColor ? chalk.yellow(s) : s }
+export function blue(s: string): string { return useColor ? chalk.blue(s) : s }
+export function cyan(s: string): string { return useColor ? chalk.cyan(s) : s }
+export function gray(s: string): string { return useColor ? chalk.gray(s) : s }
+export function magenta(s: string): string { return useColor ? chalk.magenta(s) : s }
 
-export function bold(s: string): string {
-  return useColor ? chalk.bold(s) : s
-}
-
-export function red(s: string): string {
-  return useColor ? chalk.red(s) : s
-}
-
-export function green(s: string): string {
-  return useColor ? chalk.green(s) : s
-}
-
-export function yellow(s: string): string {
-  return useColor ? chalk.yellow(s) : s
-}
-
-export function blue(s: string): string {
-  return useColor ? chalk.blue(s) : s
-}
-
-export function cyan(s: string): string {
-  return useColor ? chalk.cyan(s) : s
-}
-
-export function gray(s: string): string {
-  return useColor ? chalk.gray(s) : s
+export const C = {
+  dim, bold, italic, red, green, yellow, blue, cyan, gray, magenta,
+  ok: (s: string) => useColor ? chalk.green('✓ ' + s) : '✓ ' + s,
+  fail: (s: string) => useColor ? chalk.red('✗ ' + s) : '✗ ' + s,
+  warn: (s: string) => useColor ? chalk.yellow('⚠ ' + s) : '⚠ ' + s,
+  info: (s: string) => useColor ? chalk.cyan('ℹ ' + s) : 'ℹ ' + s,
+  bullet: (s: string) => useColor ? chalk.cyan('● ') + s : '● ' + s,
+  arrow: (s: string) => useColor ? chalk.cyan('→ ') + s : '→ ' + s,
+  id: (s: string) => useColor ? chalk.gray(s) : s,
+  primary: (s: string) => useColor ? chalk.bold.cyan(s) : s,
+  emphasis: (s: string) => useColor ? chalk.bold(s) : s,
+  muted: (s: string) => useColor ? chalk.gray(s) : s,
+  none: () => useColor ? chalk.gray('—') : '—',
+  empty: () => useColor ? chalk.gray('(empty)') : '(empty)'
 }
 
 export function json(data: unknown): void {
@@ -46,75 +41,311 @@ export interface TableColumn<T> {
   key: keyof T | string
   header: string
   width?: number
+  align?: 'left' | 'right' | 'center'
   format?: (row: T) => string
+  color?: (row: T) => string
+}
+
+export interface TableOptions {
+  title?: string
+  footer?: string
+  count?: boolean
+  noBorder?: boolean
+}
+
+const SHARP = useColor ? '│' : '|'
+const THIN = useColor ? '─' : '-'
+const TLCOR = useColor ? '┌' : '+'
+const TRCOR = useColor ? '┐' : '+'
+const BLCOR = useColor ? '└' : '+'
+const BRCOR = useColor ? '┘' : '+'
+const TMID = useColor ? '┬' : '+'
+const BMID = useColor ? '┴' : '+'
+const LMID = useColor ? '├' : '+'
+const RMID = useColor ? '┤' : '+'
+const CROSS = useColor ? '┼' : '+'
+
+function stripRef(value: unknown): string {
+  if (value == null) return ''
+  const s = String(value)
+  const parts = s.split(':')
+  return parts[parts.length - 1] ?? s
+}
+
+function shortId(id: unknown): string {
+  return String(id ?? '').slice(-12)
+}
+
+function trim(s: unknown, n: number): string {
+  return String(s ?? '').slice(0, n)
+}
+
+function ellipsize(s: string, w: number): string {
+  if (s.length <= w) return s
+  if (w <= 1) return s.slice(0, w)
+  return s.slice(0, w - 1) + '…'
+}
+
+function isoDate(ms: unknown): string {
+  if (ms == null) return ''
+  return new Date(Number(ms)).toISOString().slice(0, 16).replace('T', ' ')
+}
+
+function isoDay(ms: unknown): string {
+  if (ms == null) return ''
+  return new Date(Number(ms)).toISOString().slice(0, 10)
+}
+
+function relTime(ms: number | null | undefined): string {
+  if (ms == null) return C.none()
+  const now = Date.now()
+  const diff = now - Number(ms)
+  if (diff < 0) return isoDay(ms)
+  if (diff < 60_000) return 'just now'
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`
+  if (diff < 604_800_000) return `${Math.floor(diff / 86_400_000)}d ago`
+  if (diff < 2_592_000_000) return `${Math.floor(diff / 604_800_000)}w ago`
+  if (diff < 31_536_000_000) return `${Math.floor(diff / 2_592_000_000)}mo ago`
+  return `${Math.floor(diff / 31_536_000_000)}y ago`
+}
+
+const PRIORITY_COLORS: Record<string, (s: string) => string> = {
+  Urgent: (s) => useColor ? chalk.red.bold(s) : s,
+  High: (s) => useColor ? chalk.red(s) : s,
+  Normal: (s) => useColor ? chalk.yellow(s) : s,
+  Low: (s) => useColor ? chalk.gray(s) : s,
+  None: (s) => useColor ? chalk.gray(s) : s
+}
+
+const STATUS_CATEGORY_COLORS: Record<string, (s: string) => string> = {
+  Won: (s) => useColor ? chalk.green(s) : s,
+  Lost: (s) => useColor ? chalk.red(s) : s,
+  Active: (s) => useColor ? chalk.cyan(s) : s,
+  ToDo: (s) => useColor ? chalk.yellow(s) : s,
+  UnStarted: (s) => useColor ? chalk.gray(s) : s
+}
+
+function colorizeStatus(s: string): string {
+  if (!s) return C.none()
+  const stripped = stripRef(s)
+  for (const [cat, fn] of Object.entries(STATUS_CATEGORY_COLORS)) {
+    if (cat.toLowerCase() === stripped.toLowerCase()) return fn(stripped)
+  }
+  return stripped
+}
+
+function colorizePriority(s: string): string {
+  if (!s) return C.none()
+  const stripped = stripRef(s)
+  for (const [pri, fn] of Object.entries(PRIORITY_COLORS)) {
+    if (pri.toLowerCase() === stripped.toLowerCase()) return fn(stripped)
+  }
+  return stripped
+}
+
+const STATUS_GLYPH: Record<string, string> = {
+  Won: '✓',
+  Lost: '✗',
+  Active: '●',
+  ToDo: '○',
+  UnStarted: '◌'
+}
+
+function statusGlyph(s: string): string {
+  if (!s) return C.muted('—')
+  const stripped = stripRef(s)
+  for (const [cat, glyph] of Object.entries(STATUS_GLYPH)) {
+    if (cat.toLowerCase() === stripped.toLowerCase()) return glyph
+  }
+  return '·'
+}
+
+const PRIORITY_GLYPH: Record<string, string> = {
+  Urgent: '↑↑↑',
+  High: '↑↑',
+  Normal: '↑',
+  Low: '↓',
+  None: '·'
+}
+
+function priorityGlyph(s: string): string {
+  if (!s) return C.muted('—')
+  const stripped = stripRef(s)
+  for (const [pri, glyph] of Object.entries(PRIORITY_GLYPH)) {
+    if (pri.toLowerCase() === stripped.toLowerCase()) return glyph
+  }
+  return '·'
+}
+
+function calcWidth(rows: string[][], header: string, requested: number | undefined): number {
+  if (requested !== undefined) return requested
+  let w = header.length
+  for (const r of rows) {
+    const cellLen = stripAnsi(r.join('')).length
+    if (cellLen > w) w = cellLen
+  }
+  return Math.min(Math.max(w, 3), 60)
+}
+
+function stripAnsi(s: string): string {
+  return s.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '')
+}
+
+function padCell(content: string, width: number, align: 'left' | 'right' | 'center' = 'left'): string {
+  const len = stripAnsi(content).length
+  if (len >= width) return content
+  const pad = width - len
+  if (align === 'right') return ' '.repeat(pad) + content
+  if (align === 'center') {
+    const left = Math.floor(pad / 2)
+    return ' '.repeat(left) + content + ' '.repeat(pad - left)
+  }
+  return content + ' '.repeat(pad)
+}
+
+function renderRow(values: string[], widths: number[], aligns: ('left' | 'right' | 'center')[], border: boolean, useBox: boolean): string {
+  const cells = values.map((v, i) => padCell(v, widths[i] ?? 0, aligns[i] ?? 'left'))
+  if (border) {
+    return (useBox ? SHARP : '|') + ' ' + cells.join(' ' + (useBox ? SHARP : '|') + ' ') + ' ' + (useBox ? SHARP : '|')
+  }
+  return '  ' + cells.join('  ')
+}
+
+function renderSep(widths: number[], border: boolean, left: string, mid: string, right: string, useBox: boolean): string {
+  if (!border) return dim(widths.map((w) => '─'.repeat(w)).join('  '))
+  const sep = (useBox ? THIN : '-').repeat
+  const parts = widths.map((w) => sep(w + 2))
+  const j = useBox ? TMID : '+'
+  return left + parts.join(j) + right
 }
 
 export function table<T extends Record<string, unknown>>(
   rows: T[],
-  columns: TableColumn<T>[]
+  columns: TableColumn<T>[],
+  opts: TableOptions = {}
 ): void {
   if (rows.length === 0) {
-    console.log(dim('(no results)'))
+    const msg = '(no results)'
+    if (opts.title !== undefined) {
+      console.log()
+      console.log(C.muted(opts.title))
+    }
+    console.log(dim('  ' + msg))
     return
   }
 
-  const rendered = rows.map((row) => {
-    const r: Record<string, string> = {}
-    for (const col of columns) {
-      const raw = row[col.key as string]
-      r[col.key as string] = col.format ? col.format(row) : raw == null ? '' : String(raw)
-    }
-    return r
-  })
+  const rendered: string[][] = rows.map((row) =>
+    columns.map((col) => {
+      try {
+        const v = col.format ? col.format(row) : row[col.key as string] == null ? '' : String(row[col.key as string])
+        return col.color ? col.color(row) ?? v : v
+      } catch {
+        return ''
+      }
+    })
+  )
 
-  const widths: Record<string, number> = {}
-  for (const col of columns) {
-    let w = col.header.length
-    if (col.width) {
-      widths[col.key as string] = col.width
-      continue
+  const aligns = columns.map((c) => c.align ?? 'left')
+  const widths = columns.map((c, i) => calcWidth(rendered.map((r) => [r[i] ?? '']), c.header, c.width))
+  const border = !opts.noBorder
+
+  if (opts.title !== undefined) {
+    const title = C.bold('  ' + opts.title)
+    if (border) {
+      const totalWidth = widths.reduce((a, b) => a + b + 3, -1)
+      console.log(TLCOR + THIN.repeat(totalWidth) + TRCOR)
+      console.log(SHARP + ' ' + C.emphasis(opts.title) + ' '.repeat(Math.max(0, totalWidth - stripAnsi(opts.title).length - 1)) + SHARP)
+      console.log(LMID + renderSep(widths, false, '', CROSS, RMID, true).slice(1, -1).replace(/[┌┐]/g, '├').replace(/[─┬]/g, '─'))
+    } else {
+      console.log(title)
     }
-    for (const row of rendered) {
-      w = Math.max(w, (row[col.key as string] ?? '').length)
-    }
-    widths[col.key as string] = Math.min(w, 60)
   }
 
-  const headerLine = columns
-    .map((col) => bold(col.header.padEnd(widths[col.key as string])))
-    .join('  ')
-  console.log(headerLine)
-  console.log(dim(columns.map((col) => '─'.repeat(widths[col.key as string])).join('  ')))
+  const headerRow = renderRow(columns.map((c) => c.header), widths, aligns, border, true)
+  console.log(border ? SHARP + ' ' + columns.map((c, i) => C.emphasis(padCell(c.header, widths[i] ?? 0, aligns[i] ?? 'left'))).join(' ' + SHARP + ' ') + ' ' + SHARP : '  ' + columns.map((c, i) => C.emphasis(padCell(c.header, widths[i] ?? 0, aligns[i] ?? 'left'))).join('  '))
 
-  for (const row of rendered) {
-    const line = columns
-      .map((col) => {
-        const val = row[col.key as string] ?? ''
-        const w = widths[col.key as string]
-        return val.length > w ? val.slice(0, w - 1) + '…' : val.padEnd(w)
-      })
-      .join('  ')
-    console.log(line)
+  if (border) {
+    const sep = widths.map((w) => (useColor ? '─' : '-').repeat(w + 2))
+    const j = useColor ? '┼' : '+'
+    console.log(LMID + sep.join(j) + RMID)
+  } else {
+    console.log(renderSep(widths, false, '', '', '', true))
+  }
+
+  for (const r of rendered) {
+    console.log(renderRow(r, widths, aligns, border, true))
+  }
+
+  if (border) {
+    const sep = widths.map((w) => (useColor ? '─' : '-').repeat(w + 2))
+    const j = useColor ? '┴' : '+'
+    console.log(BLCOR + sep.join(j) + BRCOR)
+  }
+
+  if (opts.count === true) {
+    const countText = `${rows.length} ${rows.length === 1 ? 'result' : 'results'}`
+    console.log(C.muted('  ' + countText))
+  }
+
+  if (opts.footer !== undefined) {
+    console.log(C.muted('  ' + opts.footer))
   }
 }
 
-export function kv(rows: Array<[string, string | undefined | null]>): void {
+export function kv(rows: Array<[string, string | undefined | null]>, opts: { title?: string } = {}): void {
+  if (rows.length === 0) return
+  if (opts.title !== undefined) {
+    console.log(C.emphasis(opts.title))
+  }
   const w = Math.max(...rows.map(([k]) => k.length))
   for (const [k, v] of rows) {
-    console.log(`${bold(k.padEnd(w))}  ${v ?? dim('(none)')}`)
+    const value = v == null || v === '' ? C.none() : v
+    console.log(`  ${C.muted(k.padEnd(w))}  ${value}`)
   }
 }
+
+export function panel(title: string, lines: string[]): void {
+  const titleLen = stripAnsi(title).length
+  const maxLen = Math.max(titleLen, ...lines.map((l) => stripAnsi(l).length))
+  const width = Math.min(maxLen + 4, 100)
+  const top = '  ' + TLCOR + THIN.repeat(width) + TRCOR
+  const bottom = '  ' + BLCOR + THIN.repeat(width) + BRCOR
+  const titleLine = '  ' + SHARP + ' ' + C.emphasis(title.padEnd(width - 2)) + ' ' + SHARP
+  console.log(top)
+  console.log(titleLine)
+  for (const line of lines) {
+    const padded = line.padEnd(width - 2)
+    console.log('  ' + SHARP + ' ' + padded + ' ' + SHARP)
+  }
+  console.log(bottom)
+}
+
+export function header(title: string, opts: { subtitle?: string; accent?: string } = {}): void {
+  const accent = opts.accent !== undefined ? ` ${C.dim('·')} ${opts.accent}` : ''
+  console.log()
+  console.log(C.primary('━'.repeat(3) + ' ' + title) + accent)
+  if (opts.subtitle !== undefined) {
+    console.log(C.muted('  ' + opts.subtitle))
+  }
+  console.log()
+}
+
+export function section(title: string): void {
+  console.log()
+  console.log(C.emphasis(title))
+  console.log(C.muted('─'.repeat(Math.max(8, title.length + 2))))
+}
+
+export function success(msg: string): void { console.log(C.ok(msg)) }
+export function fail(msg: string): void { console.log(C.fail(msg)) }
+export function warn(msg: string): void { console.log(C.warn(msg)) }
+export function info(msg: string): void { console.log(C.info(msg)) }
 
 export function shouldJson(opts: { json?: boolean; ci?: boolean }): boolean {
   return Boolean(opts.json || opts.ci || process.env.CI)
 }
 
-/**
- * Race a promise against a timeout. Returns the promise's result, or
- * the provided fallback if the timeout fires first. Used to keep
- * `client.fetchMarkup` calls from hanging the CLI when the collaborator
- * service is unhealthy.
- */
 export async function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined
   const timeout = new Promise<T>((resolve) => {
@@ -127,78 +358,128 @@ export async function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Pr
   }
 }
 
-function shortId(id: unknown): string {
-  return String(id ?? '').slice(-12)
-}
-
-function trim(s: unknown, n: number): string {
-  return String(s ?? '').slice(0, n)
-}
-
-function isoDate(ms: unknown): string {
-  if (ms == null) return ''
-  return new Date(Number(ms)).toISOString().slice(0, 16)
-}
-
-function isoDay(ms: unknown): string {
-  if (ms == null) return ''
-  return new Date(Number(ms)).toISOString().slice(0, 10)
-}
-
-// Resource-specific column presets. Each preset returns TableColumn[] compatible
-// with table<T> in this module.
+export { shortId, trim, stripRef, isoDate, isoDay, relTime, colorizeStatus, colorizePriority, statusGlyph, priorityGlyph }
 
 export const COLUMNS = {
   idShort: <T>(): TableColumn<T>[] => [
-    { key: '_id', header: '_ID', format: (r) => shortId((r as Record<string, unknown>)._id) }
+    { key: '_id', header: '_ID', format: (r) => C.id(shortId((r as Record<string, unknown>)._id)) }
   ],
   issue: <T>(): TableColumn<T>[] => [
-    { key: 'identifier', header: 'ID' },
-    { key: 'title', header: 'TITLE', format: (r) => trim((r as Record<string, unknown>).title, 60) },
-    { key: 'status', header: 'STATUS' },
-    { key: 'priority', header: 'PRIORITY' },
-    { key: '_id', header: '_ID', format: (r) => shortId((r as Record<string, unknown>)._id) }
+    { key: 'identifier', header: 'ID', width: 14, align: 'left', format: (r) => {
+      const v = (r as Record<string, unknown>).identifier
+      return v != null && v !== '' ? String(v) : C.muted('—')
+    } },
+    { key: 'title', header: 'TITLE', format: (r) => {
+      const t = trim((r as Record<string, unknown>).title, 80)
+      return t || C.muted('(untitled)')
+    } },
+    { key: 'status', header: 'STATUS', width: 14, format: (r) => {
+      const s = (r as Record<string, unknown>).status
+      return `${statusGlyph(String(s ?? ''))} ${colorizeStatus(String(s ?? ''))}`
+    } },
+    { key: 'priority', header: 'PRIORITY', width: 11, align: 'center', format: (r) => {
+      const p = (r as Record<string, unknown>).priority
+      return priorityGlyph(String(p ?? ''))
+    } },
+    { key: '_id', header: '_ID', width: 12, align: 'right', format: (r) => C.id(shortId((r as Record<string, unknown>)._id)) }
   ],
   issueTemplate: <T>(): TableColumn<T>[] => [
-    { key: 'title', header: 'TITLE' },
-    { key: '_id', header: '_ID', format: (r) => shortId((r as Record<string, unknown>)._id) }
+    { key: 'title', header: 'TITLE', format: (r) => {
+      const t = trim((r as Record<string, unknown>).title, 80)
+      return t || C.muted('(untitled)')
+    } },
+    { key: '_id', header: '_ID', width: 12, align: 'right', format: (r) => C.id(shortId((r as Record<string, unknown>)._id)) }
   ],
   project: <T>(): TableColumn<T>[] => [
-    { key: 'identifier', header: 'ID' },
-    { key: 'name', header: 'NAME' },
-    { key: 'description', header: 'DESCRIPTION', format: (r) => trim((r as Record<string, unknown>).description, 60) },
-    { key: '_id', header: '_ID', format: (r) => shortId((r as Record<string, unknown>)._id) }
+    { key: 'identifier', header: 'ID', width: 8, align: 'left', format: (r) => {
+      const v = (r as Record<string, unknown>).identifier
+      return v != null && v !== '' ? C.emphasis(String(v)) : C.muted('—')
+    } },
+    { key: 'name', header: 'NAME', format: (r) => trim((r as Record<string, unknown>).name, 60) || C.muted('(no name)') },
+    { key: 'description', header: 'DESCRIPTION', format: (r) => {
+      const d = String((r as Record<string, unknown>).description ?? '').trim()
+      if (!d) return C.muted('—')
+      return trim(d, 50)
+    } },
+    { key: 'archived', header: 'STATE', width: 8, align: 'center', format: (r) => {
+      const a = (r as Record<string, unknown>).archived
+      return a ? C.red('archived') : C.green('active')
+    } },
+    { key: '_id', header: '_ID', width: 12, align: 'right', format: (r) => C.id(shortId((r as Record<string, unknown>)._id)) }
   ],
   card: <T>(): TableColumn<T>[] => [
-    { key: 'title', header: 'TITLE', format: (r) => trim((r as Record<string, unknown>).title, 60) },
-    { key: 'status', header: 'STATUS' },
-    { key: '_id', header: '_ID', format: (r) => shortId((r as Record<string, unknown>)._id) }
+    { key: 'title', header: 'TITLE', format: (r) => {
+      const t = trim((r as Record<string, unknown>).title, 80)
+      return t || C.muted('(untitled)')
+    } },
+    { key: 'status', header: 'STATUS', format: (r) => {
+      const s = (r as Record<string, unknown>).status
+      return s != null && s !== '' ? colorizeStatus(String(s)) : C.muted('—')
+    } },
+    { key: '_id', header: '_ID', width: 12, align: 'right', format: (r) => C.id(shortId((r as Record<string, unknown>)._id)) }
   ],
   task: <T>(): TableColumn<T>[] => [
-    { key: 'title', header: 'TITLE', format: (r) => trim((r as Record<string, unknown>).title, 60) },
-    { key: 'status', header: 'STATUS' },
-    { key: 'assignee', header: 'ASSIGNEE' },
-    { key: '_id', header: '_ID', format: (r) => shortId((r as Record<string, unknown>)._id) }
+    { key: 'title', header: 'TITLE', format: (r) => trim((r as Record<string, unknown>).title, 80) || C.muted('(untitled)') },
+    { key: 'status', header: 'STATUS', format: (r) => {
+      const s = (r as Record<string, unknown>).status
+      return s != null && s !== '' ? colorizeStatus(String(s)) : C.muted('—')
+    } },
+    { key: 'assignee', header: 'ASSIGNEE', format: (r) => {
+      const a = (r as Record<string, unknown>).assignee
+      return a != null && a !== '' ? String(a) : C.muted('unassigned')
+    } },
+    { key: '_id', header: '_ID', width: 12, align: 'right', format: (r) => C.id(shortId((r as Record<string, unknown>)._id)) }
   ],
   document: <T>(): TableColumn<T>[] => [
-    { key: 'title', header: 'TITLE', format: (r) => trim((r as Record<string, unknown>).title, 60) },
-    { key: '_id', header: '_ID', format: (r) => shortId((r as Record<string, unknown>)._id) }
+    { key: 'title', header: 'TITLE', format: (r) => trim((r as Record<string, unknown>).title, 80) || C.muted('(untitled)') },
+    { key: 'modifiedOn', header: 'UPDATED', width: 12, format: (r) => relTime((r as Record<string, unknown>).modifiedOn as number | null) },
+    { key: '_id', header: '_ID', width: 12, align: 'right', format: (r) => C.id(shortId((r as Record<string, unknown>)._id)) }
   ],
   event: <T>(): TableColumn<T>[] => [
-    { key: 'title', header: 'TITLE', format: (r) => trim((r as Record<string, unknown>).title, 60) },
-    { key: 'startDate', header: 'START', format: (r) => isoDate((r as Record<string, unknown>).startDate) },
-    { key: 'dueDate', header: 'END', format: (r) => isoDate((r as Record<string, unknown>).dueDate) },
-    { key: 'location', header: 'LOCATION' }
+    { key: 'title', header: 'TITLE', format: (r) => trim((r as Record<string, unknown>).title, 60) || C.muted('(untitled)') },
+    { key: 'startDate', header: 'START', width: 17, format: (r) => {
+      const s = (r as Record<string, unknown>).startDate
+      return s != null ? isoDate(s) : C.muted('—')
+    } },
+    { key: 'dueDate', header: 'END', width: 17, format: (r) => {
+      const e = (r as Record<string, unknown>).dueDate
+      return e != null ? isoDate(e) : C.muted('—')
+    } },
+    { key: 'location', header: 'LOCATION', format: (r) => {
+      const l = (r as Record<string, unknown>).location
+      return l != null && l !== '' ? String(l) : C.muted('—')
+    } }
   ],
   comment: <T>(): TableColumn<T>[] => [
-    { key: 'message', header: 'MESSAGE', format: (r) => trim((r as Record<string, unknown>).message, 60) },
-    { key: 'createOn', header: 'CREATED', format: (r) => isoDay((r as Record<string, unknown>).createOn) },
-    { key: '_id', header: '_ID', format: (r) => shortId((r as Record<string, unknown>)._id) }
+    { key: 'message', header: 'MESSAGE', format: (r) => {
+      const m = (r as Record<string, unknown>).message
+      if (m == null) return C.muted('(empty)')
+      if (typeof m === 'string') return trim(m, 80)
+      if (typeof m === 'object' && Object.keys(m as object).length === 0) return C.muted('(empty — use `huly comment get <id>`)')
+      const content = (m as { content?: unknown }).content
+      return trim(typeof content === 'string' ? content : '', 80) || C.muted('(no content)')
+    } },
+    { key: 'createOn', header: 'CREATED', width: 12, format: (r) => relTime((r as Record<string, unknown>).createOn as number | null) },
+    { key: '_id', header: '_ID', width: 12, align: 'right', format: (r) => C.id(shortId((r as Record<string, unknown>)._id)) }
   ],
   channel: <T>(): TableColumn<T>[] => [
-    { key: 'name', header: 'NAME' },
-    { key: 'topic', header: 'TOPIC', format: (r) => trim((r as Record<string, unknown>).topic, 60) },
-    { key: '_id', header: '_ID', format: (r) => shortId((r as Record<string, unknown>)._id) }
+    { key: 'name', header: 'NAME', format: (r) => {
+      const n = (r as Record<string, unknown>).name
+      return n != null && n !== '' ? '# ' + String(n) : C.muted('(no name)')
+    } },
+    { key: 'topic', header: 'TOPIC', format: (r) => {
+      const t = (r as Record<string, unknown>).topic
+      return t != null && t !== '' ? trim(t, 60) : C.muted('—')
+    } },
+    { key: 'members', header: 'MEMBERS', width: 8, align: 'right', format: (r) => {
+      const m = (r as Record<string, unknown>).members
+      return m != null ? String(Array.isArray(m) ? m.length : 0) : C.muted('0')
+    } },
+    { key: 'archived', header: 'STATE', width: 10, align: 'center', format: (r) => {
+      const a = (r as Record<string, unknown>).archived
+      return a ? C.red('archived') : C.green('active')
+    } },
+    { key: '_id', header: '_ID', width: 12, align: 'right', format: (r) => C.id(shortId((r as Record<string, unknown>)._id)) }
   ],
   channelMessage: <T>(): TableColumn<T>[] => [
     {
@@ -206,65 +487,110 @@ export const COLUMNS = {
       header: 'MESSAGE',
       format: (r) => {
         const m = (r as Record<string, unknown>).message
-        if (m == null) return '(empty)'
+        if (m == null) return C.muted('(empty)')
         if (typeof m === 'string') return trim(m, 80)
-        // MarkupContent ref — the actual content is stored as a blob and
-        // can be retrieved with `huly channel get <id> --markdown` (per
-        // message, the platformClient.fetchMarkup path is used internally).
-        if (typeof m === 'object' && Object.keys(m as object).length === 0) return '(empty — use get <id> for body)'
+        if (typeof m === 'object' && Object.keys(m as object).length === 0) return C.muted('(empty — use `huly channel get <id>`)')
         const content = (m as { content?: unknown }).content
-        return trim(typeof content === 'string' ? content : JSON.stringify(m).slice(0, 80), 80)
+        return trim(typeof content === 'string' ? content : '', 80) || C.muted('(no content)')
       }
     },
-    { key: 'createOn', header: 'CREATED', format: (r) => isoDay((r as Record<string, unknown>).createOn) },
-    { key: '_id', header: '_ID', format: (r) => String((r as Record<string, unknown>)._id).slice(-12) }
+    { key: 'createOn', header: 'CREATED', width: 12, format: (r) => relTime((r as Record<string, unknown>).createOn as number | null) },
+    { key: '_id', header: '_ID', width: 12, align: 'right', format: (r) => C.id(shortId((r as Record<string, unknown>)._id)) }
   ],
   timeReport: <T>(): TableColumn<T>[] => [
-    { key: 'value', header: 'MINUTES' },
-    { key: 'description', header: 'DESCRIPTION', format: (r) => trim((r as Record<string, unknown>).description, 50) },
-    { key: 'date', header: 'DATE', format: (r) => isoDay((r as Record<string, unknown>).date) },
-    { key: '_id', header: '_ID', format: (r) => shortId((r as Record<string, unknown>)._id) }
+    { key: 'hours', header: 'HOURS', width: 8, align: 'right', format: (r) => {
+      const v = Number((r as Record<string, unknown>).value)
+      return Number.isFinite(v) ? v.toFixed(2) : C.muted('—')
+    } },
+    { key: 'minutes', header: 'MIN', width: 6, align: 'right', format: (r) => {
+      const v = Number((r as Record<string, unknown>).value)
+      return Number.isFinite(v) ? String(Math.round(v * 60)) : C.muted('—')
+    } },
+    { key: 'description', header: 'DESCRIPTION', format: (r) => {
+      const d = String((r as Record<string, unknown>).description ?? '').trim()
+      return d || C.muted('(no description)')
+    } },
+    { key: 'date', header: 'DATE', width: 12, format: (r) => {
+      const d = (r as Record<string, unknown>).date
+      return d != null ? isoDay(d) : C.muted('—')
+    } },
+    { key: '_id', header: '_ID', width: 12, align: 'right', format: (r) => C.id(shortId((r as Record<string, unknown>)._id)) }
   ],
   notification: <T>(): TableColumn<T>[] => [
-    { key: 'type', header: 'TYPE' },
-    { key: 'title', header: 'TITLE', format: (r) => trim((r as Record<string, unknown>).title, 60) },
-    { key: 'isRead', header: 'READ' },
-    { key: '_id', header: '_ID', format: (r) => shortId((r as Record<string, unknown>)._id) }
+    { key: 'type', header: 'TYPE', width: 16 },
+    { key: 'title', header: 'TITLE', format: (r) => trim((r as Record<string, unknown>).title, 60) || C.muted('(untitled)') },
+    { key: 'isRead', header: 'READ', width: 6, align: 'center', format: (r) => {
+      const r2 = (r as Record<string, unknown>).isRead
+      return r2 ? C.gray('●') : C.green('○')
+    } },
+    { key: '_id', header: '_ID', width: 12, align: 'right', format: (r) => C.id(shortId((r as Record<string, unknown>)._id)) }
   ],
   activity: <T>(): TableColumn<T>[] => [
-    { key: 'message', header: 'MESSAGE', format: (r) => trim((r as Record<string, unknown>).message, 80) },
-    { key: 'createOn', header: 'CREATED', format: (r) => isoDay((r as Record<string, unknown>).createOn) },
-    { key: '_id', header: '_ID', format: (r) => shortId((r as Record<string, unknown>)._id) }
+    { key: 'message', header: 'MESSAGE', format: (r) => trim((r as Record<string, unknown>).message, 80) || C.muted('(no message)') },
+    { key: 'createOn', header: 'CREATED', width: 12, format: (r) => relTime((r as Record<string, unknown>).createOn as number | null) },
+    { key: '_id', header: '_ID', width: 12, align: 'right', format: (r) => C.id(shortId((r as Record<string, unknown>)._id)) }
   ],
   approval: <T>(): TableColumn<T>[] => [
-    { key: 'status', header: 'STATUS' },
-    { key: 'title', header: 'TITLE', format: (r) => trim((r as Record<string, unknown>).title, 60) },
-    { key: 'createOn', header: 'CREATED', format: (r) => isoDay((r as Record<string, unknown>).createOn) },
-    { key: '_id', header: '_ID', format: (r) => shortId((r as Record<string, unknown>)._id) }
+    { key: 'status', header: 'STATUS', format: (r) => colorizeStatus(String((r as Record<string, unknown>).status ?? '')) },
+    { key: 'title', header: 'TITLE', format: (r) => trim((r as Record<string, unknown>).title, 60) || C.muted('(untitled)') },
+    { key: 'createOn', header: 'CREATED', width: 12, format: (r) => relTime((r as Record<string, unknown>).createOn as number | null) },
+    { key: '_id', header: '_ID', width: 12, align: 'right', format: (r) => C.id(shortId((r as Record<string, unknown>)._id)) }
   ],
   component: <T>(): TableColumn<T>[] => [
-    { key: 'label', header: 'LABEL' },
-    { key: '_id', header: '_ID', format: (r) => shortId((r as Record<string, unknown>)._id) }
+    { key: 'label', header: 'LABEL', format: (r) => {
+      const l = (r as Record<string, unknown>).label
+      return l != null && l !== '' ? C.emphasis(String(l)) : C.muted('(no label)')
+    } },
+    { key: 'description', header: 'DESCRIPTION', format: (r) => {
+      const d = String((r as Record<string, unknown>).description ?? '').trim()
+      return d || C.muted('—')
+    } },
+    { key: '_id', header: '_ID', width: 12, align: 'right', format: (r) => C.id(shortId((r as Record<string, unknown>)._id)) }
   ],
   milestone: <T>(): TableColumn<T>[] => [
-    { key: 'label', header: 'LABEL' },
-    { key: 'targetDate', header: 'TARGET', format: (r) => isoDay((r as Record<string, unknown>).targetDate) },
-    { key: '_id', header: '_ID', format: (r) => shortId((r as Record<string, unknown>)._id) }
+    { key: 'label', header: 'LABEL', format: (r) => {
+      const l = (r as Record<string, unknown>).label
+      return l != null && l !== '' ? C.emphasis(String(l)) : C.muted('(no label)')
+    } },
+    { key: 'targetDate', header: 'TARGET', width: 12, format: (r) => {
+      const t = (r as Record<string, unknown>).targetDate
+      if (t == null) return C.muted('—')
+      const days = Math.ceil((Number(t) - Date.now()) / 86_400_000)
+      const label = isoDay(t)
+      return days >= 0 ? `${label} ${C.muted('(' + days + 'd)')}` : `${label} ${C.red('(overdue)')}`
+    } },
+    { key: '_id', header: '_ID', width: 12, align: 'right', format: (r) => C.id(shortId((r as Record<string, unknown>)._id)) }
   ],
   label: <T>(): TableColumn<T>[] => [
-    { key: 'title', header: 'LABEL' },
-    { key: 'color', header: 'COLOR' },
-    { key: '_id', header: '_ID', format: (r) => shortId((r as Record<string, unknown>)._id) }
+    { key: 'title', header: 'LABEL', format: (r) => {
+      const t = (r as Record<string, unknown>).title
+      return t != null && t !== '' ? C.emphasis(String(t)) : C.muted('(no label)')
+    } },
+    { key: 'color', header: 'COLOR', width: 8, format: (r) => {
+      const c2 = (r as Record<string, unknown>).color
+      return c2 != null && c2 !== '' ? `● ${c2}` : C.muted('—')
+    } },
+    { key: '_id', header: '_ID', width: 12, align: 'right', format: (r) => C.id(shortId((r as Record<string, unknown>)._id)) }
   ],
   member: <T>(): TableColumn<T>[] => [
-    { key: 'name', header: 'NAME' },
-    { key: 'role', header: 'ROLE' },
-    { key: 'email', header: 'EMAIL' }
+    { key: 'name', header: 'NAME', format: (r) => trim((r as Record<string, unknown>).name, 50) || C.muted('(unknown)') },
+    { key: 'role', header: 'ROLE', width: 12, format: (r) => {
+      const role = (r as Record<string, unknown>).role
+      return role != null ? C.emphasis(String(role)) : C.muted('—')
+    } },
+    { key: 'email', header: 'EMAIL', format: (r) => {
+      const e = (r as Record<string, unknown>).email
+      return e != null && e !== '' ? String(e) : C.muted('—')
+    } }
   ],
   workspace: <T>(): TableColumn<T>[] => [
-    { key: 'name', header: 'NAME' },
-    { key: 'url', header: 'URL' },
-    { key: 'uuid', header: 'UUID', format: (r) => trim((r as Record<string, unknown>).uuid, 12) + '…' },
-    { key: 'mode', header: 'MODE' }
+    { key: 'name', header: 'NAME', format: (r) => C.emphasis(String((r as Record<string, unknown>).name ?? '')) },
+    { key: 'url', header: 'URL', format: (r) => String((r as Record<string, unknown>).url ?? '') },
+    { key: 'uuid', header: 'UUID', width: 14, format: (r) => C.id(trim((r as Record<string, unknown>).uuid, 12) + '…') },
+    { key: 'mode', header: 'MODE', width: 10, align: 'center', format: (r) => {
+      const m = String((r as Record<string, unknown>).mode ?? 'unknown')
+      return m === 'active' ? C.green('● active') : m === 'pending-deletion' ? C.red('● pending-deletion') : m === 'deleted' ? C.muted('● deleted') : m
+    } },
+    { key: 'lastVisit', header: 'LAST VISIT', width: 14, format: (r) => relTime((r as Record<string, unknown>).lastVisit as number | null) }
   ]
 }

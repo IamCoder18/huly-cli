@@ -5,7 +5,7 @@ const { MarkupContent } = pkg
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, invalidateIndex } from '../transport/ref-resolver.js'
-import { shouldJson, json, table, COLUMNS, withTimeout } from '../output/format.js'
+import { shouldJson, json, table, kv, header, COLUMNS, C, isoDate, relTime, withTimeout } from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { deleteDoc } from '../commands/dry-run.js'
 import { CliError, ExitCode } from '../output/errors.js'
@@ -67,12 +67,18 @@ export async function listCalendars(g: { json?: boolean; ci?: boolean; workspace
     )) as CalendarDoc[]
     if (shouldJson({ json: g.json, ci: g.ci })) { json(docs); return }
     table(docs as unknown as Record<string, unknown>[], [
-      { key: 'name', header: 'NAME' },
-      { key: 'visibility', header: 'VISIBILITY' },
-      { key: 'access', header: 'ACCESS' },
-      { key: 'hidden', header: 'HIDDEN' },
-      { key: '_id', header: '_ID', format: (r) => String((r as { _id: string })._id).slice(-12) }
-    ])
+      { key: 'name', header: 'NAME', format: (r) => C.emphasis(String((r as CalendarDoc).name ?? '')) },
+      { key: 'visibility', header: 'VISIBILITY', format: (r) => {
+        const v = String((r as CalendarDoc).visibility ?? '')
+        return v === 'public' ? C.green('public') : v === 'private' ? C.red('private') : C.muted(v)
+      } },
+      { key: 'access', header: 'ACCESS', format: (r) => {
+        const a = String((r as CalendarDoc).access ?? '')
+        return a === 'owner' ? C.cyan('owner') : a
+      } },
+      { key: 'hidden', header: 'HIDDEN', width: 8, align: 'center', format: (r) => (r as CalendarDoc).hidden ? C.yellow('yes') : C.muted('no') },
+      { key: '_id', header: '_ID', format: (r) => C.id(String((r as { _id: string })._id).slice(-12)) }
+    ], { count: true })
   } finally { await client.close() }
 }
 
@@ -145,12 +151,12 @@ export async function listSchedules(g: { json?: boolean; ci?: boolean; workspace
     )) as Schedule[]
     if (shouldJson({ json: g.json, ci: g.ci })) { json(docs); return }
     table(docs as unknown as Record<string, unknown>[], [
-      { key: 'title', header: 'TITLE' },
+      { key: 'title', header: 'TITLE', format: (r) => C.emphasis(String((r as Schedule).title ?? '')) },
       { key: 'timeZone', header: 'TIMEZONE' },
       { key: 'meetingDuration', header: 'DURATION' },
       { key: 'meetingInterval', header: 'INTERVAL' },
-      { key: '_id', header: '_ID', format: (r) => String((r as { _id: string })._id).slice(-12) }
-    ])
+      { key: '_id', header: '_ID', format: (r) => C.id(String((r as { _id: string })._id).slice(-12)) }
+    ], { count: true })
   } finally { await client.close() }
 }
 
@@ -166,7 +172,25 @@ export async function getSchedule(ref: string, opts: { json?: boolean; ci?: bool
     const doc = await client.findOne(CLASS.Schedule as Ref<Class<Schedule>>, { _id: id as Ref<Schedule> })
     if (!doc) throw new CliError(ExitCode.NotFound, `schedule ${ref} not found`)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json(doc); return }
-    console.log(JSON.stringify(doc, null, 2))
+
+    header(`Schedule — ${doc.name ?? '(unnamed)'}`, { subtitle: `created ${relTime(doc.createdOn as number | null)}` })
+    kv([
+      ['ID', C.emphasis(String(doc._id))],
+      ['Name', String(doc.name ?? '—')],
+      ['Mode', String(doc.mode ?? '—')],
+      ['Hidden', doc.hidden ? C.warn('yes') : C.muted('no')],
+      ['Private', doc.private ? C.warn('yes') : C.muted('no')],
+      ['User', String(doc.user ?? '—')],
+      ['Created', doc.createdOn != null ? `${isoDate(doc.createdOn)} (${relTime(doc.createdOn as number | null)})` : C.muted('—')],
+      ['Modified', doc.modifiedOn != null ? `${isoDate(doc.modifiedOn)} (${relTime(doc.modifiedOn as number | null)})` : C.muted('—')],
+      ['_class', C.id(String(doc._class))]
+    ])
+    if (doc.description && doc.description !== '') {
+      console.log()
+      console.log(C.emphasis('Description'))
+      console.log(C.muted('─'.repeat(20)))
+      console.log(String(doc.description))
+    }
   } finally { await client.close() }
 }
 
@@ -314,7 +338,7 @@ export async function listEvents(opts: {
     if (opts.offset && opts.offset > 0) r = r.slice(opts.offset)
     if (opts.limit && opts.limit > 0) r = r.slice(0, opts.limit)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json(r); return }
-    table(r as unknown as Record<string, unknown>[], COLUMNS.event())
+    table(r as unknown as Record<string, unknown>[], COLUMNS.event(), { count: true })
   } finally { await client.close() }
 }
 
@@ -341,7 +365,34 @@ export async function getEvent(ref: string, opts: { json?: boolean; ci?: boolean
       } catch { console.log(String(doc.description)); return }
     }
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json(doc); return }
-    console.log(JSON.stringify(doc, null, 2))
+
+    const start = typeof doc.date === 'number' ? isoDate(doc.date) : (doc.date ? String(doc.date) : '—')
+    const dur = (doc.dueDate as number | undefined) != null && (doc.date as number | undefined) != null
+      ? `${Math.round(((doc.dueDate as number) - (doc.date as number)) / 60000)} min`
+      : '—'
+    header(`Event — ${doc.title ?? '(untitled)'}`, { subtitle: `${start}${dur !== '—' ? ' · ' + dur : ''}` })
+    kv([
+      ['ID', C.emphasis(String(doc._id))],
+      ['Title', String(doc.title ?? '—')],
+      ['Calendar', String(doc.calendar ?? '—')],
+      ['Start', start],
+      ['Duration', dur],
+      ['All-day', doc.allDay ? C.warn('yes') : C.muted('no')],
+      ['Recurring', doc.recurring ? 'yes' : C.muted('no')],
+      ['Visibility', doc.visibility ?? C.muted('default')],
+      ['Status', String(doc.status ?? '—')],
+      ['Location', String(doc.location ?? '—')],
+      ['Participants', Array.isArray(doc.participants) && (doc.participants as unknown[]).length > 0 ? C.muted(`${(doc.participants as unknown[]).length} people`) : C.muted('none')],
+      ['External', Array.isArray(doc.externalParticipants) && (doc.externalParticipants as unknown[]).length > 0 ? C.muted(`${(doc.externalParticipants as unknown[]).length} external`) : C.muted('none')],
+      ['Created', doc.createdOn != null ? `${isoDate(doc.createdOn)} (${relTime(doc.createdOn as number | null)})` : C.muted('—')]
+    ])
+    if (doc.description && doc.description !== '' && !opts.markdown) {
+      console.log()
+      console.log(C.emphasis('Description'))
+      console.log(C.muted('─'.repeat(20)))
+      const desc = String(doc.description)
+      console.log(desc.length > 500 ? desc.slice(0, 500) + '…' : desc)
+    }
   } finally { await client.close() }
 }
 
@@ -529,12 +580,23 @@ export async function listRecurringEvents(opts: { limit?: number; offset?: numbe
     if (opts.limit && opts.limit > 0) r = r.slice(0, opts.limit)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json(r); return }
     table(r as unknown as Record<string, unknown>[], [
-      { key: 'title', header: 'TITLE', format: (r) => String((r as Event).title ?? '').slice(0, 60) },
-      { key: 'date', header: 'START', format: (r) => new Date(Number((r as Event).date ?? (r as Event).startDate ?? 0)).toISOString().slice(0, 16) },
-      { key: 'dueDate', header: 'END', format: (r) => new Date(Number((r as Event).dueDate ?? 0)).toISOString().slice(0, 16) },
-      { key: 'rules', header: 'RULES', format: (r) => JSON.stringify((r as Event).rules ?? []) },
-      { key: '_id', header: '_ID', format: (r) => String((r as Event)._id).slice(-12) }
-    ])
+      { key: 'title', header: 'TITLE', format: (r) => C.emphasis(String((r as Event).title ?? '').slice(0, 60)) },
+      { key: 'date', header: 'START', width: 17, format: (r) => {
+        const d = (r as Event).date ?? (r as Event).startDate
+        return d != null ? isoDate(d) : C.muted('—')
+      } },
+      { key: 'dueDate', header: 'END', width: 17, format: (r) => {
+        const d = (r as Event).dueDate
+        return d != null ? isoDate(d) : C.muted('—')
+      } },
+      { key: 'rules', header: 'RULES', format: (r) => {
+        const r2 = (r as Event).rules as unknown
+        if (r2 == null) return C.muted('—')
+        if (typeof r2 === 'string') return C.muted(r2.slice(0, 50))
+        return C.muted(JSON.stringify(r2).slice(0, 50))
+      } },
+      { key: '_id', header: '_ID', format: (r) => C.id(String((r as Event)._id).slice(-12)) }
+    ], { count: true })
   } finally { await client.close() }
 }
 
@@ -559,12 +621,18 @@ export async function listRecurringInstances(ref: string, opts: { start?: string
     if (opts.limit) r = r.slice(0, opts.limit)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json(r); return }
     table(r as unknown as Record<string, unknown>[], [
-      { key: 'date', header: 'DATE', format: (r) => new Date((r as Event).date ?? 0).toISOString() },
-      { key: 'originalStartTime', header: 'ORIGINAL', format: (r) => new Date((r as Event).originalStartTime ?? 0).toISOString() },
-      { key: 'virtual', header: 'VIRTUAL' },
-      { key: 'isCancelled', header: 'CANCELLED' },
-      { key: '_id', header: '_ID', format: (r) => String((r as Event)._id).slice(-12) }
-    ])
+      { key: 'date', header: 'DATE', width: 17, format: (r) => {
+        const d = (r as Event).date
+        return d != null ? isoDate(d) : C.muted('—')
+      } },
+      { key: 'originalStartTime', header: 'ORIGINAL', width: 17, format: (r) => {
+        const d = (r as Event).originalStartTime
+        return d != null ? isoDate(d) : C.muted('—')
+      } },
+      { key: 'virtual', header: 'VIRTUAL', width: 10, align: 'center', format: (r) => (r as Event).virtual ? C.cyan('yes') : C.muted('no') },
+      { key: 'isCancelled', header: 'STATE', width: 11, align: 'center', format: (r) => (r as Event).isCancelled ? C.red('cancelled') : C.green('scheduled') },
+      { key: '_id', header: '_ID', format: (r) => C.id(String((r as Event)._id).slice(-12)) }
+    ], { count: true })
   } finally { await client.close() }
 }
 

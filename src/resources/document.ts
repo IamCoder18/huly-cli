@@ -5,7 +5,7 @@ const { MarkupContent } = pkg
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, buildIndex, invalidateIndex } from '../transport/ref-resolver.js'
-import { shouldJson, json, table, COLUMNS, withTimeout } from '../output/format.js'
+import { shouldJson, json, table, kv, header, COLUMNS, C, relTime, isoDate, withTimeout } from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
 import { readEnv } from '../auth/env.js'
@@ -140,10 +140,10 @@ export async function listTeamspaces(opts: { limit?: number; offset?: number; js
       { key: 'name', header: 'NAME' },
       { key: 'description', header: 'DESCRIPTION', format: (r) => String((r as Teamspace).description ?? '').slice(0, 60) },
       { key: 'type', header: 'TYPE' },
-      { key: 'private', header: 'PRIVATE' },
-      { key: 'archived', header: 'ARCHIVED' },
-      { key: '_id', header: '_ID', format: (r) => String((r as Teamspace)._id).slice(-12) }
-    ])
+      { key: 'private', header: 'PRIVATE', format: (r) => r != null ? ((r as Teamspace).private ? C.red('private') : C.green('shared')) : C.muted('—') },
+      { key: 'archived', header: 'STATE', format: (r) => r != null ? ((r as Teamspace).archived ? C.red('archived') : C.green('active')) : C.muted('—') },
+      { key: '_id', header: '_ID', format: (r) => C.id(String((r as Teamspace)._id).slice(-12)) }
+    ], { count: true })
   } finally { await client.close() }
 }
 
@@ -159,11 +159,13 @@ export async function getTeamspace(ref: string, opts: { json?: boolean; ci?: boo
     const doc = await client.findOne(TEAMSPACE_CLASS, { _id: id as Ref<Teamspace> })
     if (!doc) throw new CliError(ExitCode.NotFound, `teamspace ${ref} not found`)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json(doc); return }
-    table([doc as unknown as Record<string, unknown>], [
-      { key: 'name', header: 'NAME' },
-      { key: 'description', header: 'DESCRIPTION' },
-      { key: '_id', header: '_ID' }
-    ])
+    kv([
+      ['name', doc.name],
+      ['description', doc.description !== '' ? doc.description : '(no description)'],
+      ['type', doc.type],
+      ['state', doc.archived ? 'archived' : 'active'],
+      ['_id', doc._id]
+    ], { title: `teamspace ${doc.name ?? doc._id}` })
   } finally { await client.close() }
 }
 
@@ -304,7 +306,7 @@ export async function listDocuments(opts: {
     if (opts.offset && opts.offset > 0) r = r.slice(opts.offset)
     if (opts.limit && opts.limit > 0) r = r.slice(0, opts.limit)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json(r); return }
-    table(r as unknown as Record<string, unknown>[], COLUMNS.document())
+    table(r as unknown as Record<string, unknown>[], COLUMNS.document(), { count: true })
   } finally { await client.close() }
 }
 
@@ -331,7 +333,26 @@ export async function getDocument(ref: string, opts: { json?: boolean; ci?: bool
       } catch { console.log(String(doc.content)); return }
     }
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json(doc); return }
-    table([doc as unknown as Record<string, unknown>], COLUMNS.document())
+
+    header(`Document — ${doc.title ?? '(untitled)'}`, { subtitle: `created ${relTime(doc.createdOn as number | null)} · updated ${relTime(doc.modifiedOn as number | null)}` })
+    kv([
+      ['ID', C.emphasis(String(doc._id))],
+      ['Title', String(doc.title ?? '—')],
+      ['Teamspace', String(doc.space ?? '—')],
+      ['Author', String(doc.createdBy ?? '—')],
+      ['Last editor', String(doc.modifiedBy ?? '—')],
+      ['Created', doc.createdOn != null ? `${isoDate(doc.createdOn)} (${relTime(doc.createdOn as number | null)})` : C.muted('—')],
+      ['Modified', doc.modifiedOn != null ? `${isoDate(doc.modifiedOn)} (${relTime(doc.modifiedOn as number | null)})` : C.muted('—')],
+      ['Content-type', String((doc.content as { type?: string } | undefined)?.type ?? '—')],
+      ['_class', C.id(String(doc._class))]
+    ])
+    if (doc.content && (doc.content as { text?: string }).text !== undefined) {
+      console.log()
+      console.log(C.emphasis('Content'))
+      console.log(C.muted('─'.repeat(20)))
+      const body = (doc.content as { text: string }).text
+      console.log(body.length > 500 ? body.slice(0, 500) + '…' : body)
+    }
   } finally { await client.close() }
 }
 
@@ -531,9 +552,10 @@ export async function listSnapshots(ref: string, opts: { limit?: number; offset?
     if (opts.limit && opts.limit > 0) r = r.slice(0, opts.limit)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json(r); return }
     table(r as unknown as Record<string, unknown>[], [
-      { key: 'title', header: 'TITLE' },
-      { key: '_id', header: '_ID', format: (r) => String((r as DocumentSnapshot)._id).slice(-12) }
-    ])
+      { key: 'title', header: 'TITLE', format: (r) => C.emphasis(String((r as DocumentSnapshot).title ?? '')) },
+      { key: 'createdOn', header: 'CREATED', format: (r) => r != null ? relTime((r as DocumentSnapshot).createdOn) : C.muted('—') },
+      { key: '_id', header: '_ID', format: (r) => C.id(String((r as DocumentSnapshot)._id).slice(-12)) }
+    ], { count: true })
   } finally { await client.close() }
 }
 
@@ -569,8 +591,23 @@ export async function getSnapshot(ref: string, opts: { snapshotId?: string; json
       } catch { console.log(String(snap.content)); return }
     }
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json(snap); return }
-    console.log(`${snap.title} (${snap._id})`)
-    console.log(JSON.stringify(snap, null, 2))
+
+    header(`Snapshot — ${snap.title ?? '(untitled)'}`, { subtitle: `created ${relTime(snap.createdOn as number | null)}` })
+    kv([
+      ['ID', C.emphasis(String(snap._id))],
+      ['Document', String(snap.parent ?? '—')],
+      ['Author', String(snap.createdBy ?? '—')],
+      ['Content-type', String(snap.content?.type ?? '—')],
+      ['Size', C.muted(`${String(snap.content ?? '').length} chars`)],
+      ['Created', snap.createdOn != null ? `${isoDate(snap.createdOn)} (${relTime(snap.createdOn as number | null)})` : C.muted('—')]
+    ])
+    if (snap.content && snap.content !== '') {
+      console.log()
+      console.log(C.emphasis('Content'))
+      console.log(C.muted('─'.repeat(20)))
+      const body = String(snap.content)
+      console.log(body.length > 500 ? body.slice(0, 500) + '…' : body)
+    }
   } finally { await client.close() }
 }
 

@@ -1,7 +1,7 @@
 import { connectAccountCli } from '../transport/sdk.js'
 import { readActiveWorkspace, writeActiveWorkspace } from '../auth/cache.js'
 import { readEnv } from '../auth/env.js'
-import { shouldJson, json, table, kv } from '../output/format.js'
+import { shouldJson, json, table, kv, COLUMNS, C } from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
 import type { GlobalOpts } from '../cli.js'
@@ -34,16 +34,7 @@ export async function listWorkspaces(g: GlobalOpts = {}): Promise<void> {
     return
   }
 
-  table(workspaces as unknown as Record<string, unknown>[], [
-    { key: 'name', header: 'NAME' },
-    { key: 'url', header: 'URL' },
-    { key: 'uuid', header: 'UUID', format: (r) => String((r as { uuid: string }).uuid).slice(0, 12) + '…' },
-    { key: 'mode', header: 'MODE' },
-    { key: 'lastVisit', header: 'LAST VISIT', format: (r) => {
-      const v = (r as { lastVisit?: number }).lastVisit
-      return v ? new Date(v).toISOString().slice(0, 10) : '—'
-    } }
-  ])
+  table(workspaces as unknown as Record<string, unknown>[], COLUMNS.workspace(), { count: true, title: 'workspaces' })
 }
 
 export async function currentWorkspace(g: GlobalOpts = {}): Promise<void> {
@@ -152,21 +143,34 @@ export async function listMembers(g: GlobalOpts & { role?: string } = {}): Promi
     })
   }
   const rows = filtered.map((m) => ({
-    name: m.name ?? m.account?.fullAccount?.email ?? '—',
-    role: m.account?.role ?? m.role ?? '—',
-    email: m.account?.fullAccount?.email ?? m.email ?? '—',
-    uuid: m.account?.uuid ?? m.person ?? m._id ?? '—'
+    name: m.name ?? m.account?.fullAccount?.email ?? null,
+    role: m.account?.role ?? m.role ?? null,
+    email: m.account?.fullAccount?.email ?? m.email ?? null,
+    uuid: m.account?.uuid ?? m.person ?? m._id ?? null
   }))
   if (shouldJson({ json: g.json, ci: g.ci })) {
     json(rows)
     return
   }
   table(rows as unknown as Record<string, unknown>[], [
-    { key: 'name', header: 'NAME' },
-    { key: 'email', header: 'EMAIL' },
-    { key: 'role', header: 'ROLE' },
-    { key: 'uuid', header: 'ACCOUNT_UUID', format: (r) => String((r as { uuid: string }).uuid).slice(0, 12) + '…' }
-  ])
+    { key: 'name', header: 'NAME', format: (r) => {
+      const n = (r as { name: string | null }).name
+      return n !== null ? C.emphasis(n) : C.muted('—')
+    } },
+    { key: 'email', header: 'EMAIL', format: (r) => {
+      const e = (r as { email: string | null }).email
+      return e !== null ? e : C.muted('—')
+    } },
+    { key: 'role', header: 'ROLE', format: (r) => {
+      const role = (r as { role: string | null }).role
+      if (role == null) return C.muted('—')
+      return role.toLowerCase() === 'owner' ? C.yellow(role) : C.muted(role)
+    } },
+    { key: 'uuid', header: 'UUID', format: (r) => {
+      const u = (r as { uuid: string | null }).uuid
+      return u !== null ? C.id(u.slice(0, 12) + '…') : C.muted('—')
+    } }
+  ], { count: true })
 }
 
 export async function updateMemberRole(opts: {
@@ -288,10 +292,10 @@ export async function listRegions(g: GlobalOpts = {}): Promise<void> {
   }
   if (Array.isArray(regions)) {
     table(regions as unknown as Record<string, unknown>[], [
-      { key: 'name', header: 'NAME' },
-      { key: 'region', header: 'REGION' },
-      { key: 'url', header: 'URL' }
-    ])
+      { key: 'name', header: 'NAME', format: (r) => C.emphasis(String((r as { name: string }).name ?? '')) },
+      { key: 'region', header: 'REGION', format: (r) => C.muted(String((r as { region: string }).region ?? '')) },
+      { key: 'url', header: 'URL', format: (r) => C.id(String((r as { url: string }).url ?? '')) }
+    ], { count: true, title: 'regions' })
   } else {
     console.log(JSON.stringify(regions, null, 2))
   }

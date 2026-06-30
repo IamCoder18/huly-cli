@@ -5,7 +5,7 @@ const { MarkupContent } = pkg
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, buildIndex, invalidateIndex } from '../transport/ref-resolver.js'
-import { shouldJson, json, table, withTimeout } from '../output/format.js'
+import { shouldJson, json, table, kv, header, withTimeout, COLUMNS, C, colorizeStatus, colorizePriority, statusGlyph, priorityGlyph, relTime, isoDate, isoDay } from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { deleteDoc } from '../commands/dry-run.js'
 import { CliError, ExitCode } from '../output/errors.js'
@@ -277,13 +277,7 @@ export async function listIssues(opts: {
     if (opts.limit && opts.limit > 0) docs = docs.slice(0, opts.limit)
 
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json(docs); return }
-    table(docs as unknown as Record<string, unknown>[], [
-      { key: 'identifier', header: 'ID' },
-      { key: 'title', header: 'TITLE', format: (r) => ((r as Issue).title ?? '').slice(0, 60) },
-      { key: 'status', header: 'STATUS' },
-      { key: 'priority', header: 'PRIORITY' },
-      { key: '_id', header: '_ID', format: (r) => String((r as Issue)._id).slice(-12) }
-    ])
+    table(docs as unknown as Record<string, unknown>[], COLUMNS.issue(), { count: true })
   } finally { await client.close() }
 }
 
@@ -312,8 +306,37 @@ export async function getIssue(ref: string, opts: { json?: boolean; ci?: boolean
       } catch { console.log(String(issue.description)); return }
     }
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json(issue); return }
-    console.log(`${issue.identifier} ${issue.title}`)
-    console.log(JSON.stringify(issue, null, 2))
+
+    const status = String(issue.status ?? '')
+    const priority = String(issue.priority ?? '')
+    const identifier = String(issue.identifier ?? '') || '—'
+    const title = String(issue.title ?? '(untitled)')
+
+    header(`Issue ${identifier} — ${title}`, { subtitle: `created ${relTime(issue.createdOn as number | null)} · updated ${relTime(issue.modifiedOn as number | null)}` })
+
+    kv([
+      ['ID', identifier !== '—' ? C.emphasis(identifier) : C.muted('—')],
+      ['Status', `${statusGlyph(status)} ${colorizeStatus(status)}`],
+      ['Priority', priorityGlyph(priority)],
+      ['Kind', String(issue.kind ?? '—')],
+      ['Project', String(issue.project ?? '—')],
+      ['Parent', String(issue.parent ?? '—')],
+      ['Due', issue.dueDate != null ? isoDay(issue.dueDate) : C.muted('none')],
+      ['Labels', Array.isArray(issue.labels) && (issue.labels as unknown[]).length > 0 ? (issue.labels as string[]).join(', ') : C.muted('none')],
+      ['Assignee', issue.assignee != null && issue.assignee !== '' ? String(issue.assignee) : C.muted('unassigned')],
+      ['Created by', String(issue.createdBy ?? '—')],
+      ['Created', issue.createdOn != null ? `${isoDate(issue.createdOn)} (${relTime(issue.createdOn as number | null)})` : C.muted('—')],
+      ['Modified', issue.modifiedOn != null ? `${isoDate(issue.modifiedOn)} (${relTime(issue.modifiedOn as number | null)})` : C.muted('—')],
+      ['_id', C.id(String(issue._id))]
+    ])
+
+    if (issue.description !== '' && issue.description !== undefined && !opts.markdown) {
+      console.log()
+      console.log(C.emphasis('Description'))
+      console.log(C.muted('─'.repeat(20)))
+      const desc = String(issue.description)
+      console.log(desc.length > 500 ? desc.slice(0, 500) + '…\n' + C.muted('(truncated — use --markdown for full)') : desc)
+    }
   } finally { await client.close() }
 }
 
@@ -715,9 +738,12 @@ export async function listIssueRelations(ref: string, opts: { json?: boolean; ci
     ]
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json(rows); return }
     table(rows as unknown as Record<string, unknown>[], [
-      { key: 'direction', header: 'DIRECTION' },
-      { key: '_id', header: '_ID' }
-    ])
+      { key: 'direction', header: 'DIRECTION', format: (r) => {
+        const d = String((r as { direction: string }).direction)
+        return d === 'isBlockedBy' ? C.yellow('⛔ is blocked by') : C.muted('↔ relates to')
+      } },
+      { key: '_id', header: '_ID', format: (r) => C.id(String((r as { _id: string })._id).slice(-12)) }
+    ], { count: true })
   } finally { await client.close() }
 }
 
@@ -842,10 +868,16 @@ export async function previewDelete(refs: string[], opts: { json?: boolean; ci?:
     }
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json(preview); return }
     table(preview as unknown as Record<string, unknown>[], [
-      { key: 'ref', header: 'REF' },
-      { key: 'subIssues', header: 'SUB-ISSUES' },
-      { key: 'relations', header: 'RELATIONS' }
-    ])
+      { key: 'ref', header: 'REF', format: (r) => C.emphasis(String((r as { ref: string }).ref)) },
+      { key: 'subIssues', header: 'SUB-ISSUES', align: 'right', format: (r) => {
+        const n = (r as { subIssues: number }).subIssues
+        return n > 0 ? String(n) : C.muted('0')
+      } },
+      { key: 'relations', header: 'RELATIONS', align: 'right', format: (r) => {
+        const n = (r as { relations: number }).relations
+        return n > 0 ? String(n) : C.muted('0')
+      } }
+    ], { count: true })
   } finally { await client.close() }
 }
 
@@ -856,9 +888,9 @@ export async function relatedTargets(ref: string, opts: { project?: string; json
     const targets = (await client.findAll(CLASS.RelatedIssueTarget as Ref<Class<Doc>>, { space: project._id })) as Doc[]
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json(targets); return }
     table(targets as unknown as Record<string, unknown>[], [
-      { key: 'title', header: 'TITLE' },
-      { key: '_id', header: '_ID', format: (r) => String((r as { _id: string })._id).slice(-12) }
-    ])
+      { key: 'title', header: 'TITLE', format: (r) => C.emphasis(String((r as { title: string }).title ?? '')) },
+      { key: '_id', header: '_ID', format: (r) => C.id(String((r as { _id: string })._id).slice(-12)) }
+    ], { count: true })
   } finally { await client.close() }
 }
 
