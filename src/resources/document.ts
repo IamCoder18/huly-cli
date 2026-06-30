@@ -334,13 +334,20 @@ export async function getDocument(ref: string, opts: { json?: boolean; ci?: bool
     }
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json(doc); return }
 
+    // Resolve teamspace name
+    let teamspaceName: string | null = null
+    if (doc.space) {
+      const t = await client.findOne(TEAMSPACE_CLASS, { _id: doc.space as Ref<Doc> })
+      if (t) teamspaceName = String((t as Doc & { name?: string }).name ?? '')
+    }
+
     header(`Document — ${doc.title ?? '(untitled)'}`, { subtitle: `created ${relTime(doc.createdOn as number | null)} · updated ${relTime(doc.modifiedOn as number | null)}` })
     kv([
       ['ID', C.emphasis(String(doc._id))],
       ['Title', String(doc.title ?? '—')],
-      ['Teamspace', String(doc.space ?? '—')],
-      ['Author', String(doc.createdBy ?? '—')],
-      ['Last editor', String(doc.modifiedBy ?? '—')],
+      ['Teamspace', teamspaceName != null ? C.emphasis(teamspaceName) : C.muted('—')],
+      ['Author', String(doc.createdBy ?? '—').slice(-8)],
+      ['Last editor', String(doc.modifiedBy ?? '—').slice(-8)],
       ['Created', doc.createdOn != null ? `${isoDate(doc.createdOn)} (${relTime(doc.createdOn as number | null)})` : C.muted('—')],
       ['Modified', doc.modifiedOn != null ? `${isoDate(doc.modifiedOn)} (${relTime(doc.modifiedOn as number | null)})` : C.muted('—')],
       ['Content-type', String((doc.content as { type?: string } | undefined)?.type ?? '—')],

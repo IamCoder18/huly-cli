@@ -102,7 +102,7 @@ export async function addComment(opts: {
     if (shouldJson({ json: opts.json, ci: opts.ci })) {
       json({ _id: id, attachedTo: issueId, message: body })
     } else {
-      success(`added comment`, id)
+      success('added comment', `on ${opts.issue}`, id)
     }
   } finally { await client.close() }
 }
