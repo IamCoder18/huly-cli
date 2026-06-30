@@ -145,7 +145,7 @@ export async function listChannels(opts: {
     if (opts.offset && opts.offset > 0) r = r.slice(opts.offset)
     if (opts.limit && opts.limit > 0) r = r.slice(0, opts.limit)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json(r); return }
-    table(r as unknown as Record<string, unknown>[], COLUMNS.channel())
+    table(r as unknown as Record<string, unknown>[], COLUMNS.channel(), { count: true, title: 'channels' })
   } finally { await client.close() }
 }
 
@@ -300,7 +300,7 @@ export async function listChannelMembers(ref: string, opts: { json?: boolean; ci
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json(members); return }
     table(members.map((m) => ({ uuid: m })) as unknown as Record<string, unknown>[], [
       { key: 'uuid', header: 'UUID' }
-    ])
+    ], { count: true, title: 'members' })
   } finally { await client.close() }
 }
 
@@ -418,7 +418,7 @@ export async function listChannelMessages(ref: string, opts: {
     if (opts.offset && opts.offset > 0) r = r.slice(opts.offset)
     if (opts.limit && opts.limit > 0) r = r.slice(0, opts.limit)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json(r); return }
-    table(r as unknown as Record<string, unknown>[], COLUMNS.channelMessage())
+    table(r as unknown as Record<string, unknown>[], COLUMNS.channelMessage(), { count: true, title: 'messages' })
   } finally { await client.close() }
 }
 
@@ -544,7 +544,7 @@ export async function listThreadReplies(targetId: string, opts: {
     if (opts.offset && opts.offset > 0) r = r.slice(opts.offset)
     if (opts.limit && opts.limit > 0) r = r.slice(0, opts.limit)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json(r); return }
-    table(r as unknown as Record<string, unknown>[], COLUMNS.channelMessage())
+    table(r as unknown as Record<string, unknown>[], COLUMNS.channelMessage(), { count: true, title: 'messages' })
   } finally { await client.close() }
 }
 
@@ -751,7 +751,7 @@ export async function listDmMessages(dmRef: string, opts: {
     if (opts.offset && opts.offset > 0) r = r.slice(opts.offset)
     if (opts.limit && opts.limit > 0) r = r.slice(0, opts.limit)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json(r); return }
-    table(r as unknown as Record<string, unknown>[], COLUMNS.channelMessage())
+    table(r as unknown as Record<string, unknown>[], COLUMNS.channelMessage(), { count: true, title: 'messages' })
   } finally { await client.close() }
 }
 

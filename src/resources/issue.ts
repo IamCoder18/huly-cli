@@ -224,7 +224,18 @@ export async function listIssues(opts: {
 
     // Status filter — either direct name or by category
     if (opts.status) {
-      query.status = opts.status
+      let proj = project
+      if (!proj) {
+        // Try workspace env var first, then pick the first project
+        const env = readEnv()
+        if (env.project) proj = await resolveProject(client, env.project)
+        else {
+          const all = (await client.findAll(CLASS.Project as Ref<Class<Project>>, {})) as Project[]
+          proj = all[0] ?? null
+        }
+      }
+      if (!proj) throw new CliError(ExitCode.Validation, '--status requires a project (use --project)')
+      query.status = await resolveStatus(client, proj, opts.status)
     } else if (opts.statusCategory) {
       const wanted = String(opts.statusCategory)
       const valid = ['UnStarted', 'ToDo', 'Active', 'Won', 'Lost']
@@ -277,7 +288,7 @@ export async function listIssues(opts: {
     if (opts.limit && opts.limit > 0) docs = docs.slice(0, opts.limit)
 
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json(docs); return }
-    table(docs as unknown as Record<string, unknown>[], COLUMNS.issue(), { count: true })
+    table(docs as unknown as Record<string, unknown>[], COLUMNS.issue(), { count: true, title: 'issues' })
   } finally { await client.close() }
 }
 
@@ -753,7 +764,7 @@ export async function listIssueRelations(ref: string, opts: { json?: boolean; ci
         return d === 'isBlockedBy' ? C.yellow('⛔ is blocked by') : C.muted('↔ relates to')
       } },
       { key: '_id', header: '_ID', format: (r) => C.id(String((r as { _id: string })._id).slice(-12)) }
-    ], { count: true })
+    ], { count: true, title: 'related-issues' })
   } finally { await client.close() }
 }
 
@@ -887,7 +898,7 @@ export async function previewDelete(refs: string[], opts: { json?: boolean; ci?:
         const n = (r as { relations: number }).relations
         return n > 0 ? String(n) : C.muted('0')
       } }
-    ], { count: true })
+    ], { count: true, title: 'delete-preview' })
   } finally { await client.close() }
 }
 
@@ -900,7 +911,7 @@ export async function relatedTargets(ref: string, opts: { project?: string; json
     table(targets as unknown as Record<string, unknown>[], [
       { key: 'title', header: 'TITLE', format: (r) => C.emphasis(String((r as { title: string }).title ?? '')) },
       { key: '_id', header: '_ID', format: (r) => C.id(String((r as { _id: string })._id).slice(-12)) }
-    ], { count: true })
+    ], { count: true, title: 'related-targets' })
   } finally { await client.close() }
 }
 

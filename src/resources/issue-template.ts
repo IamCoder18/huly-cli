@@ -30,7 +30,7 @@ export async function listIssueTemplates(opts: { project?: string; limit?: numbe
     if (opts.offset && opts.offset > 0) r = r.slice(opts.offset)
     if (opts.limit && opts.limit > 0) r = r.slice(0, opts.limit)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json(r); return }
-    table(r as unknown as Record<string, unknown>[], COLUMNS.issueTemplate())
+    table(r as unknown as Record<string, unknown>[], COLUMNS.issueTemplate(), { count: true, title: 'templates' })
   } finally { await client.close() }
 }
 

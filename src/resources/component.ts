@@ -32,7 +32,7 @@ export async function listComponents(opts: { project?: string; limit?: number; o
     if (opts.offset && opts.offset > 0) r = r.slice(opts.offset)
     if (opts.limit && opts.limit > 0) r = r.slice(0, opts.limit)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json(r); return }
-    table(r as unknown as Record<string, unknown>[], COLUMNS.component())
+    table(r as unknown as Record<string, unknown>[], COLUMNS.component(), { count: true, title: 'components' })
   } finally { await client.close() }
 }
 

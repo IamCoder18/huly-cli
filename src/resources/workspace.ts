@@ -183,7 +183,7 @@ export async function listMembers(g: GlobalOpts & { role?: string } = {}): Promi
       const u = (r as { uuid: string | null }).uuid
       return u !== null ? C.id(u.slice(0, 12) + '…') : C.muted('—')
     } }
-  ], { count: true })
+  ], { count: true, title: 'members' })
 }
 
 export async function updateMemberRole(opts: {

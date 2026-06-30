@@ -143,7 +143,7 @@ export async function listTeamspaces(opts: { limit?: number; offset?: number; js
       { key: 'private', header: 'PRIVATE', format: (r) => r != null ? ((r as Teamspace).private ? C.red('private') : C.green('shared')) : C.muted('—') },
       { key: 'archived', header: 'STATE', format: (r) => r != null ? ((r as Teamspace).archived ? C.red('archived') : C.green('active')) : C.muted('—') },
       { key: '_id', header: '_ID', format: (r) => C.id(String((r as Teamspace)._id).slice(-12)) }
-    ], { count: true })
+    ], { count: true, title: 'teamspaces' })
   } finally { await client.close() }
 }
 
@@ -555,7 +555,7 @@ export async function listSnapshots(ref: string, opts: { limit?: number; offset?
       { key: 'title', header: 'TITLE', format: (r) => C.emphasis(String((r as DocumentSnapshot).title ?? '')) },
       { key: 'createdOn', header: 'CREATED', format: (r) => r != null ? relTime((r as DocumentSnapshot).createdOn) : C.muted('—') },
       { key: '_id', header: '_ID', format: (r) => C.id(String((r as DocumentSnapshot)._id).slice(-12)) }
-    ], { count: true })
+    ], { count: true, title: 'snapshots' })
   } finally { await client.close() }
 }
 
@@ -627,6 +627,6 @@ export async function listInlineComments(ref: string, opts: { json?: boolean; ci
       { attachedTo: id as Ref<Doc>, attachedToClass: DOCUMENT_CLASS, collection: 'comments' }
     )) as InlineComment[]
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json(comments); return }
-    table(comments as unknown as Record<string, unknown>[], COLUMNS.comment())
+    table(comments as unknown as Record<string, unknown>[], COLUMNS.comment(), { count: true, title: 'inline-comments' })
   } finally { await client.close() }
 }

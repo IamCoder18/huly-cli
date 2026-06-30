@@ -150,7 +150,7 @@ export async function listActions(opts: ListActionsOpts = {}): Promise<void> {
       { key: 'dueDate', header: 'DUE', format: (r) => (r as ToDo).dueDate ? new Date(Number((r as ToDo).dueDate)).toISOString().slice(0, 10) : '—' },
       { key: 'doneOn', header: 'DONE', format: (r) => (r as ToDo).doneOn ? new Date(Number((r as ToDo).doneOn)).toISOString().slice(0, 10) : '—' },
       { key: '_id', header: '_ID', format: (r) => String((r as ToDo)._id).slice(-12) }
-    ])
+    ], { count: true, title: 'todos' })
   } finally { await client.close() }
 }
 

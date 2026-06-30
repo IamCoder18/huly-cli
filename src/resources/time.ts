@@ -57,7 +57,7 @@ export async function listTimeEntries(opts: {
     if (opts.offset && opts.offset > 0) r = r.slice(opts.offset)
     if (opts.limit && opts.limit > 0) r = r.slice(0, opts.limit)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json(r); return }
-    table(r as unknown as Record<string, unknown>[], COLUMNS.timeReport())
+    table(r as unknown as Record<string, unknown>[], COLUMNS.timeReport(), { count: true, title: 'time-entries' })
   } finally { await client.close() }
 }
 

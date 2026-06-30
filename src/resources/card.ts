@@ -53,7 +53,7 @@ export async function listCardSpaces(opts: { limit?: number; offset?: number; js
       { key: 'private', header: 'PRIVATE' },
       { key: 'archived', header: 'ARCHIVED' },
       { key: '_id', header: '_ID', format: (r) => String((r as CardSpace)._id).slice(-12) }
-    ])
+    ], { count: true, title: 'card-spaces' })
   } finally { await client.close() }
 }
 
@@ -160,8 +160,8 @@ export async function listMasterTags(opts: { cardSpace?: string; limit?: number;
       { key: 'label', header: 'LABEL' },
       { key: 'name', header: 'NAME' },
       { key: 'background', header: 'BG' },
-      { key: '_id', header: '_ID', format: (r) => String((r as MasterTag)._id).slice(-12) }
-    ])
+      { key: '_id', header: '_ID', format: (r) => String((r as MasterTag)._id).split(':').slice(-1)[0] ?? String((r as MasterTag)._id) }
+    ], { count: true, title: 'master-tags' })
   } finally { await client.close() }
 }
 
@@ -194,7 +194,7 @@ export async function listCards(opts: { cardSpace?: string; masterTag?: string; 
     if (opts.offset && opts.offset > 0) r = r.slice(opts.offset)
     if (opts.limit && opts.limit > 0) r = r.slice(0, opts.limit)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json(r); return }
-    table(r as unknown as Record<string, unknown>[], COLUMNS.card())
+    table(r as unknown as Record<string, unknown>[], COLUMNS.card(), { count: true, title: 'cards' })
   } finally { await client.close() }
 }
 

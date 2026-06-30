@@ -78,7 +78,7 @@ export async function listCalendars(g: { json?: boolean; ci?: boolean; workspace
       } },
       { key: 'hidden', header: 'HIDDEN', width: 8, align: 'center', format: (r) => (r as CalendarDoc).hidden ? C.yellow('yes') : C.muted('no') },
       { key: '_id', header: '_ID', format: (r) => C.id(String((r as { _id: string })._id).slice(-12)) }
-    ], { count: true })
+    ], { count: true, title: 'calendars' })
   } finally { await client.close() }
 }
 
@@ -156,7 +156,7 @@ export async function listSchedules(g: { json?: boolean; ci?: boolean; workspace
       { key: 'meetingDuration', header: 'DURATION' },
       { key: 'meetingInterval', header: 'INTERVAL' },
       { key: '_id', header: '_ID', format: (r) => C.id(String((r as { _id: string })._id).slice(-12)) }
-    ], { count: true })
+    ], { count: true, title: 'schedules' })
   } finally { await client.close() }
 }
 
@@ -338,7 +338,7 @@ export async function listEvents(opts: {
     if (opts.offset && opts.offset > 0) r = r.slice(opts.offset)
     if (opts.limit && opts.limit > 0) r = r.slice(0, opts.limit)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json(r); return }
-    table(r as unknown as Record<string, unknown>[], COLUMNS.event(), { count: true })
+    table(r as unknown as Record<string, unknown>[], COLUMNS.event(), { count: true, title: 'events' })
   } finally { await client.close() }
 }
 
@@ -596,7 +596,7 @@ export async function listRecurringEvents(opts: { limit?: number; offset?: numbe
         return C.muted(JSON.stringify(r2).slice(0, 50))
       } },
       { key: '_id', header: '_ID', format: (r) => C.id(String((r as Event)._id).slice(-12)) }
-    ], { count: true })
+    ], { count: true, title: 'reminders' })
   } finally { await client.close() }
 }
 
@@ -632,7 +632,7 @@ export async function listRecurringInstances(ref: string, opts: { start?: string
       { key: 'virtual', header: 'VIRTUAL', width: 10, align: 'center', format: (r) => (r as Event).virtual ? C.cyan('yes') : C.muted('no') },
       { key: 'isCancelled', header: 'STATE', width: 11, align: 'center', format: (r) => (r as Event).isCancelled ? C.red('cancelled') : C.green('scheduled') },
       { key: '_id', header: '_ID', format: (r) => C.id(String((r as Event)._id).slice(-12)) }
-    ], { count: true })
+    ], { count: true, title: 'instances' })
   } finally { await client.close() }
 }
 

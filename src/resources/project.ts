@@ -41,7 +41,7 @@ export async function listProjects(opts: { json?: boolean; ci?: boolean; limit?:
     if (opts.offset && opts.offset > 0) docs = docs.slice(opts.offset)
     if (opts.limit && opts.limit > 0) docs = docs.slice(0, opts.limit)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json(docs); return }
-    table(docs as unknown as Record<string, unknown>[], COLUMNS.project())
+    table(docs as unknown as Record<string, unknown>[], COLUMNS.project(), { count: true, title: 'projects' })
   } finally {
     await client.close()
   }
@@ -263,18 +263,17 @@ export async function listStatuses(opts: { project?: string; json?: boolean; ci?
     const project = await resolveProjectForCommand(client, opts.project)
     const statuses = (await withSpinner(
       `Loading statuses for ${project.identifier}…`,
-      () => client.findAll(CLASS.IssueStatus as Ref<Class<IssueStatus>>, { space: project._id }),
+      () => client.findAll(CLASS.IssueStatus as Ref<Class<IssueStatus>>, { ofAttribute: 'tracker:attribute:IssueStatus' as Ref<Doc> }),
       opts
     )) as IssueStatus[]
     const sorted = statuses.slice().sort((a, b) => ((a as { rank?: number }).rank ?? 0) - ((b as { rank?: number }).rank ?? 0))
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json(sorted); return }
     table(sorted as unknown as Record<string, unknown>[], [
-      { key: 'label', header: 'LABEL' },
       { key: 'name', header: 'NAME' },
-      { key: 'category', header: 'CATEGORY' },
+      { key: 'category', header: 'CATEGORY', format: (r) => String((r as { category?: string }).category ?? '').replace(/^task:statusCategory:/, '') },
       { key: 'rank', header: 'RANK' },
-      { key: '_id', header: '_ID', format: (r) => String((r as { _id: string })._id).slice(-12) }
-    ])
+      { key: '_id', header: '_ID', format: (r) => String((r as { _id: string })._id).split(':').pop() ?? String((r as { _id: string })._id) }
+    ], { count: true, title: 'statuses' })
   } finally {
     await client.close()
   }
