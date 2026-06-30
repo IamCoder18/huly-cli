@@ -5,7 +5,7 @@ const { MarkupContent } = pkg
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, invalidateIndex } from '../transport/ref-resolver.js'
-import {shouldJson, json, table, COLUMNS, success , updated } from '../output/format.js'
+import { shouldJson, json, table, kv, header, COLUMNS, C, success, updated, relTime, isoDate } from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { deleteDoc } from '../commands/dry-run.js'
 import { CliError, ExitCode } from '../output/errors.js'
@@ -48,10 +48,19 @@ export async function getComponent(ref: string, opts: { json?: boolean; ci?: boo
     const doc = await client.findOne(CLASS.Component as Ref<Class<Component>>, { _id: id as Ref<Component> })
     if (!doc) throw new CliError(ExitCode.NotFound, `component ${ref} not found`)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json(doc); return }
-    table([doc as unknown as Record<string, unknown>], COLUMNS.component())
+
+    header(`Component — ${doc.label ?? '(unnamed)'}`, { subtitle: `created ${relTime(doc.createdOn as number | null)}` })
+    kv([
+      ['ID', C.emphasis(String(doc._id))],
+      ['Label', String(doc.label ?? '—')],
+      ['Description', String(doc.description ?? '—')],
+      ['Project', String(doc.space ?? '—')],
+      ['Created', doc.createdOn != null ? `${isoDate(doc.createdOn)} (${relTime(doc.createdOn as number | null)})` : C.muted('—')],
+      ['Modified', doc.modifiedOn != null ? `${isoDate(doc.modifiedOn)} (${relTime(doc.modifiedOn as number | null)})` : C.muted('—')],
+      ['_class', C.id(String(doc._class))]
+    ])
   } finally { await client.close() }
 }
-
 export async function createComponent(opts: {
   project?: string
   label?: string

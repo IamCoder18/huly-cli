@@ -165,7 +165,7 @@ export async function createProject(opts: {
     if (shouldJson({ json: opts.json, ci: opts.ci })) {
       json({ _id: id, ...data, created: true })
     } else {
-      console.log(`created project: ${opts.identifier} (${id})`)
+      success(`created project`, opts.identifier ?? id, id)
     }
   } finally {
     await client.close()
