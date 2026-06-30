@@ -4,7 +4,7 @@ const { MarkupContent } = pkg
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, invalidateIndex } from '../transport/ref-resolver.js'
-import {shouldJson, json, table, COLUMNS, withTimeout, success , updated } from '../output/format.js'
+import { shouldJson, json, table, kv, header, COLUMNS, C, withTimeout, success, updated, relTime, isoDate } from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
 import { readEnv } from '../auth/env.js'
@@ -187,8 +187,29 @@ export async function getAction(ref: string, opts: GetActionOpts = {}): Promise<
       } catch { console.log(String(doc.description)); return }
     }
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json(doc); return }
-    console.log(`${doc.title} (${doc._id})`)
-    console.log(JSON.stringify(doc, null, 2))
+
+    header(`Action — ${doc.title ?? '(untitled)'}`, { subtitle: `created ${relTime(doc.createdOn as number | null)}` })
+    const rows: Array<[string, string]> = [
+      ['ID', C.emphasis(String(doc._id))],
+      ['Title', String(doc.title ?? '—')],
+      ['State', doc.doneOn != null ? C.ok('done') : C.muted('open')],
+      ['Priority', String(doc.priority ?? '—')],
+      ['Due', doc.dueDate != null ? isoDate(doc.dueDate) : C.muted('none')],
+      ['Owner', String(doc.assignedTo ?? doc.user ?? '—')],
+      ['Created by', String(doc.createdBy ?? '—')],
+      ['Created', doc.createdOn != null ? `${isoDate(doc.createdOn)} (${relTime(doc.createdOn as number | null)})` : C.muted('—')],
+      ['Modified', doc.modifiedOn != null ? `${isoDate(doc.modifiedOn)} (${relTime(doc.modifiedOn as number | null)})` : C.muted('—')],
+      ['_class', C.id(String(doc._class))]
+    ]
+    if (doc.doneOn != null) rows.push(['Done', `${isoDate(doc.doneOn)} (${relTime(doc.doneOn as number | null)})`])
+    kv(rows)
+    if (doc.description && doc.description !== '' && !opts.markdown) {
+      console.log()
+      console.log(C.emphasis('Description'))
+      console.log(C.muted('─'.repeat(20)))
+      const desc = String(doc.description)
+      console.log(desc.length > 500 ? desc.slice(0, 500) + '…' : desc)
+    }
   } finally { await client.close() }
 }
 

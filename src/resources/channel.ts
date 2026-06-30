@@ -5,7 +5,7 @@ const { MarkupContent } = pkg
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli, connectAccountCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, buildIndex, invalidateIndex } from '../transport/ref-resolver.js'
-import {shouldJson, json, table, COLUMNS, success , updated } from '../output/format.js'
+import { shouldJson, json, table, COLUMNS, C, success, updated } from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
 import { readEnv } from '../auth/env.js'
@@ -203,7 +203,7 @@ export async function createChannel(opts: {
     )
     invalidateIndex(account.uuid, CHANNEL_CLASS)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ _id: id, ...data }); return }
-    console.log(`created channel: ${opts.name} (${id})`)
+    success(`sent DM`, id)
   } finally { await client.close() }
 }
 
@@ -286,7 +286,7 @@ export async function archiveChannel(ref: string, opts: { value?: boolean; dryRu
       return
     }
     await withSpinner('Archiving…', () => client.updateDoc(CHANNEL_CLASS, channel.space, channel._id, { archived: archive } as any))
-    console.log(`channel ${channel._id} archived=${archive}`)
+    console.log(C.info(`archived channel`) + C.muted('  ') + C.emphasis(`${channel._id} archived=${archive}`))
   } finally { await client.close() }
 }
 
@@ -324,7 +324,7 @@ export async function joinChannel(ref: string, opts: { member?: string; dryRun?:
         $push: { members: { $each: [memberId], $position: 0 } }
       } as any)
     )
-    console.log(`joined: ${memberId} → ${channel._id}`)
+    success(`joined member`, `${memberId} → ${channel._id}`)
   } finally { await client.close() }
 }
 
@@ -348,7 +348,7 @@ export async function leaveChannel(ref: string, opts: { member?: string; dryRun?
         $pull: { members: { $in: [memberId] } }
       } as any)
     )
-    console.log(`removed: ${memberId} from ${channel._id}`)
+    success(`removed member`, `${memberId} from ${channel._id}`)
   } finally { await client.close() }
 }
 
@@ -368,7 +368,7 @@ export async function addChannelMembers(ref: string, members: string[], opts: { 
         $push: { members: { $each: ids, $position: 0 } }
       } as any)
     )
-    console.log(`added ${ids.length} members to ${channel._id}`)
+    console.log(C.ok(`added ${ids.length} members`) + C.muted('  ') + C.emphasis(`to ${channel._id}`))
   } finally { await client.close() }
 }
 
@@ -388,7 +388,7 @@ export async function removeChannelMembers(ref: string, members: string[], opts:
         $pull: { members: { $in: ids } }
       } as any)
     )
-    console.log(`removed ${ids.length} members from ${channel._id}`)
+    success(`removed ${ids.length} members`, `from ${channel._id}`)
   } finally { await client.close() }
 }
 
@@ -583,7 +583,7 @@ export async function addThreadReply(targetId: string, opts: {
       )
     )
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ _id: id, ...data }); return }
-    console.log(`added reply: ${id}`)
+    success(`added reply`, id)
   } finally { await client.close() }
 }
 

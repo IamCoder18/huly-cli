@@ -4,7 +4,7 @@ const { MarkupContent } = pkg
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, invalidateIndex } from '../transport/ref-resolver.js'
-import { shouldJson, json, table, COLUMNS , updated } from '../output/format.js'
+import { shouldJson, json, table, COLUMNS, success, updated } from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
 import { readEnv } from '../auth/env.js'
@@ -102,7 +102,7 @@ export async function addComment(opts: {
     if (shouldJson({ json: opts.json, ci: opts.ci })) {
       json({ _id: id, attachedTo: issueId, message: body })
     } else {
-      console.log(`added comment: ${id}`)
+      success(`added comment`, id)
     }
   } finally { await client.close() }
 }
