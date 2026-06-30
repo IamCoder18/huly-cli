@@ -74,7 +74,7 @@ async function resolveTeamspace(client: PlatformClient, ref?: string): Promise<T
   const candidate = ref ?? env.teamspace
   if (candidate) {
     const account = await client.getAccount()
-    const idx = await buildIndex<Teamspace>(client, TEAMSPACE_CLASS, account.uuid)
+    const idx = await buildIndex<Teamspace>(client, TEAMSPACE_CLASS)
     const hit = idx.get(candidate)
     if (hit) {
       const doc = await client.findOne(TEAMSPACE_CLASS, { _id: hit as Ref<Teamspace> })

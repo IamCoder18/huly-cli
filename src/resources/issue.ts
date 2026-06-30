@@ -74,7 +74,7 @@ async function resolveProject(client: PlatformClient, identifier?: string): Prom
   const env = readEnv()
   const candidate = identifier ?? env.project
   const account = await client.getAccount()
-  const idx = await buildIndex<Project>(client, CLASS.Project as Ref<Class<Project>>, account.uuid)
+  const idx = await buildIndex<Project>(client, CLASS.Project as Ref<Class<Project>>)
   if (candidate) {
     const hit = idx.get(candidate)
     if (hit) {
@@ -516,12 +516,12 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
       return
     }
     // Verify the create succeeded by looking the issue up by the returned _id.
-// We query by _id (not title, which is not unique) so this is race-free
-// even on the bypass path. Note: if the server's stored _id differs from
-// the locally-computed tx._id returned by the bypass path (a known issue
-// when tracker:class:Issue inherits from AttachedDoc), findOne returns
-// null and we silently fall back to the id createDoc returned — that id
-// may not match a server query but is the best signal we have.
+    // We query by _id (not title, which is not unique) so this is race-free
+    // even on the bypass path. Note: if the server's stored _id differs from
+    // the locally-computed tx._id returned by the bypass path (a known issue
+    // when tracker:class:Issue inherits from AttachedDoc), findOne returns
+    // null and we silently fall back to the id createDoc returned — that id
+    // may not match a server query but is the best signal we have.
     let actualId = id as string
     try {
       const fresh = (await client.findOne(CLASS.Issue as Ref<Class<Issue>>, { _id: id as Ref<Issue> })) as { _id?: string } | null

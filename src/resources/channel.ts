@@ -47,7 +47,7 @@ const DM_CLASS = 'chunter:class:DirectMessage' as Ref<Class<DirectMessage>>
 
 async function resolveChannel(client: PlatformClient, ref: string): Promise<Channel> {
   const account = await client.getAccount()
-  const idx = await buildIndex<Channel>(client, CHANNEL_CLASS, account.uuid)
+  const idx = await buildIndex<Channel>(client, CHANNEL_CLASS)
   const hit = idx.get(ref)
   if (hit) {
     const doc = await client.findOne(CHANNEL_CLASS, { _id: hit as Ref<Channel> })

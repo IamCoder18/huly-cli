@@ -31,7 +31,7 @@ export interface IndexEntry {
 export interface BuildIndexOpts<T extends Doc> {
   client: PlatformClient
   classId: Ref<Class<T>>
-  workspaceId: string
+  workspaceId?: string
   identifierField?: keyof T
   titleField?: keyof T
 }
@@ -46,7 +46,6 @@ const COMMON_IDENTITY_KEYS = ['identifier', 'name', 'label'] as const
 export async function buildIndex<T extends Doc>(
   client: PlatformClient,
   classId: Ref<Class<T>>,
-  _workspaceId: string,
   identifierField: keyof T | string = 'identifier'
 ): Promise<Map<string, Ref<Doc>>> {
   const byClass = REFS.get(client)
@@ -83,26 +82,13 @@ export async function buildIndex<T extends Doc>(
 }
 
 /**
- * Force a rebuild on next access. The `_clientOrWorkspaceId` and
- * `_classId` parameters are kept for backwards-compat with existing
- * callers — when a client is passed, that client's cache entry for the
- * class is invalidated. When undefined, every entry across every
- * currently-tracked client is cleared (best-effort: WeakMap iteration
- * is not supported, so this only works for callers that explicitly
- * pass a client).
+ * Force a rebuild on next access for one client. Pass `classId` to evict a
+ * single class entry, or omit it to clear every cached class for the
+ * client. The signature is intentionally strict (`PlatformClient` only)
+ * so legacy callers passing a workspace UUID / account UUID / undefined
+ * fail at the type level rather than silently leaving the cache stale.
  */
-export function invalidateIndex(clientOrWorkspaceId?: PlatformClient | string, classId?: string): void {
-  if (clientOrWorkspaceId === undefined) {
-    // WeakMap cannot be iterated; callers wanting a full reset should
-    // let their clients go out of scope. This branch is intentionally a
-    // no-op to make the API honest.
-    return
-  }
-  if (typeof clientOrWorkspaceId === 'string') {
-    // Legacy string-key path: no-op (cache is now client-keyed).
-    return
-  }
-  const client = clientOrWorkspaceId
+export function invalidateIndex(client: PlatformClient, classId?: string): void {
   if (classId === undefined) {
     REFS.delete(client)
     return
@@ -140,7 +126,7 @@ export async function resolveRef(ref: string, opts: ResolveOpts): Promise<Ref<Do
   if (looksLikeId(trimmed)) return trimmed as Ref<Doc>
 
   const ident = opts.identifierField ?? 'identifier'
-  const idx = await buildIndex(opts.client, opts.classId, opts.workspaceId, ident)
+  const idx = await buildIndex(opts.client, opts.classId, ident)
 
   if (idx.has(trimmed)) return idx.get(trimmed)!
 

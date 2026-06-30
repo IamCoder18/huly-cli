@@ -13,7 +13,7 @@ export async function resolveProjectForCommand(client: PlatformClient, ref?: str
   const candidate = ref ?? env.project
   if (candidate) {
     const account = await client.getAccount()
-    const idx = await buildIndex<Project>(client, CLASS.Project as Ref<Class<Project>>, account.uuid)
+    const idx = await buildIndex<Project>(client, CLASS.Project as Ref<Class<Project>>)
     // Normalize to a key first (the index uses string keys, not Refs).
     // Try the exact candidate, then a case-insensitive match against any key.
     const key = idx.has(candidate)

@@ -244,7 +244,7 @@ export async function pickProjectInteractive(client: PlatformClient): Promise<Pr
   const env = readEnv()
   if (env.project) {
     const account = await client.getAccount()
-    const idx = await buildIndex<Project>(client, CLASS.Project as Ref<Class<Project>>, account.uuid)
+    const idx = await buildIndex<Project>(client, CLASS.Project as Ref<Class<Project>>)
     const hit = idx.get(env.project)
     if (hit) {
       const doc = await client.findOne(CLASS.Project as Ref<Class<Project>>, { _id: hit as Ref<Project> })
