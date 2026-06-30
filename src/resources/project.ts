@@ -107,7 +107,10 @@ export async function createProject(opts: {
   }
   if (opts.minimal) {
     delete data.description
-    delete data.members
+    // Note: members MUST stay set to the current user UUID, otherwise
+    // SpaceSecurityMiddleware.mergeQuery returns { $in: [] } and the
+    // creator can never findAll the project. --minimal only controls
+    // user-facing description, not security-critical fields.
   }
   if (opts.dryRun) {
     console.log('would create project:')
