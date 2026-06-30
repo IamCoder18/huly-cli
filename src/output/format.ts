@@ -483,7 +483,8 @@ export const COLUMNS = {
     { key: 'location', header: 'LOCATION', format: (r) => {
       const l = (r as Record<string, unknown>).location
       return l != null && l !== '' ? String(l) : C.muted('—')
-    } }
+    } },
+    { key: '_id', header: '_ID', width: 12, align: 'right', format: (r) => C.id(shortId((r as Record<string, unknown>)._id)) }
   ],
   comment: <T>(): TableColumn<T>[] => [
     { key: 'message', header: 'MESSAGE', format: (r) => {

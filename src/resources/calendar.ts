@@ -77,7 +77,7 @@ export async function listCalendars(g: { json?: boolean; ci?: boolean; workspace
         return a === 'owner' ? C.cyan('owner') : a
       } },
       { key: 'hidden', header: 'HIDDEN', width: 8, align: 'center', format: (r) => (r as CalendarDoc).hidden ? C.yellow('yes') : C.muted('no') },
-      { key: '_id', header: '_ID', format: (r) => C.id(String((r as { _id: string })._id).slice(-12)) }
+      { key: '_id', header: '_ID', format: (r) => C.id(String((r as { _id: string })._id).split(':').slice(-1)[0] ?? String((r as { _id: string })._id)) }
     ], { count: true, title: 'calendars' })
   } finally { await client.close() }
 }
