@@ -241,8 +241,10 @@ case "$PHASE" in
         [[ -n "$rid" ]] && HULY calendar delete "$rid" --yes >/dev/null 2>&1 || true
       done
     fi
-    # create event + cleanup
-    EID=$(HULY calendar create --title "smoke-evt-$(date +%s)" --start "2027-01-01T10:00:00Z" --end "2027-01-01T11:00:00Z" --json 2>/dev/null | filter_huly_noise \
+    # create event + cleanup (get the first available calendar id)
+    SMOKE_CAL_ID=$(HULY calendar calendars --json 2>/dev/null | filter_huly_noise \
+      | awk '/^\[/,0' | jq -r '.[0]._id // empty')
+    EID=$(HULY calendar create --title "smoke-evt-$(date +%s)" --start "2027-01-01T10:00:00Z" --end "2027-01-01T11:00:00Z" --calendar-id "$SMOKE_CAL_ID" --json 2>/dev/null | filter_huly_noise \
       | jq -r '._id // empty')
     if [[ -n "$EID" ]]; then
       echo "  ✓ created event $EID"
@@ -252,7 +254,7 @@ case "$PHASE" in
       echo "  ⚠ calendar create skipped (server may forbid)"
     fi
     # create recurring event + cleanup
-    RID=$(HULY calendar create --title "smoke-rec-$(date +%s)" --start "2027-02-01T10:00:00Z" --end "2027-02-01T11:00:00Z" --rrule "FREQ=DAILY;COUNT=3" --json 2>/dev/null | filter_huly_noise \
+    RID=$(HULY calendar create --title "smoke-rec-$(date +%s)" --start "2027-02-01T10:00:00Z" --end "2027-02-01T11:00:00Z" --rrule "FREQ=DAILY;COUNT=3" --calendar-id "$SMOKE_CAL_ID" --json 2>/dev/null | filter_huly_noise \
       | jq -r '._id // empty')
     if [[ -n "$RID" ]]; then
       echo "  ✓ created recurring event $RID"

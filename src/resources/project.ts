@@ -85,13 +85,24 @@ export async function createProject(opts: {
 }): Promise<void> {
   if (!opts.name) throw new CliError(ExitCode.Validation, 'missing --name')
   if (!opts.identifier) throw new CliError(ExitCode.Validation, 'missing --identifier (e.g. HULY)')
+  const client = await connectCli({ url: opts.url, workspace: opts.workspace })
+  let currentAccountUuid: string
+  try {
+    currentAccountUuid = (await client.getAccount()).uuid
+  } catch {
+    // No account / no workspace — fall through; data.members will be empty
+    currentAccountUuid = ''
+  }
   const data: Record<string, unknown> = {
     name: opts.name,
     identifier: opts.identifier,
     description: opts.description ?? '',
     private: opts.private ?? false,
     archived: false,
-    members: [],
+    // Add the current user as a member so SpaceSecurityMiddleware allows
+    // findAll on this project. Without this, list/get returns 0 because
+    // the security filter restricts the query to spaces the user is in.
+    members: currentAccountUuid !== '' ? [currentAccountUuid] : [],
     sequence: 0
   }
   if (opts.minimal) {
@@ -103,7 +114,6 @@ export async function createProject(opts: {
     console.log(JSON.stringify({ _class: CLASS.Project, space: '<self>', data }, null, 2))
     return
   }
-  const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     // Idempotency: if a project with this identifier already exists, return it
     // without creating a duplicate. The Huly selfhost does not enforce
