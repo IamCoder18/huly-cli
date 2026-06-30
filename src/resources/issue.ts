@@ -509,17 +509,19 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
       }
     }
 
-    invalidateIndex((await client.getAccount()).uuid, CLASS.Issue)
+    invalidateIndex(client, CLASS.Issue)
 
     if (shouldJson({ json: opts.json, ci: opts.ci })) {
       json({ _id: id, identifier: '?', title, created: true, ...data })
       return
     }
-    // The id from createDoc may differ from the server-assigned _id (the bypass
-    // path uses the locally-computed tx._id). Look up the actual stored doc so
-    // users can immediately `huly issue get <id>` to inspect their creation.
-    // Query by _id (not title, which is not unique) to verify the create
-    // succeeded and capture the authoritative _id.
+    // Verify the create succeeded by looking the issue up by the returned _id.
+// We query by _id (not title, which is not unique) so this is race-free
+// even on the bypass path. Note: if the server's stored _id differs from
+// the locally-computed tx._id returned by the bypass path (a known issue
+// when tracker:class:Issue inherits from AttachedDoc), findOne returns
+// null and we silently fall back to the id createDoc returned — that id
+// may not match a server query but is the best signal we have.
     let actualId = id as string
     try {
       const fresh = (await client.findOne(CLASS.Issue as Ref<Class<Issue>>, { _id: id as Ref<Issue> })) as { _id?: string } | null
@@ -678,7 +680,7 @@ export async function addIssueLabel(ref: string, labelName: string, opts: { json
       ),
       opts
     )
-    invalidateIndex(account.uuid, CLASS.Issue)
+    invalidateIndex(client, CLASS.Issue)
     success(`added label`, labelName)
   } finally { await client.close() }
 }
@@ -713,7 +715,7 @@ export async function removeIssueLabel(ref: string, labelName: string, opts: { j
         'labels'
       )
     }
-    invalidateIndex(account.uuid, CLASS.Issue)
+    invalidateIndex(client, CLASS.Issue)
     success(`removed label`, labelName)
   } finally { await client.close() }
 }

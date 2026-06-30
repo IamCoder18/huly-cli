@@ -201,7 +201,7 @@ export async function createTeamspace(opts: {
       () => client.createDoc(TEAMSPACE_CLASS, TEAMSPACE_DEFAULT, data as any),
       opts
     )
-    invalidateIndex((await client.getAccount()).uuid, TEAMSPACE_CLASS)
+    invalidateIndex(client, TEAMSPACE_CLASS)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ _id: id, ...data }); return }
     success(`created teamspace`, opts.name, id)
   } finally { await client.close() }
@@ -422,7 +422,7 @@ export async function createDocument(opts: {
       () => client.createDoc(DOCUMENT_CLASS, teamspace._id, data as any),
       opts
     )
-    invalidateIndex(account.uuid, DOCUMENT_CLASS)
+    invalidateIndex(client, DOCUMENT_CLASS)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ _id: id, ...data }); return }
     success(`created document`, opts.title, id)
   } finally { await client.close() }

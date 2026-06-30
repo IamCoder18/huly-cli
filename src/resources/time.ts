@@ -88,6 +88,9 @@ export async function logTime(opts: {
   if (opts.minutes !== undefined && opts.hours !== undefined) {
     throw new CliError(ExitCode.Validation, 'pass only one of --minutes or --hours')
   }
+  if ((opts.minutes ?? 0) < 0 || (opts.hours ?? 0) < 0) {
+    throw new CliError(ExitCode.Validation, '--minutes and --hours must be positive')
+  }
   const totalMinutes = opts.minutes ?? (opts.hours !== undefined ? Math.round(opts.hours * 60) : 0)
   if (totalMinutes <= 0) throw new CliError(ExitCode.Validation, 'missing --minutes (or --hours)', 'pass one of --minutes or --hours')
   const description = opts.description ?? ''
@@ -132,7 +135,7 @@ export async function logTime(opts: {
       ),
       opts
     )
-    invalidateIndex(account.uuid, CLASS.TimeSpendReport)
+    invalidateIndex(client, CLASS.TimeSpendReport)
     if (shouldJson({ json: opts.json, ci: opts.ci })) {
       json({ _id: id, attachedTo: issueId, ...data })
     } else {

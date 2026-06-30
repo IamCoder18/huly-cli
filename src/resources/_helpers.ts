@@ -9,8 +9,6 @@ import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
 import { deleteDoc } from '../commands/dry-run.js'
 
-type ResolverClient = PlatformClient & { __workspaceId?: string }
-
 const DELETE_GAP_MS = 100
 
 export interface GlobalRunOpts {

@@ -91,7 +91,7 @@ export async function createComponent(opts: {
       () => client.createDoc(CLASS.Component as Ref<Class<Component>>, project._id as unknown as Ref<Space>, data as any),
       opts
     )
-    invalidateIndex((await client.getAccount()).uuid, CLASS.Component)
+    invalidateIndex(client, CLASS.Component)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ _id: id, ...data }) }
     else success(`created component`, opts.label, id)
   } finally { await client.close() }

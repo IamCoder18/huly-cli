@@ -120,7 +120,7 @@ export async function createIssueTemplate(opts: {
       () => client.createDoc(CLASS.IssueTemplate as Ref<Class<IssueTemplate>>, project._id as unknown as Ref<Space>, data as any),
       opts
     )
-    invalidateIndex((await client.getAccount()).uuid, CLASS.IssueTemplate)
+    invalidateIndex(client, CLASS.IssueTemplate)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ _id: id, ...data }) }
     else success(`created template`, opts.title, id)
   } finally { await client.close() }

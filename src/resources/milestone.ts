@@ -108,7 +108,7 @@ export async function createMilestone(opts: {
       () => client.createDoc(CLASS.Milestone as Ref<Class<Milestone>>, project._id as unknown as Ref<Space>, data as any),
       opts
     )
-    invalidateIndex((await client.getAccount()).uuid, CLASS.Milestone)
+    invalidateIndex(client, CLASS.Milestone)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ _id: id, ...data }) }
     else success(`created milestone`, opts.label, id)
   } finally { await client.close() }

@@ -239,7 +239,7 @@ export async function createSchedule(opts: {
       ),
       opts
     )
-    invalidateIndex((await client.getAccount()).uuid, CLASS.Schedule)
+    invalidateIndex(client, CLASS.Schedule)
     if (shouldJson({ json: opts.json, ci: opts.ci })) {
       json({ _id: id, ...data })
     } else {
@@ -496,7 +496,7 @@ export async function createEvent(opts: {
       ),
       opts
     )
-    invalidateIndex(account.uuid, CLASS.Event)
+    invalidateIndex(client, CLASS.Event)
     if (shouldJson({ json: opts.json, ci: opts.ci })) {
       json({ _id: id, recurring: isRecurring, attachedTo, ...data })
     } else {

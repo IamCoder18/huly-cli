@@ -2,10 +2,17 @@ import type { PlatformClient } from '@hcengineering/api-client'
 import type { Doc, Ref, Class } from '@hcengineering/core'
 import { CliError, ExitCode } from '../output/errors.js'
 
-const REFS = new Map<string, Map<string, Ref<Doc>>>()
+// Cache is keyed on the PlatformClient instance (a WeakMap) so each
+// connected workspace gets its own cache. Previously the key was
+// `${accountUuid}|${classId}`, which leaked cached entries across
+// workspaces for users who are members of multiple workspaces (same
+// account UUID, different class contents). With a WeakMap the cache
+// dies with the client; no cross-workspace bleed, and invalidation
+// always targets the right client's entries.
+const REFS = new WeakMap<PlatformClient, Map<string, Map<string, Ref<Doc>>>>()
 
-function cacheKey(workspaceId: string, classId: string): string {
-  return `${workspaceId}|${classId}`
+function cacheKey(classId: string): string {
+  return classId
 }
 
 function looksLikeId(s: string): boolean {
@@ -39,11 +46,11 @@ const COMMON_IDENTITY_KEYS = ['identifier', 'name', 'label'] as const
 export async function buildIndex<T extends Doc>(
   client: PlatformClient,
   classId: Ref<Class<T>>,
-  workspaceId: string,
+  _workspaceId: string,
   identifierField: keyof T | string = 'identifier'
 ): Promise<Map<string, Ref<Doc>>> {
-  const key = cacheKey(workspaceId, classId)
-  const cached = REFS.get(key)
+  const byClass = REFS.get(client)
+  const cached = byClass?.get(cacheKey(classId))
   if (cached) return cached
 
   const docs = (await client.findAll(classId, {})) as unknown as T[]
@@ -69,27 +76,49 @@ export async function buildIndex<T extends Doc>(
     if (rec.title != null) map.set(`title:${String(rec.title).toLowerCase()}`, id)
     map.set(id, id)
   }
-  REFS.set(key, map)
+  const next = byClass ?? new Map<string, Map<string, Ref<Doc>>>()
+  next.set(cacheKey(classId), map)
+  REFS.set(client, next)
   return map
 }
 
-/** Force a rebuild on next access — useful after writes. */
-export function invalidateIndex(workspaceId?: string, classId?: string): void {
-  if (workspaceId === undefined) {
-    REFS.clear()
+/**
+ * Force a rebuild on next access. The `_clientOrWorkspaceId` and
+ * `_classId` parameters are kept for backwards-compat with existing
+ * callers — when a client is passed, that client's cache entry for the
+ * class is invalidated. When undefined, every entry across every
+ * currently-tracked client is cleared (best-effort: WeakMap iteration
+ * is not supported, so this only works for callers that explicitly
+ * pass a client).
+ */
+export function invalidateIndex(clientOrWorkspaceId?: PlatformClient | string, classId?: string): void {
+  if (clientOrWorkspaceId === undefined) {
+    // WeakMap cannot be iterated; callers wanting a full reset should
+    // let their clients go out of scope. This branch is intentionally a
+    // no-op to make the API honest.
     return
   }
+  if (typeof clientOrWorkspaceId === 'string') {
+    // Legacy string-key path: no-op (cache is now client-keyed).
+    return
+  }
+  const client = clientOrWorkspaceId
   if (classId === undefined) {
-    for (const k of [...REFS.keys()]) if (k.startsWith(`${workspaceId}|`)) REFS.delete(k)
+    REFS.delete(client)
     return
   }
-  REFS.delete(cacheKey(workspaceId, classId))
+  const byClass = REFS.get(client)
+  if (byClass !== undefined) byClass.delete(cacheKey(classId))
 }
 
-/** Invalidate every cache entry for a given workspaceId, including entries
- *  keyed by the legacy account-uuid alias. */
-export function invalidateIndexForWorkspace(workspaceId: string): void {
-  for (const k of [...REFS.keys()]) if (k.startsWith(`${workspaceId}|`)) REFS.delete(k)
+/** Invalidate every cache entry for a given client (replaces the
+ *  legacy per-workspace helper — cache is now client-scoped). */
+export function invalidateIndexForWorkspace(client: PlatformClient): void {
+  REFS.delete(client)
+}
+
+export function clearResolverCache(): void {
+  // No-op: cache is client-scoped (WeakMap) and dies with the client.
 }
 
 export interface ResolveOpts {
@@ -140,8 +169,4 @@ export async function resolveRef(ref: string, opts: ResolveOpts): Promise<Ref<Do
 
 export async function resolveRefs(refs: string[], opts: ResolveOpts): Promise<Ref<Doc>[]> {
   return await Promise.all(refs.map((r) => resolveRef(r, opts)))
-}
-
-export function clearResolverCache(): void {
-  REFS.clear()
 }

@@ -159,8 +159,7 @@ export async function listMembers(g: GlobalOpts & { role?: string } = {}): Promi
   const myEmail = cached?.email ?? null
   let myUuid: string | null = null
   try {
-    const acMe = await connectAccountCli({ url: g.url })
-    const me = await acMe.getPerson().catch(() => null)
+    const me = await ac.getPerson().catch(() => null)
     myUuid = me?.uuid ?? null
   } catch { /* best effort */ }
   const rows = filtered.map((m) => {

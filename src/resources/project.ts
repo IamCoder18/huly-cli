@@ -165,7 +165,7 @@ export async function createProject(opts: {
       }
       throw err
     }
-    invalidateIndex((await client.getAccount()).uuid, CLASS.Project)
+    invalidateIndex(client, CLASS.Project)
     if (shouldJson({ json: opts.json, ci: opts.ci })) {
       json({ _id: id, ...data, created: true })
     } else {
@@ -207,7 +207,7 @@ export async function updateProject(
       ),
       opts
     )
-    invalidateIndex(account.uuid, CLASS.Project)
+    invalidateIndex(client, CLASS.Project)
     console.log(`updated project: ${id}`)
   } finally {
     await client.close()
@@ -233,7 +233,7 @@ export async function deleteProjects(refs: string[], opts: { dryRun?: boolean; w
       if (r.skipped) skipped++
       else { deleted++; await new Promise((res) => setTimeout(res, 100)) }
     }
-    invalidateIndex(account.uuid, CLASS.Project)
+    invalidateIndex(client, CLASS.Project)
     bulkRemoved(deleted, skipped)
   } finally {
     await client.close()

@@ -86,6 +86,7 @@ async function resolvePersonId(
   // Strategy 2: ask the account service for workspace members. The
   // account client returns person UUIDs for each member regardless of
   // whether a contact:class:Person doc was created in the workspace.
+  let otherMemberCount = -1
   try {
     const env = readEnv()
     const accountClient = await connectAccountCli({ url: opts.url ?? env.url, workspace: opts.workspace ?? env.workspace })
@@ -107,7 +108,8 @@ async function resolvePersonId(
       // If the workspace has zero other members, fail loudly so the caller
       // doesn't silently DM themselves / get a misleading success.
       const otherMembers = members.filter((m: { person: string }) => m.person !== myUuid)
-      if (otherMembers.length === 0) {
+      otherMemberCount = otherMembers.length
+      if (otherMemberCount === 0) {
         throw new CliError(
           ExitCode.NotFound,
           `no other person in this workspace — you are the only member`,
@@ -120,9 +122,12 @@ async function resolvePersonId(
     // account service unreachable or returned Forbidden — fall through
   }
 
+  const memberHint = otherMemberCount > 0
+    ? ` — workspace has ${otherMemberCount} other member${otherMemberCount === 1 ? '' : 's'}, but none matched exactly; pass a full email or 36-char UUID instead of --person`
+    : ''
   throw new CliError(
     ExitCode.NotFound,
-    `no person matching ${emailOrName}`,
+    `no person matching ${emailOrName}${memberHint}`,
     'try --members <uuid1> <uuid2> with raw account UUIDs instead of --person'
   )
 }
@@ -205,7 +210,7 @@ export async function createChannel(opts: {
       () => client.createDoc(CHANNEL_CLASS, 'chunter:space:Chunter' as Ref<Space>, data as any),
       opts
     )
-    invalidateIndex(account.uuid, CHANNEL_CLASS)
+    invalidateIndex(client, CHANNEL_CLASS)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ _id: id, ...data }); return }
     success(`created channel`, id)
   } finally { await client.close() }

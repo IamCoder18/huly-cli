@@ -106,7 +106,7 @@ export async function createCardSpace(opts: {
       () => client.createDoc(CLASS.CardSpace as Ref<Class<CardSpace>>, 'core:space:Workspace' as Ref<Space>, data as any),
       opts
     )
-    invalidateIndex((await client.getAccount()).uuid, CLASS.CardSpace)
+    invalidateIndex(client, CLASS.CardSpace)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ _id: id, ...data }) }
     else success(`created card-space`, opts.name, id)
   } finally { await client.close() }
@@ -284,7 +284,7 @@ export async function createCard(opts: {
       () => client.createDoc(CLASS.Card as Ref<Class<CardDoc>>, space as Ref<Space>, data as any),
       opts
     )
-    invalidateIndex(account.uuid, CLASS.Card)
+    invalidateIndex(client, CLASS.Card)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ _id: id, ...data }) }
     else success(`created card`, opts.title, id)
   } finally { await client.close() }
@@ -305,8 +305,8 @@ export async function updateCard(ref: string, opts: {
   if (opts.body && opts.bodyFile) {
     throw new CliError(ExitCode.Validation, 'ambiguous body input', 'pass only one of --body or --body-file')
   }
-  if (opts.body && opts.description !== undefined) {
-    throw new CliError(ExitCode.Validation, 'ambiguous: pass either --body (full content) OR --description (with --replace-content), not both')
+  if ((opts.body !== undefined || opts.bodyFile !== undefined) && opts.description !== undefined) {
+    throw new CliError(ExitCode.Validation, 'ambiguous: pass either --body/--body-file (full content) OR --description (with --replace-content), not both')
   }
   if (opts.description !== undefined && !opts.replaceContent && !opts.body && !opts.bodyFile) {
     throw new CliError(

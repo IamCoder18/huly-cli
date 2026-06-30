@@ -66,9 +66,9 @@ async function resolveEmployeeId(client: Awaited<ReturnType<typeof connectCli>>,
   if (email) {
     // findPersonBySocialKey returns Forbidden on this selfhost; fall back to
     // a workspace-local Person scan (by email or by name).
-    const persons = (await client.findAll('contact:class:Person' as Ref<Class<Doc>>, {}, { limit: 200 })) as Array<Doc & { name?: string }>
+    const persons = (await client.findAll('contact:class:Person' as Ref<Class<Doc>>, {}, { limit: 200 })) as Array<Doc & { name?: string; email?: string }>
     const lower = email.toLowerCase()
-    const hit = persons.find((p) => (p.name ?? '').toLowerCase() === lower)
+    const hit = persons.find((p) => (p.name ?? '').toLowerCase() === lower || (p.email ?? '').toLowerCase() === lower)
     if (!hit) throw new CliError(ExitCode.NotFound, `no person matching ${email} in this workspace`)
     return hit._id
   }
@@ -290,7 +290,7 @@ export async function createAction(opts: CreateActionOpts): Promise<void> {
     const id = await withSpinner('Creating action…', () =>
       client.addCollection(TODO_CLASS, TODO_SPACE, attachedTo, attachedToClass, 'todos', data as any)
     )
-    invalidateIndex(account.uuid, TODO_CLASS)
+    invalidateIndex(client, TODO_CLASS)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ _id: id, ...data }); return }
     success(`created action`, opts.title, id)
   } finally { await client.close() }

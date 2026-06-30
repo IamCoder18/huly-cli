@@ -98,7 +98,7 @@ export async function addComment(opts: {
       ),
       opts
     )
-    invalidateIndex(account.uuid, CLASS.ChatMessage)
+    invalidateIndex(client, CLASS.ChatMessage)
     if (shouldJson({ json: opts.json, ci: opts.ci })) {
       json({ _id: id, attachedTo: issueId, message: body })
     } else {
