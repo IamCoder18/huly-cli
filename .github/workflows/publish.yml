@@ -47,8 +47,13 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "22.11"
+          node-version: "24"
           registry-url: "https://registry.npmjs.org"
+
+      - name: Install latest npm
+        # Node 24's bundled npm may lag the latest OIDC handshake
+        # requirements. Pin to a known-good version.
+        run: npm install -g npm@11.5.1
 
       - name: Install deps
         run: npm ci
