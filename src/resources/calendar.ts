@@ -5,7 +5,7 @@ const { MarkupContent } = pkg
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, invalidateIndex } from '../transport/ref-resolver.js'
-import { shouldJson, json, table, kv, header, COLUMNS, C, isoDate, relTime, withTimeout } from '../output/format.js'
+import {shouldJson, json, table, kv, header, COLUMNS, C, isoDate, relTime, withTimeout, success , updated } from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { deleteDoc } from '../commands/dry-run.js'
 import { CliError, ExitCode } from '../output/errors.js'
@@ -117,7 +117,7 @@ export async function createCalendar(opts: {
       opts
     )
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ _id: id, ...data }); return }
-    console.log(`created calendar: ${opts.name} (${id})`)
+    success(`created calendar`, opts.name, id)
   } finally { await client.close() }
 }
 
@@ -240,7 +240,7 @@ export async function createSchedule(opts: {
     if (shouldJson({ json: opts.json, ci: opts.ci })) {
       json({ _id: id, ...data })
     } else {
-      console.log(`created schedule: ${opts.title} (${id})`)
+      success(`created schedule`, opts.title, id)
     }
   } finally { await client.close() }
 }
@@ -284,7 +284,7 @@ export async function updateSchedule(ref: string, opts: {
       () => client.updateDoc(CLASS.Schedule as Ref<Class<Schedule>>, doc.space as unknown as Ref<Space>, id as Ref<Schedule>, ops as any),
       opts
     )
-    console.log(`updated schedule: ${id}`)
+    updated(`updated schedule`, id)
   } finally { await client.close() }
 }
 
@@ -491,7 +491,7 @@ export async function createEvent(opts: {
     if (shouldJson({ json: opts.json, ci: opts.ci })) {
       json({ _id: id, recurring: isRecurring, attachedTo, ...data })
     } else {
-      console.log(`created ${isRecurring ? 'recurring event' : 'event'}: ${opts.title} (${id})`)
+      success(`created ${isRecurring ? `recurring event` : `event`}`, opts.title, id)
     }
   } finally { await client.close() }
 }
@@ -539,7 +539,7 @@ export async function updateEvent(ref: string, opts: {
       () => client.updateDoc(CLASS.Event as Ref<Class<Event>>, doc.space as unknown as Ref<Space>, id as Ref<Event>, ops as any),
       opts
     )
-    console.log(`updated event: ${id}`)
+    updated(`updated event`, id)
   } finally { await client.close() }
 }
 

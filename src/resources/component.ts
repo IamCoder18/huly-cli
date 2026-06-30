@@ -5,7 +5,7 @@ const { MarkupContent } = pkg
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, invalidateIndex } from '../transport/ref-resolver.js'
-import { shouldJson, json, table, COLUMNS } from '../output/format.js'
+import {shouldJson, json, table, COLUMNS, success , updated } from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { deleteDoc } from '../commands/dry-run.js'
 import { CliError, ExitCode } from '../output/errors.js'
@@ -84,7 +84,7 @@ export async function createComponent(opts: {
     )
     invalidateIndex((await client.getAccount()).uuid, CLASS.Component)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ _id: id, ...data }) }
-    else console.log(`created component: ${opts.label} (${id})`)
+    else success(`created component`, opts.label, id)
   } finally { await client.close() }
 }
 
@@ -113,7 +113,7 @@ export async function updateComponent(ref: string, opts: { label?: string; descr
       () => client.updateDoc(CLASS.Component as Ref<Class<Component>>, doc.space as unknown as Ref<Space>, id as Ref<Component>, ops as any),
       opts
     )
-    console.log(`updated component: ${id}`)
+    updated(`updated component`, id)
   } finally { await client.close() }
 }
 

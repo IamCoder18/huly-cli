@@ -4,7 +4,7 @@ const { MarkupContent } = pkg
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, invalidateIndex } from '../transport/ref-resolver.js'
-import { shouldJson, json, table, COLUMNS } from '../output/format.js'
+import { shouldJson, json, table, COLUMNS , updated } from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
 import { readEnv } from '../auth/env.js'
@@ -137,7 +137,7 @@ export async function updateComment(ref: string, opts: {
       ),
       opts
     )
-    console.log(`updated comment: ${commentId}`)
+    updated(`updated comment`, commentId)
   } finally { await client.close() }
 }
 

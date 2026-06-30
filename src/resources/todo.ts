@@ -4,7 +4,7 @@ const { MarkupContent } = pkg
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, invalidateIndex } from '../transport/ref-resolver.js'
-import { shouldJson, json, table, COLUMNS, withTimeout } from '../output/format.js'
+import {shouldJson, json, table, COLUMNS, withTimeout, success , updated } from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
 import { readEnv } from '../auth/env.js'
@@ -265,7 +265,7 @@ export async function createAction(opts: CreateActionOpts): Promise<void> {
     )
     invalidateIndex(account.uuid, TODO_CLASS)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ _id: id, ...data }); return }
-    console.log(`created action: ${opts.title} (${id})`)
+    success(`created action`, opts.title, id)
   } finally { await client.close() }
 }
 
@@ -341,7 +341,7 @@ export async function updateAction(ref: string, opts: UpdateActionOpts): Promise
       ),
       opts
     )
-    console.log(`updated action: ${id}`)
+    updated(`updated action`, id)
   } finally { await client.close() }
 }
 

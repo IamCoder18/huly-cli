@@ -5,7 +5,7 @@ const { MarkupContent } = pkg
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli, connectAccountCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, buildIndex, invalidateIndex } from '../transport/ref-resolver.js'
-import { shouldJson, json, table, COLUMNS } from '../output/format.js'
+import {shouldJson, json, table, COLUMNS, success , updated } from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
 import { readEnv } from '../auth/env.js'
@@ -239,7 +239,7 @@ export async function updateChannel(ref: string, opts: {
       () => client.updateDoc(CHANNEL_CLASS, channel.space, channel._id, ops as any),
       opts
     )
-    console.log(`updated channel: ${channel._id}`)
+    updated(`updated channel`, channel._id)
   } finally { await client.close() }
 }
 
@@ -490,7 +490,7 @@ export async function updateChannelMessage(ref: string, messageId: string, opts:
         data as any
       )
     )
-    console.log(`updated message: ${messageId}`)
+    updated(`updated message`, messageId)
   } finally { await client.close() }
 }
 
@@ -620,7 +620,7 @@ export async function updateThreadReply(replyId: string, opts: {
         data as any
       )
     )
-    console.log(`updated reply: ${replyId}`)
+    updated(`updated reply`, replyId)
   } finally { await client.close() }
 }
 
@@ -718,7 +718,7 @@ export async function createDm(opts: {
       opts
     )
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ _id: id, ...data }); return }
-    console.log(`created DM: ${id}`)
+    success('created DM', id)
   } finally { await client.close() }
 }
 

@@ -4,7 +4,7 @@ const { MarkupContent } = pkg
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, invalidateIndex } from '../transport/ref-resolver.js'
-import { shouldJson, json, table, kv, header, COLUMNS, C, isoDate, relTime, statusGlyph, colorizeStatus } from '../output/format.js'
+import {shouldJson, json, table, kv, header, COLUMNS, C, isoDate, relTime, statusGlyph, colorizeStatus, success , updated } from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { deleteDoc } from '../commands/dry-run.js'
 import { CliError, ExitCode } from '../output/errors.js'
@@ -113,7 +113,7 @@ export async function createMilestone(opts: {
     )
     invalidateIndex((await client.getAccount()).uuid, CLASS.Milestone)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ _id: id, ...data }) }
-    else console.log(`created milestone: ${opts.label} (${id})`)
+    else success(`created milestone`, opts.label, id)
   } finally { await client.close() }
 }
 
@@ -154,7 +154,7 @@ export async function updateMilestone(ref: string, opts: {
       () => client.updateDoc(CLASS.Milestone as Ref<Class<Milestone>>, doc.space as unknown as Ref<Space>, id as Ref<Milestone>, ops as any),
       opts
     )
-    console.log(`updated milestone: ${id}`)
+    updated(`updated milestone`, id)
   } finally { await client.close() }
 }
 

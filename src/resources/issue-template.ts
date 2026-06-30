@@ -4,7 +4,7 @@ const { MarkupContent } = pkg
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, invalidateIndex } from '../transport/ref-resolver.js'
-import { shouldJson, json, table, COLUMNS, withTimeout } from '../output/format.js'
+import {shouldJson, json, table, COLUMNS, withTimeout, success , updated } from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { deleteDoc } from '../commands/dry-run.js'
 import { CliError, ExitCode } from '../output/errors.js'
@@ -103,7 +103,7 @@ export async function createIssueTemplate(opts: {
     )
     invalidateIndex((await client.getAccount()).uuid, CLASS.IssueTemplate)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ _id: id, ...data }) }
-    else console.log(`created template: ${opts.title} (${id})`)
+    else success(`created template`, opts.title, id)
   } finally { await client.close() }
 }
 
@@ -133,7 +133,7 @@ export async function updateIssueTemplate(ref: string, opts: { title?: string; d
       () => client.updateDoc(CLASS.IssueTemplate as Ref<Class<IssueTemplate>>, doc.space as unknown as Ref<Space>, id as Ref<IssueTemplate>, ops as any),
       opts
     )
-    console.log(`updated issue-template: ${id}`)
+    updated(`updated issue-template`, id)
   } finally { await client.close() }
 }
 

@@ -337,7 +337,6 @@ export function section(title: string): void {
   console.log(C.muted('─'.repeat(Math.max(8, title.length + 2))))
 }
 
-export function success(msg: string): void { console.log(C.ok(msg)) }
 export function fail(msg: string): void { console.log(C.fail(msg)) }
 export function warn(msg: string): void { console.log(C.warn(msg)) }
 export function info(msg: string): void { console.log(C.info(msg)) }
@@ -359,6 +358,16 @@ export async function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Pr
 }
 
 export { shortId, trim, stripRef, isoDate, isoDay, relTime, colorizeStatus, colorizePriority, statusGlyph, priorityGlyph }
+
+export function success(kind: string, name: string, id?: string): void {
+  const line = C.ok(kind) + C.muted('  ') + C.emphasis(name) + (id != null ? C.muted('  ') + C.id(`(${id})`) : '')
+  console.log(line)
+}
+
+export function updated(kind: string, id: string): void {
+  const line = C.info(kind) + C.muted('  ') + C.id(`(${id})`)
+  console.log(line)
+}
 
 export const COLUMNS = {
   idShort: <T>(): TableColumn<T>[] => [

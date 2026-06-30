@@ -4,7 +4,7 @@ import pkg from '@hcengineering/api-client'
 const { MarkupContent } = pkg
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, buildIndex } from '../transport/ref-resolver.js'
-import { shouldJson, json, table, type TableColumn } from '../output/format.js'
+import {shouldJson, json, table, type TableColumn, success } from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
 import { deleteDoc } from '../commands/dry-run.js'
@@ -154,7 +154,7 @@ export function makeCreate<T extends Doc>(opts: CreateOpts<T>) {
       if (shouldJson({ json: createOpts.json, ci: createOpts.ci })) {
         json({ _id: id, ...finalData })
       } else {
-        console.log(`created ${opts.label ?? 'record'}: ${id}`)
+        success('created', id)
       }
       return id
     } finally {

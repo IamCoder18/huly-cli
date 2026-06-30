@@ -4,7 +4,7 @@ const { MarkupContent } = pkg
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, invalidateIndex } from '../transport/ref-resolver.js'
-import { shouldJson, json, table, COLUMNS, withTimeout } from '../output/format.js'
+import {shouldJson, json, table, COLUMNS, withTimeout, success , updated } from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { deleteDoc } from '../commands/dry-run.js'
 import { CliError, ExitCode } from '../output/errors.js'
@@ -108,7 +108,7 @@ export async function createCardSpace(opts: {
     )
     invalidateIndex((await client.getAccount()).uuid, CLASS.CardSpace)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ _id: id, ...data }) }
-    else console.log(`created card-space: ${opts.name} (${id})`)
+    else success(`created card-space`, opts.name, id)
   } finally { await client.close() }
 }
 
@@ -286,7 +286,7 @@ export async function createCard(opts: {
     )
     invalidateIndex(account.uuid, CLASS.Card)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ _id: id, ...data }) }
-    else console.log(`created card: ${opts.title} (${id})`)
+    else success(`created card`, opts.title, id)
   } finally { await client.close() }
 }
 
@@ -335,7 +335,7 @@ export async function updateCard(ref: string, opts: {
       () => client.updateDoc(CLASS.Card as Ref<Class<CardDoc>>, doc.space, id as Ref<CardDoc>, ops as any),
       opts
     )
-    console.log(`updated card: ${id}`)
+    updated(`updated card`, id)
   } finally { await client.close() }
 }
 

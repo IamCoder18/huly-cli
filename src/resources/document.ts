@@ -5,7 +5,7 @@ const { MarkupContent } = pkg
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, buildIndex, invalidateIndex } from '../transport/ref-resolver.js'
-import { shouldJson, json, table, kv, header, COLUMNS, C, relTime, isoDate, withTimeout } from '../output/format.js'
+import {shouldJson, json, table, kv, header, COLUMNS, C, relTime, isoDate, withTimeout, success , updated } from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
 import { readEnv } from '../auth/env.js'
@@ -204,7 +204,7 @@ export async function createTeamspace(opts: {
     )
     invalidateIndex((await client.getAccount()).uuid, TEAMSPACE_CLASS)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ _id: id, ...data }); return }
-    console.log(`created teamspace: ${opts.name} (${id})`)
+    success(`created teamspace`, opts.name, id)
   } finally { await client.close() }
 }
 
@@ -243,7 +243,7 @@ export async function updateTeamspace(ref: string, opts: {
       () => client.updateDoc(TEAMSPACE_CLASS, doc.space as unknown as Ref<Space>, id as Ref<Teamspace>, ops as any),
       opts
     )
-    console.log(`updated teamspace: ${id}`)
+    updated(`updated teamspace`, id)
   } finally { await client.close() }
 }
 
@@ -417,7 +417,7 @@ export async function createDocument(opts: {
     )
     invalidateIndex(account.uuid, DOCUMENT_CLASS)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ _id: id, ...data }); return }
-    console.log(`created document: ${opts.title} (${id})`)
+    success(`created document`, opts.title, id)
   } finally { await client.close() }
 }
 
@@ -505,7 +505,7 @@ export async function updateDocument(ref: string, opts: UpdateDocumentOpts): Pro
       () => client.updateDoc(DOCUMENT_CLASS, doc.space as unknown as Ref<Space>, id as Ref<Document>, ops as any),
       opts
     )
-    console.log(`updated document: ${id}`)
+    updated(`updated document`, id)
   } finally { await client.close() }
 }
 

@@ -3,7 +3,7 @@ import type { PlatformClient } from '@hcengineering/api-client'
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, buildIndex, invalidateIndex } from '../transport/ref-resolver.js'
-import { shouldJson, json, table, kv, COLUMNS } from '../output/format.js'
+import {shouldJson, json, table, kv, COLUMNS, success } from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { deleteDoc } from '../commands/dry-run.js'
 import { CliError, ExitCode } from '../output/errors.js'
@@ -353,7 +353,7 @@ export async function upsertTargetPreference(opts: {
         opts
       )
       if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ _id: id, attachedTo: project._id, props }) }
-      else console.log(`created target preference: ${id}`)
+      else success('created target preference', id)
       return
     }
 
