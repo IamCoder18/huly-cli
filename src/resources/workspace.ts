@@ -1,5 +1,5 @@
 import { connectAccountCli } from '../transport/sdk.js'
-import { readActiveWorkspace, writeActiveWorkspace } from '../auth/cache.js'
+import { readActiveWorkspace, writeActiveWorkspace, findAnyCachedCreds } from '../auth/cache.js'
 import { readEnv } from '../auth/env.js'
 import { shouldJson, json, table, kv, COLUMNS, C } from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
@@ -142,12 +142,25 @@ export async function listMembers(g: GlobalOpts & { role?: string } = {}): Promi
       return role === want
     })
   }
-  const rows = filtered.map((m) => ({
-    name: m.name ?? m.account?.fullAccount?.email ?? null,
-    role: m.account?.role ?? m.role ?? null,
-    email: m.account?.fullAccount?.email ?? m.email ?? null,
-    uuid: m.account?.uuid ?? m.person ?? m._id ?? null
-  }))
+  const cached = await findAnyCachedCreds(g.url ?? readEnv().url)
+  const myEmail = cached?.email ?? null
+  const rows = filtered.map((m) => {
+    const mAny = m as Record<string, unknown>
+    const acc = mAny.account as Record<string, unknown> | undefined
+    const fullAcc = acc?.fullAccount as Record<string, unknown> | undefined
+    const email = (fullAcc?.email as string | undefined) ?? (mAny.email as string | undefined) ?? null
+    const fullName = (fullAcc?.name as string | undefined) ?? (mAny.name as string | undefined) ?? email
+    // On selfhost with a single account, the account-client may not return
+    // email/name. Fall back to the cached login email if the uuid matches.
+    const uuid = (acc?.uuid as string | undefined) ?? (mAny.person as string | undefined) ?? (mAny._id as string | undefined) ?? null
+    const finalEmail = email ?? (uuid != null && myEmail != null ? myEmail : null)
+    return {
+      name: fullName ?? finalEmail,
+      role: (acc?.role as string | undefined) ?? (mAny.role as string | undefined) ?? null,
+      email: finalEmail,
+      uuid
+    }
+  })
   if (shouldJson({ json: g.json, ci: g.ci })) {
     json(rows)
     return
