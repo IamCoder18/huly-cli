@@ -469,15 +469,16 @@ Low, None. Assignee must be a workspace member.`)
     .option('--priority <p>', 'Urgent | High | Normal | Low | None')
     .option('--assignee <email>')
     .option('--title <t>')
+    .option('--description <text>')
     .option('--task-type <name|id>')
     .addHelpText('after', `
 Examples:
   $ huly issue update TSK-1 --status Done
-  $ huly issue update TSK-1 --set description="Updated text"
+  $ huly issue update TSK-1 --description "Updated text"
   $ huly issue update TSK-1 --set priority=High --set assignee=bob@example.com
   $ huly issue update TSK-1 --set description=null  # clear field
 
-Pass any combination of --status/--priority/--assignee/--title/--set.`)
+Pass any combination of --status/--priority/--assignee/--title/--description/--set.`)
     .action(async (ref, opts, cmd) => {
       try { await updateIssue(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })

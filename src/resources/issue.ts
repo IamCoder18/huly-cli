@@ -482,6 +482,7 @@ export async function updateIssue(
     priority?: string
     assignee?: string
     title?: string
+    description?: string
     taskType?: string
     dryRun?: boolean
     minimal?: boolean
@@ -523,6 +524,7 @@ export async function updateIssue(
       if (p !== undefined) ops.priority = p
     }
     if (opts.title) ops.title = opts.title
+    if (opts.description) ops.description = opts.description
     if (opts.taskType) ops.kind = await resolveTaskType(client, opts.taskType, project)
 
     if (opts.dryRun) {
