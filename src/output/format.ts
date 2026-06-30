@@ -376,7 +376,12 @@ export const COLUMNS = {
   issue: <T>(): TableColumn<T>[] => [
     { key: 'identifier', header: 'ID', width: 14, align: 'left', format: (r) => {
       const v = (r as Record<string, unknown>).identifier
-      return v != null && v !== '' ? String(v) : C.muted('—')
+      if (v != null && v !== '') return C.emphasis(String(v))
+      // Fall back to a short id when the project sequence hasn't been assigned
+      // (e.g. legacy issues, or issues created via raw tx without an increment)
+      const id = (r as Record<string, unknown>)._id
+      if (id != null && id !== '') return C.muted('#' + shortId(id))
+      return C.muted('—')
     } },
     { key: 'title', header: 'TITLE', format: (r) => {
       const t = trim((r as Record<string, unknown>).title, 80)
@@ -390,7 +395,7 @@ export const COLUMNS = {
       const p = (r as Record<string, unknown>).priority
       return priorityGlyph(String(p ?? ''))
     } },
-    { key: '_id', header: '_ID', width: 12, align: 'right', format: (r) => C.id(shortId((r as Record<string, unknown>)._id)) }
+    { key: 'updatedOn', header: 'UPDATED', width: 11, align: 'right', format: (r) => relTime((r as Record<string, unknown>).modifiedOn as number | null) }
   ],
   issueTemplate: <T>(): TableColumn<T>[] => [
     { key: 'title', header: 'TITLE', format: (r) => {
