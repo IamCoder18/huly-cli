@@ -46,8 +46,7 @@ const CHAT_MESSAGE_CLASS = 'chunter:class:ChatMessage' as Ref<Class<ChatMessage>
 const DM_CLASS = 'chunter:class:DirectMessage' as Ref<Class<DirectMessage>>
 
 async function resolveChannel(client: PlatformClient, ref: string): Promise<Channel> {
-  const account = await client.getAccount()
-  const idx = await buildIndex<Channel>(client, CHANNEL_CLASS, account.uuid)
+  const idx = await buildIndex<Channel>(client, CHANNEL_CLASS)
   const hit = idx.get(ref)
   if (hit) {
     const doc = await client.findOne(CHANNEL_CLASS, { _id: hit as Ref<Channel> })
@@ -67,14 +66,16 @@ async function resolvePersonId(
 ): Promise<Ref<Doc>> {
   // Strategy 1: scan workspace-local Person docs (works for multi-user
   // selfhosts and production workspaces where each user has a
-  // contact:class:Person doc).
+  // contact:class:Person doc). Require exact (case-insensitive) match on
+  // email or name — substring matches risk silently misrouting DMs to the
+  // wrong person when callers pass a typo or a partial name.
   const lower = emailOrName.toLowerCase()
   try {
     const persons = (await client.findAll('contact:class:Person' as Ref<Class<Doc>>, {}, { limit: 200 })) as Array<Doc & { name?: string; email?: string }>
     const hit = persons.find((p) => {
       const n = String(p.name ?? '').toLowerCase()
       const e = String(p.email ?? '').toLowerCase()
-      return n === lower || n.startsWith(lower) || n.includes(lower) || e === lower
+      return n === lower || e === lower
     })
     if (hit) return hit._id
   } catch {
@@ -84,6 +85,7 @@ async function resolvePersonId(
   // Strategy 2: ask the account service for workspace members. The
   // account client returns person UUIDs for each member regardless of
   // whether a contact:class:Person doc was created in the workspace.
+  let otherMemberCount = -1
   try {
     const env = readEnv()
     const accountClient = await connectAccountCli({ url: opts.url ?? env.url, workspace: opts.workspace ?? env.workspace })
@@ -102,12 +104,11 @@ async function resolvePersonId(
       if (/^[0-9a-f-]{36}$/i.test(emailOrName)) {
         return emailOrName as Ref<Doc>
       }
-      // Last resort: if the workspace has exactly one other member and
-      // the caller passed a non-empty identifier, return that member's
-      // person UUID.
+      // If the workspace has zero other members, fail loudly so the caller
+      // doesn't silently DM themselves / get a misleading success.
       const otherMembers = members.filter((m: { person: string }) => m.person !== myUuid)
-      if (otherMembers.length === 1) return otherMembers[0].person as Ref<Doc>
-      if (otherMembers.length === 0) {
+      otherMemberCount = otherMembers.length
+      if (otherMemberCount === 0) {
         throw new CliError(
           ExitCode.NotFound,
           `no other person in this workspace — you are the only member`,
@@ -120,9 +121,12 @@ async function resolvePersonId(
     // account service unreachable or returned Forbidden — fall through
   }
 
+  const memberHint = otherMemberCount > 0
+    ? ` — workspace has ${otherMemberCount} other member${otherMemberCount === 1 ? '' : 's'}, but none matched exactly; pass a full email or 36-char UUID instead of --person`
+    : ''
   throw new CliError(
     ExitCode.NotFound,
-    `no person matching ${emailOrName}`,
+    `no person matching ${emailOrName}${memberHint}`,
     'try --members <uuid1> <uuid2> with raw account UUIDs instead of --person'
   )
 }
@@ -205,7 +209,7 @@ export async function createChannel(opts: {
       () => client.createDoc(CHANNEL_CLASS, 'chunter:space:Chunter' as Ref<Space>, data as any),
       opts
     )
-    invalidateIndex(account.uuid, CHANNEL_CLASS)
+    invalidateIndex(client, CHANNEL_CLASS)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ _id: id, ...data }); return }
     success(`created channel`, id)
   } finally { await client.close() }
@@ -755,11 +759,9 @@ export async function listDmMessages(dmRef: string, opts: {
 }): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const dmId = await resolveRef(dmRef, {
       client,
       classId: DM_CLASS as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     const messages = (await withSpinner(
       'Loading DM messages…',
@@ -813,11 +815,9 @@ export async function sendDmMessage(dmRef: string, opts: {
   }
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const dmId = await resolveRef(dmRef, {
       client,
       classId: DM_CLASS as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     const dm = await client.findOne(DM_CLASS, { _id: dmId as Ref<DirectMessage> })
     if (!dm) throw new CliError(ExitCode.NotFound, `DM ${dmRef} not found`)

@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
+import https from 'node:https'
 
 export interface HulyEnv {
   url: string
@@ -18,13 +19,17 @@ function loadDotenvFile(): void {
   dotenvLoaded = true
   const file = process.env.HULY_ENV_FILE ?? path.join(os.homedir(), '.config', 'huly', '.env')
   if (!fs.existsSync(file)) return
-  for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
-    const m = line.match(/^\s*(?:export\s+)?([A-Z_][A-Z0-9_]*)\s*=\s*(.*)\s*$/)
+  for (const rawLine of fs.readFileSync(file, 'utf8').split('\n')) {
+    const line = rawLine.replace(/\r$/, '')
+    const m = line.match(/^\s*(?:export\s+)?([A-Z_][A-Z0-9_]*)\s*=\s*(.*?)\s*$/)
     if (!m) continue
     const key = m[1]
     let raw = m[2].trim()
     if ((raw.startsWith('"') && raw.endsWith('"')) || (raw.startsWith("'") && raw.endsWith("'"))) {
       raw = raw.slice(1, -1)
+    } else {
+      const hashIdx = raw.indexOf(' #')
+      if (hashIdx >= 0) raw = raw.slice(0, hashIdx).trimEnd()
     }
     if (process.env[key] === undefined) process.env[key] = raw
   }
@@ -74,11 +79,7 @@ export function applyInsecureTLS(): void {
   if (!insecureTLS()) return
   if (process.env.NODE_TLS_REJECT_UNAUTHORIZED === '0') return
   process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
-  // Also disable verification for the legacy `https` agent path used by
-  // some SDK bridges.
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const https = require('node:https') as typeof import('node:https')
     https.globalAgent.options.rejectUnauthorized = false
   } catch { /* ignore */ }
 }

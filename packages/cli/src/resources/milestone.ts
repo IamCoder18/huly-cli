@@ -44,20 +44,15 @@ export async function listMilestones(opts: { project?: string; limit?: number; o
 export async function getMilestone(ref: string, opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string } = {}): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const id = await resolveRef(ref, {
       client,
       classId: CLASS.Milestone as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     const doc = await client.findOne(CLASS.Milestone as Ref<Class<Milestone>>, { _id: id as Ref<Milestone> })
     if (!doc) throw new CliError(ExitCode.NotFound, `milestone ${ref} not found`)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json(doc); return }
 
     const status = String(doc.status ?? 'planned')
-    const progress = typeof doc.targetDate === 'number'
-      ? Math.min(100, Math.max(0, Math.round(((Date.now() - (doc.createdOn as number ?? 0)) / ((doc.targetDate as number) - (doc.createdOn as number ?? 0))) * 100)))
-      : 0
     header(`Milestone — ${doc.label ?? '(unnamed)'}`, { subtitle: `target ${relTime(doc.targetDate as number | null)}` })
     kv([
       ['ID', C.emphasis(String(doc._id))],
@@ -111,7 +106,7 @@ export async function createMilestone(opts: {
       () => client.createDoc(CLASS.Milestone as Ref<Class<Milestone>>, project._id as unknown as Ref<Space>, data as any),
       opts
     )
-    invalidateIndex((await client.getAccount()).uuid, CLASS.Milestone)
+    invalidateIndex(client, CLASS.Milestone)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ _id: id, ...data }) }
     else success(`created milestone`, opts.label, id)
   } finally { await client.close() }
@@ -130,11 +125,9 @@ export async function updateMilestone(ref: string, opts: {
 }): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const id = await resolveRef(ref, {
       client,
       classId: CLASS.Milestone as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     const doc = await client.findOne(CLASS.Milestone as Ref<Class<Milestone>>, { _id: id as Ref<Milestone> })
     if (!doc) throw new CliError(ExitCode.NotFound, `milestone ${ref} not found`)
@@ -161,11 +154,9 @@ export async function updateMilestone(ref: string, opts: {
 export async function deleteMilestones(refs: string[], opts: { dryRun?: boolean; workspace?: string; url?: string; yes?: boolean } = {}): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const ids = await resolveRefs(refs, {
       client,
       classId: CLASS.Milestone as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     if (!opts.yes && ids.length > 1) throw new CliError(ExitCode.Validation, `destructive: deleting ${ids.length} milestones requires --yes`, 're-run with --yes to confirm')
     let deleted = 0, skipped = 0
