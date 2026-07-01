@@ -46,18 +46,19 @@ the rationale behind design decisions.
    - [schedule](#schedule)
    - [time](#time)
 9. [Common workflows](#common-workflows)
-10. [Output mode reference](#output-mode-reference)
-11. [Class ID reference](#class-id-reference)
-12. [Plugin / model surface map](#plugin--model-surface-map)
-13. [Escape hatches](#escape-hatches)
-14. [Internal architecture](#internal-architecture)
-15. [Environment variables reference](#environment-variables-reference)
-16. [Troubleshooting](#troubleshooting)
-17. [Performance & limits](#performance--limits)
-18. [Security model](#security-model)
-19. [Compatibility matrix](#compatibility-matrix)
-20. [Development](#development)
-21. [Cross-references](#cross-references)
+10. [Platform behaviors & best practices](#platform-behaviors--best-practices)
+11. [Output mode reference](#output-mode-reference)
+12. [Class ID reference](#class-id-reference)
+13. [Plugin / model surface map](#plugin--model-surface-map)
+14. [Escape hatches](#escape-hatches)
+15. [Internal architecture](#internal-architecture)
+16. [Environment variables reference](#environment-variables-reference)
+17. [Troubleshooting](#troubleshooting)
+18. [Performance & limits](#performance--limits)
+19. [Security model](#security-model)
+20. [Compatibility matrix](#compatibility-matrix)
+21. [Development](#development)
+22. [Cross-references](#cross-references)
 22. [License](#license)
 
 ---
@@ -504,6 +505,18 @@ huly project target-preference upsert --project TSK --key ... --value ...
 **`--set` semantics:** Pass `key=value` to set, `key=null` to clear.
 Anything else is left unchanged.
 
+**Best practices & side effects:**
+- `delete` is **destructive**: cascade-deletes all `Issue`, `Component`,
+  `Milestone`, and `IssueTemplate` in the project (`OnProjectRemove`). Use
+  `huly project get <ref> --json` first to inspect the project.
+- The CLI does not expose project/status/task-type creation. Custom space
+  types and custom task types can only be applied to **new** projects — you
+  cannot migrate an existing project to a different type.
+- New projects are created with `ProjectType.classic = true` (Tracker default);
+  Recruit/Lead space types set `classic: false`, which disables the issue/todo
+  cascade automation.
+See [Platform behaviors & best practices](#platform-behaviors--best-practices).
+
 ---
 
 ### issue
@@ -561,6 +574,13 @@ IssueStatus. On workspaces where the tracker migration didn't seed statuses,
 issue create fails with "no IssueStatus in workspace". Workaround: create
 a status manually via the web UI first.
 
+**Best practices & side effects:** assigning an issue or changing its status
+may auto-create, auto-close, or auto-rollback attached `ProjectToDo`s and
+auto-advance the issue's status when the first `WorkSlot` starts (classic
+projects only). See [Platform behaviors & best practices](#platform-behaviors--best-practices)
+for the full cascade table. To inspect side effects after a mutation, use
+`huly action list --issue <ref>` and `huly issue get <ref> --json`.
+
 ---
 
 ### component
@@ -578,6 +598,11 @@ huly component delete <ref...> [--yes]
 list doesn't find it. Tracked as C2 in `docs/open-issues.md`. Same issue
 affects milestone, issue-template, and time-entry lists.
 
+**Best practices & side effects:** `delete` cascades — every issue that has
+this component gets `component: null` set automatically (orphans are detached,
+not deleted). See
+[Platform behaviors & best practices](#platform-behaviors--best-practices).
+
 ---
 
 ### milestone
@@ -589,6 +614,10 @@ huly milestone create --project TSK --label "v1.0" [--due 2026-08-01]
 huly milestone update <ref> --label "v1.0 Final" --due 2026-08-15
 huly milestone delete <ref...> [--yes]
 ```
+
+**Best practices & side effects:** milestones are project-locked; you cannot
+transfer a milestone to another project after creation. `delete` cascades —
+all issues referencing the milestone get `milestone: null`.
 
 ---
 
@@ -616,6 +645,12 @@ huly comment update <commentRef> --body "Updated text"
 huly comment delete <ref...> [--yes]
 ```
 
+**Best practices & side effects:** issue comments are stored as
+`ChatMessage`s in the issue's `comments` collection. Sending a comment auto-adds
+the author (and any `@mentioned` users) as collaborators on the issue, and
+emits an inbox notification per collaborator. Delete cascades — any
+`InboxNotification` attached to the deleted comment is removed.
+
 ---
 
 ### channel
@@ -641,6 +676,19 @@ huly channel message update <channelRef> <messageRef> --body "edited"
 huly channel message delete <channelRef> <messageRef...> [--yes]
 ```
 
+**Best practices & side effects:**
+- Sending a message auto-adds the sender as a channel member (`$push: members`).
+- The sender and every `@`-mentioned person in the message body are
+  auto-added as `Collaborator`s on the channel, and each gets an inbox
+  notification (subject to their notification provider settings).
+- `#general` and `#random` are auto-created when a workspace is created.
+  `archive` on these requires `Spaces Admin` or `Workspace Owner`.
+- `--private true` keeps the channel listed in the sidebar; users must
+  request access. Use a DM (not a channel) for hidden conversations.
+- Channel `auto-join` only affects **future** workspace members, never
+  retroactively adds existing ones.
+See [Platform behaviors & best practices](#platform-behaviors--best-practices).
+
 ---
 
 ### dm
@@ -655,6 +703,13 @@ huly dm send <dmRef> --body "hi"
 huly dm send --person alice@example.com --body "hi"     # auto-creates DM
 ```
 
+**Best practices & side effects:** sending a DM message parses `@mentions`
+from the markup and creates per-recipient inbox notifications; the mentioned
+person is auto-added as a `Collaborator` on the underlying DM space. Use a DM
+(or group DM) rather than a private channel if you want a conversation that
+isn't listed in the channel sidebar. "Close conversation" hides from the
+sidebar but preserves message history.
+
 ---
 
 ### thread
@@ -667,6 +722,15 @@ huly thread add <targetRef> --body "reply" [--body-file <path>]
 huly thread update <replyRef> --body "edited"
 huly thread delete <replyRef...> [--yes]
 ```
+
+**Best practices & side effects:** thread replies attach to the parent
+`ActivityMessage` and auto-push the author into `repliedPersons[]` (unless
+already present); the parent message's `lastReply` is updated to the reply's
+`modifiedOn`. The author and `@`-mentioned persons in the reply body receive
+inbox notifications. Replying to a Telegram notification appears here as a
+thread reply.
+
+---
 
 ---
 
@@ -730,6 +794,19 @@ huly action delete <ref...> [--yes]
 **Priority:** accepts any of `Urgent | High | Normal | Low | None`. Match
 is case-insensitive. Unknown priorities throw NotFound.
 
+**Best practices & side effects:**
+- `--attached-to <ref>` + `--attached-to-class tracker:class:Issue` attaches
+  the todo to one parent only. Unlike server-auto-created todos (which use
+  `createTxCollectionCUD` and live under both the issue and `time.space.ToDos`),
+  a CLI-created todo appears under the issue but **not** in the assignee's
+  personal todo list. Use `--owner <email>` to additionally point `user` at a
+  person, or omit `--attached-to` entirely to attach the todo to a `Person`.
+- `complete` / `delete` may trigger issue status rollback or advance (when the
+  todo is attached to an issue).
+- `schedule` on a `Backlog`/`Todo` issue-attached todo can auto-advance the
+  issue's status to the next `Active` state.
+See [Platform behaviors & best practices](#platform-behaviors--best-practices).
+
 ---
 
 ### document
@@ -753,6 +830,18 @@ Full body replace with `--body`; targeted substitution with `--old-text`
 
 **Auto-teamspace:** On first document create in a workspace with no
 teamspaces, the CLI auto-creates a default `General` teamspace.
+
+**Best practices & side effects:**
+- Body is stored as raw Markdown (the SDK's `MarkupContent` upload is
+  bypassed on this selfhost because the `createMarkup` RPC throws).
+- Any `@mention` in the body creates a backlink and an inbox notification for
+  the mentioned user (subject to their notification prefs).
+- Documents created from `huly document create` are nested under a teamspace;
+  if you want flat-by-Type organization, use cards instead (see `cards/`
+  docs).
+- For controlled documents, `--state` transitions are gated by an approval
+  workflow: Author → Reviewer → Approver e-signatures are enforced in that
+  order, and inline comments must be resolved before approval.
 
 ---
 
@@ -832,6 +921,11 @@ huly time report --from 2026-06-01 --to 2026-06-30 [--user email@...] [--project
 huly time delete <entryRef...> [--yes]
 ```
 
+**Best practices & side effects:** logging time on an issue updates that
+issue's `reportedTime` and recomputes `remainingTime`. If the issue has a
+parent, the change walks up the parent chain automatically (`OnIssueUpdate`).
+There is no opt-out — script accordingly.
+
 ---
 
 ## Common workflows
@@ -891,9 +985,169 @@ done
 ```bash
 # Documents whose teamspace was deleted
 huly document list --json | \
-  jq -r '.[] | select(.space == null) | ._id' \
+  jq -r '.[] | select(.space == null) ._id' \
   | xargs -I{} huly document delete {} --yes
 ```
+
+---
+
+## Platform behaviors & best practices
+
+The Huly server runs server-side triggers on most transactions. This means a
+single CLI command can cascade into side effects the user did not explicitly
+request — auto-created `ProjectToDo`s, inbox notifications, parent-estimate
+recomputations, cascade-deletes, and more. The CLI is intentionally a thin
+wrapper over the SDK, so these behaviors apply equally whether the action
+came from the CLI, the web UI, or an integration.
+
+This section catalogs the behaviors a CLI user is most likely to encounter,
+grouped by surface. Use it as a reference when a command produces an
+unexpected result.
+
+> **Gating:** many tracker/todo behaviors below only fire for projects whose
+> `ProjectType.classic` is `true`. Default Tracker projects are classic;
+> Recruit and Lead projects are not. There is no per-workspace toggle.
+
+### Issues & ToDos (the cascade everyone hits)
+
+| User action (CLI) | Server-side side effect |
+|---|---|
+| `huly issue create --assignee <email>` (in a classic project, status `Todo`/`In Progress`) | Auto-creates a `ProjectToDo` for the assignee; sends inbox notification. |
+| `huly issue create --assignee <email>` (status `Backlog`/`Done`/`Canceled`) | No auto-todo. Status must be `Todo` or `In Progress` (status **category**, not name). |
+| `huly issue update <ref> --assignee <email>` (assignee changes) | Closes all open `ProjectToDo`s on the issue (`doneOn = now`), then creates a new `ProjectToDo` for the new assignee. |
+| `huly issue update <ref> --status <name>` moving to `Done`/`Canceled` | All open `ProjectToDo`s on the issue are marked done. |
+| `huly issue update <ref> --status <name>` moving to `Todo`/`In Progress` + assignee set + no todos exist | Creates the first `ProjectToDo`. |
+| `huly action delete <ref>` (when this is the last open todo on its issue) | Issue status auto-rolls back to the previous un-started status in the workflow. |
+| `huly action schedule <ref>` (first `WorkSlot` on a todo whose issue is `Backlog`/`Todo`) | Issue status auto-advances to the next `Active` status. |
+| `huly action complete <ref>` (completing the last open todo) | May auto-advance the issue status past the last `Active` state (driven by `IssueToDoDone` mixin on classic projects). |
+| `huly time report ...` (logging time on an issue with a parent) | Updates `reportedTime` / `remainingTime` on the issue **and walks up to parents** automatically (`OnIssueUpdate` recomputes the chain). |
+| `huly issue update <ref> --title ...` | Propagates the new title into `parentTitle` on every sub-issue's `parents[]`. |
+| `huly issue move <ref> --parent ...` | Rewrites the issue's `parents[]` chain; recomputes parent `childInfo`. |
+| `huly issue create --parent <ref>` | The new issue inherits the parent's space and appears under it. |
+
+### Tasks (`action` / Planner ToDos)
+
+| User action | Side effect |
+|---|---|
+| `huly action create --attached-to <issueRef> --attached-to-class tracker:class:Issue` | Attaches to **one** parent only. Unlike server-auto-created todos (which use `createTxCollectionCUD` and live in both the issue's `todos` collection and `time.space.ToDos`), a CLI-created todo is a single-parent doc — it appears under the issue but **not** in the assignee's personal todo list unless you also `--owner <email>` and omit `--attached-to`. There is currently no CLI flag to mimic the dual-parent shape. |
+| `huly action update <ref> --title/--description/--visibility` | Mirrors the change to all `WorkSlot`s of that todo (`OnToDoUpdate`). |
+| `huly action complete <ref>` | Removes/crops future `WorkSlot`s; on an attached issue, may auto-advance status (`OnToDoUpdate` → `IssueToDoDone`). |
+| `huly action delete <ref>` | Triggers `OnToDoRemove`. If it was the last open todo on an issue, the issue's status rolls back. |
+| `huly action schedule <ref> --start ... --duration ...` | Creates a `WorkSlot` (`OnWorkSlotCreate`). The first `WorkSlot` on an issue-attached todo can auto-advance the issue's status. The todo's `visibility` change mirrors to the `WorkSlot` (`OnWorkSlotUpdate`). |
+| `huly action unschedule <ref>` | Removes `WorkSlot`s; if the todo had a status that was auto-advanced by `OnWorkSlotCreate`, the rollback only happens via `OnToDoRemove`. |
+
+### Projects, components, milestones, templates
+
+| User action | Side effect |
+|---|---|
+| `huly project delete <ref>` | Cascade-deletes **all** `Issue`, `Component`, `Milestone`, `IssueTemplate` in the project; sets broadcast target filter to drop notifications (`OnProjectRemove`). |
+| `huly component delete <ref>` | Every issue with that component gets `component: null` (orphans are detached, not deleted) (`OnComponentRemove`). |
+| `huly project create --name X` | Identifier is auto-generated from the title and can be edited. Default space type is `Classic project`; default task type is `Issue` with states `Backlog`/`Todo`/`In Progress`/`Done`/`Canceled`. |
+| `--auto-join` on a project / channel | Only **future** workspace members are added. Existing members are not retroactively added. |
+| `huly issue-template` create/delete | Templates are project-scoped — usable only on issues in the project they were created in. |
+
+### Chat, channels, DMs, threads, comments
+
+| User action | Side effect |
+|---|---|
+| `huly channel send` / `huly dm send` / `huly thread send` | Auto-creates `ChatMessage`; sender + every `@`-mentioned person (parsed from the markup via `extractReferences`) are auto-added as `core.class.Collaborator` on the attached doc. On channel sends, the sender is auto-joined to the channel. Each collaborator and mention gets an inbox notification. |
+| `huly comment add <issueRef> ...` | Issue comments are `ChatMessage`s stored in the issue's `comments` collection; same auto-collaborator + auto-notification rules apply. |
+| `huly dm send --message "@alice ..."` | `@mention` resolves from workspace members by display name and creates a backlink; the recipient gets an inbox notification (subject to their notification prefs). |
+| New workspace | `#general` and `#random` channels are auto-created; archiving them requires Spaces Admin. |
+| `huly channel archive` | Allowed only for the owner/creator of the channel; for the auto-created system channels (`#general`/`#random`), Spaces Admin or Workspace Owner is required. |
+| `huly channel update --private true` | Private channels still appear in the sidebar — users must request access. Use a group DM (not a channel) for hidden conversations. |
+| `huly dm ...` "close conversation" | Hides from sidebar; message history is preserved. |
+| Inline comments on issues / docs | **Not** linked to inbox notifications or chat; resolving an inline comment thread **deletes** all comments in it (cannot be undone). |
+
+### Documents, controlled documents, training
+
+| User action | Side effect |
+|---|---|
+| `huly document create` | Body is stored as raw Markdown string (the SDK's `MarkupContent` upload is bypassed because the collaborator's `createMarkup` RPC throws on this selfhost). |
+| `huly document update --state effective` (ControlledDocument → `Effective`) | All older `Effective` versions of the same template are auto-archived; `DocumentMeta.title` is rewritten to `"<code> <title>"`; if the document has `documents.mixin.DocumentTraining` enabled, `training.class.TrainingRequest` is auto-created per trainee. |
+| Edit a ControlledDocument after review | The document must be re-reviewed before it can be approved (`OnDocTitleChanged`/`OnDocHasBecomeEffective`). Inline comments must be resolved before approval. |
+| Author / Reviewer / Approver e-signatures | Order is enforced: **Author must sign before Reviewer/Approver** can sign. |
+| `huly document create` (first in a workspace) | A "Records" Drive is pre-created; metadata (code/prefix/category) is editable only during the initial draft phase. |
+| `huly document update --transfer` | Requires archive rights on source + create rights on destination; doc must be in current product version. |
+| Training assigned before being released | Blocked — must `Release` the training first. |
+| Trainee exhausts max attempts | No auto-retry; a new `TrainingRequest` must be issued. |
+
+### Cards & types
+
+| User action | Side effect |
+|---|---|
+| Add an attribute to one card of a Type/Tag | The field is added to **all existing cards** of that Type or Tag (`OnCardTag` mixin). |
+| Define a Relation between Types A ↔ B | Bi-directional: shows up on both A and B cards automatically. |
+| Define a Reference (not Relation) | One-directional on A; usable as sort/filter criterion; cannot be made back-link later. |
+| Delete a Card Type | Cascade-deletes **all** cards of that Type — cannot be undone. |
+| Delete the `File` Type | Refused (system type). |
+| Upload a file to a File Card | The file is permanently attached — no delete. |
+| Reparent a Card | Increments new parent's `children`, builds `parentInfo[]`, and **rolls back on cycle detection**. |
+| Derive a Type from another | Sub-types auto-inherit all parent properties. |
+| Save a filtered Card view | Can be Public (workspace-wide) or Private (only you). |
+
+### People, employees, contacts
+
+| User action | Side effect |
+|---|---|
+| Invite via invite link | New joiner is automatically added as `Employee` (`OnPersonCreate` → `OnEmployeeCreate`). |
+| `huly user add <email>` (Employee creation) | Sends an invite email — user can only sign up with that email. |
+| Deactivate / kick an Employee | Marks inactive, **retains the contact** for object integrity. Re-invite via "Resend Invite" rather than re-create. |
+| Activate an Employee (`OnEmployeeCreate`) | Creates the user's private `PersonSpace`, auto-joins all `core.class.Space` with `autoJoin: true`, and (for `Owner` role) auto-assigns ownership of any `TypedSpace`/`CardSpace` with empty `owners`. Also auto-creates a default `Calendar` ("HULY"). |
+| Activate an Employee (in HR-enabled workspaces) | Auto-adds `hr.mixin.Staff` with `department: Head`; walks the department hierarchy on `Staff.department` change. |
+| GitHub integration collaborator | Auto-created as `Person` contact (no workspace access unless invited separately). |
+| Merge Person + Employee | Combines into one record (use when same person joins from two paths). |
+| Custom contact fields | Only `Contact` and `Task` classes are customizable. Supported types: URL, String, Boolean, Number, Date, Enum. Ref and Array are not yet implemented. |
+| Hide vs Remove property | Hide keeps data; Remove deletes property and data. |
+
+### Notifications & inbox
+
+| User action | Side effect |
+|---|---|
+| Any `create`/`update`/`delete` via the CLI | Emits an `ActivityMessage` in the doc's `docUpdateMessages` and a collaborator inbox notification (`ActivityMessagesHandler`), unless the class has the `IgnoreActivity` mixin or is a `Card` with `serverCard.metadata.CommunicationEnabled`. |
+| `@mention` someone in chat or a doc | Auto-resolves to a `Person` ref, creates a backlink in the recipient's notifications, and the recipient gets an inbox notification subject to their per-provider prefs. |
+| Telegram reply to a notification | Appears in Huly as a thread reply in the originating message. |
+| Per-thread unsubscribe (three-dot → unsubscribe) | Only available in the web UI; not currently exposed via the CLI. |
+| Hover-peek in inbox | Lets you preview without marking the message Read. |
+| Delete a `ChatMessage` | Removes all `InboxNotification` rows whose `attachedTo` points at it (no dangling notifications). |
+| Web-push | Sends to recipient's `PushSubscription`s only when `serverNotification.metadata.WebPushUrl` is configured server-side. |
+
+### Integrations
+
+| Integration | Behavior |
+|---|---|
+| GitHub linked repo | Issues/comments/PRs sync bidirectionally; "Create issue without GitHub" override creates a Huly-only issue. |
+| Gmail connected | Past emails with each contact back-fill onto the contact page on first connect. |
+| Telegram | Multi-workspace requires `/sync_all_channels` in the bot menu; replies to notifications become thread replies in Huly. |
+| Google Calendar sync | Pre-sync Huly events don't retroactively push to Google; visibility maps (`Public` ↔ `Visible to everyone`, `Private` ↔ `Only visible to you`). Disconnecting Google does not delete already-synced events. |
+| Recording in a meeting | Auto-saves to Drive, visible to anyone with Drive access. |
+| Live transcription (Hulia) | Currently workspace-wide visibility; privacy hardening planned. |
+| `PublicLink` create with empty `url` | Server auto-fills `url` with a signed JWT — no CLI action needed. |
+
+### Roles & permissions (relevant to CLI scripting)
+
+| Role | CLI-relevant limits |
+|---|---|
+| `OWNER` | Required for `workspace delete`, `member`, `rename`, `guests`, `access-link`. Only OWNER/Maintainer can create spaces, projects, or manage task types. |
+| `MAINTAINER` | Cannot delete the workspace, remove owners, or change their own role. |
+| `GUEST` | Limited to spaces explicitly flagged as `Guest`-accessible; can only create/update/delete in those. |
+| `READONLY` | All write attempts rejected. |
+| `Spaces Admin` | Can archive system channels (`#general`/`#random`). |
+| TraceX roles | `Qualified User`, `Manager`, `QARA` for controlled-document workflows. |
+| Private space + `autoJoin` | New workspace members auto-added regardless of explicit member list. |
+
+### Best practices for CLI users
+
+1. **Expect cascades.** Treat `huly issue update --assignee ...` as "assign + create todo + notify", not just "assign". When scripting, factor in that the operation produces downstream inbox notifications for the assignee.
+2. **Use `huly action list --issue <ref>` to verify.** After updating an issue, list its todos to confirm the server-side behavior matched expectations.
+3. **Check `projectType.classic` before relying on todo automation.** Custom Tracker space types may have `classic: false`. Use `huly project get <ref> --json` and inspect.
+4. **Prefer `--json` for verification.** Side-effect objects (todos, inbox notifications, activity messages) emit in transactions; pair mutations with `huly <resource> get <ref> --json` to verify state.
+5. **Use `huly issue preview-delete <ref...>` before destructive ops.** Deletions cascade aggressively (project → issues/components/milestones/templates; card type → cards).
+6. **Schedule via `huly action schedule` rather than raw `WorkSlot` create.** `OnWorkSlotCreate` only auto-advances issue status on the **first** slot, and only when current status is `Backlog`/`Todo` in a classic project.
+7. **Time reports propagate to parents.** Logging time on a sub-issue updates the parent's `reportedTime`/`remainingTime`. There's no opt-out.
+8. **Refuse shortcuts that hide side effects.** The CLI is intentionally thin; "this only updates one field" is rarely true. If a side effect is undesirable (e.g., you don't want todos auto-created), work around it: e.g., update the issue without `--assignee`, then call `huly action create` separately.
+9. **Inline comments are not notifications.** Resolve them through the web UI; the CLI does not surface the `Resolve inline comment` action.
+10. **Document state changes are gated by approval flow.** `huly document update --state effective` only works after the review/approval workflow has produced all required signatures (Author → Reviewer → Approver).
 
 ---
 

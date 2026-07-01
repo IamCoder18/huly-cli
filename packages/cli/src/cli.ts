@@ -383,9 +383,15 @@ Examples:
     .action(async (ref, opts, cmd) => {
       try { await updateProject(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
-  project.command('delete <ref...>').description('Delete projects (DESTRUCTIVE; requires --yes)').action(async (refs, opts, cmd) => {
-    try { await deleteProjects(refs, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
-  })
+  project.command('delete <ref...>').description('Delete projects (DESTRUCTIVE; requires --yes)')
+    .addHelpText('after', `
+Side effects: cascade-deletes ALL Issue, Component, Milestone, and
+IssueTemplate in the project via OnProjectRemove. There is no undo.
+Inspect with 'huly project get <ref> --json' and 'huly issue list
+--project <ref>' before deleting.`)
+    .action(async (refs, opts, cmd) => {
+      try { await deleteProjects(refs, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
   project.command('statuses [ref]').description('List issue statuses for a project (defaults to $HULY_PROJECT or first arg)')
     .option('--project <ref>')
     .action(async (ref, opts, cmd) => {
@@ -471,7 +477,13 @@ Examples:
   $ huly issue create --project TSK --title "Sub-task" --parent TSK-5
 
 Required: --project, --title. Valid priority values: Urgent, High, Normal,
-Low, None. Assignee must be a workspace member.`)
+Low, None. Assignee must be a workspace member.
+
+Side effects: in a classic project (Tracker default), setting --assignee on
+an issue in status category Todo or Active auto-creates a ProjectToDo for the
+assignee and sends them an inbox notification. No auto-todo for status
+Backlog/Done/Canceled. Status names are mapped to categories internally; the
+trigger fires on the category, not the literal name.`)
     .action(async (opts, cmd) => {
       try { await createIssue({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
@@ -493,7 +505,14 @@ Examples:
   $ huly issue update TSK-1 --set priority=High --set assignee=bob@example.com
   $ huly issue update TSK-1 --set description=null  # clear field
 
-Pass any combination of --status/--priority/--assignee/--title/--description/--set.`)
+Pass any combination of --status/--priority/--assignee/--title/--description/--set.
+
+Side effects (classic projects): changing --assignee closes the previous
+assignee's open todos (doneOn=now) and creates a new ProjectToDo for the
+new assignee. Changing --status to Done/Canceled closes all open todos on
+the issue. Changing --status to Todo/Active on an issue with no todos and
+an assignee creates the first todo. Changing --title propagates to
+parentTitle on every sub-issue.`)
     .action(async (ref, opts, cmd) => {
       try { await updateIssue(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
@@ -675,6 +694,10 @@ Examples:
     .requiredOption('--issue <ref>')
     .option('--body <md>')
     .option('--body-file <path>')
+    .addHelpText('after', `
+Side effects: comments are ChatMessages in the issue's comments collection.
+The author is auto-added as a Collaborator on the issue (if not already),
+and every @-mention in the body is resolved and notified.`)
     .action(async (opts, cmd) => {
       try { await addComment({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
@@ -811,6 +834,14 @@ Examples:
   cmsg.command('send <ref>').description('Send a message to a channel')
     .option('--body <md>')
     .option('--body-file <path>')
+    .addHelpText('after', `
+Side effects: sender is auto-added to channel members ($push: members).
+Every @-mention in the body is parsed via extractReferences and:
+  - resolved to a Person ref,
+  - added as a core.class.Collaborator on the channel,
+  - sent an inbox notification (subject to their notification prefs).
+Mentioned users do NOT need to be channel members to be notified, but they
+will not see the message in the channel history until they join.`)
     .action(async (ref, opts, cmd) => {
       try { await sendChannelMessage(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
@@ -855,7 +886,12 @@ Examples:
 Examples:
   $ huly dm message send <dmId> --body "hello"
   $ huly dm message send placeholder --person alice@.. --body "hi"
-  $ huly dm message list <dmId>`)
+  $ huly dm message list <dmId>
+
+Side effects: every @-mention in the body is resolved to a Person ref,
+added as a Collaborator on the DM, and notified. Use a DM (or group DM)
+rather than a private channel if you want a conversation that is NOT listed
+in the channel sidebar.`)
     .action(async (dm, opts, cmd) => {
       try { await sendDmMessage(dm, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
@@ -868,6 +904,9 @@ Examples:
     .option('--body <md>')
     .option('--body-file <path>')
     .option('--person <email>', 'recipient email (auto-creates DM if needed)')
+    .addHelpText('after', `
+Side effects: same as 'dm message send' — @mentions resolve and notify.
+This command is deprecated; use 'huly dm message send <dm> --body ...'.`)
     .action(async (dm, opts, cmd) => {
       try { await sendDmMessage(dm, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
@@ -880,6 +919,12 @@ Examples:
   thread.command('add <target>').description('Add a reply')
     .option('--body <md>')
     .option('--body-file <path>')
+    .addHelpText('after', `
+Side effects: pushes the author into repliedPersons[] on the parent message
+(if not already present), updates the parent's lastReply timestamp, and
+sends inbox notifications to all collaborators of the parent + every
+@-mention in the body. Telegram replies to a Huly notification appear here
+as thread replies.`)
     .action(async (target, opts, cmd) => {
       try { await addThreadReply(target, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
@@ -1008,7 +1053,20 @@ List available tags with \`huly master-tag list\`.`)
     .option('--visibility <v>')
     .option('--owner <email>')
     .option('--attached-to <ref>')
-    .option('--attached-to-class <class>')
+    .option('--attached-to-class <class>', 'class id; use tracker:class:Issue to attach to an issue')
+    .addHelpText('after', `
+Best practices & side effects:
+  --attached-to + --attached-to-class tracker:class:Issue attaches the task
+  to ONE parent only. Unlike server-auto-created ProjectToDos (which use
+  createTxCollectionCUD and live under both the issue's todos collection and
+  time.space.ToDos), a CLI-created task appears under the issue but NOT in
+  the assignee's personal todo list. To also point 'user' at a person, add
+  --owner <email>. To mirror the server's dual-parent behavior, omit
+  --attached-to entirely and the task attaches to the owner's Person doc.
+
+  --owner resolves to an Employee ref; if omitted, defaults to the current
+  user. Visibility accepts: public | busy | private. Priority accepts:
+  Urgent | High | Medium | Low | NoPriority.`)
     .action(async (opts, cmd) => {
       try { await createAction({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
@@ -1025,10 +1083,18 @@ List available tags with \`huly master-tag list\`.`)
       try { await updateAction(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
   action.command('complete <ref>').description('Mark a task done (sets doneOn=now)')
+    .addHelpText('after', `
+Side effects: removes/crops future WorkSlots of this todo. On a classic-
+project issue, completing the LAST open todo may auto-advance the issue's
+status past the last Active state (IssueToDoDone mixin).`)
     .action(async (ref, opts, cmd) => {
       try { await completeAction(ref, globalsFrom(cmd)) } catch (e) { handleError(e) }
     })
   action.command('reopen <ref>').description('Reopen a task (clears doneOn)')
+    .addHelpText('after', `
+Side effects: cleared doneOn does NOT restore removed WorkSlots. If the
+issue's status had been auto-advanced by IssueToDoDone, you may need to
+manually move the issue back via 'huly issue update --status'.`)
     .action(async (ref, opts, cmd) => {
       try { await reopenAction(ref, globalsFrom(cmd)) } catch (e) { handleError(e) }
     })
@@ -1036,6 +1102,12 @@ List available tags with \`huly master-tag list\`.`)
     .requiredOption('--start <iso>')
     .requiredOption('--duration <minutes>', '', (v) => parseInt(v, 10))
     .option('--all-day')
+    .addHelpText('after', `
+Side effects: creates a WorkSlot via OnWorkSlotCreate. The FIRST WorkSlot on
+a todo attached to a classic-project issue auto-advances the issue's status
+to the next Active state (only if the issue is currently Backlog/Todo).
+Visibility changes on the WorkSlot mirror to the parent todo via
+OnWorkSlotUpdate.`)
     .action(async (ref, opts, cmd) => {
       try { await scheduleAction(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
@@ -1044,9 +1116,15 @@ List available tags with \`huly master-tag list\`.`)
     .action(async (ref, opts, cmd) => {
       try { await unscheduleAction(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
-  action.command('delete <ref...>').description('Delete tasks').action(async (refs, opts, cmd) => {
-    try { await deleteActions(refs, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
-  })
+  action.command('delete <ref...>').description('Delete tasks')
+    .addHelpText('after', `
+Side effects: triggers OnToDoRemove. If this was the LAST open todo on its
+attached issue, the issue's status auto-rolls back to the previous
+un-started status (classic projects only). To inspect what will happen,
+check 'huly action list --issue <ref>' first.`)
+    .action(async (refs, opts, cmd) => {
+      try { await deleteActions(refs, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
 
   const doc = program.command('document').description('Manage documents (and their snapshots/inline comments)'); withGlobalHelp(doc)
   doc
@@ -1290,10 +1368,19 @@ To fetch a calendar (the container, not an event inside it), use
     .option('--hours <n>', 'hours spent (decimal ok)', (v) => Number(v))
     .option('--description <text>')
     .option('--date <iso>', 'default now')
+    .addHelpText('after', `
+Side effects: updates the issue's reportedTime and recomputes remainingTime.
+If the issue has a parent, the change walks up the parent chain via
+OnIssueUpdate (server-side, automatic, no opt-out). Use --hours or
+--minutes, not both; if both are provided --hours takes precedence.`)
     .action(async (opts, cmd) => {
       try { await logTime({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
   time.command('report <issue>').description('Time report for a single issue')
+    .addHelpText('after', `
+Side effects: read-only. Returns the time entries on the given issue along
+with the current reportedTime/remainingTime values (which are kept in sync
+by OnIssueUpdate).`)
     .action(async (issue, opts, cmd) => {
       try { await timeReport(issue, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })

@@ -50,27 +50,26 @@ jobs:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
 
-      - name: Install latest npm
-        # Node 24's bundled npm may lag the latest OIDC handshake
-        # requirements. Pin to a known-good version.
-        run: npm install -g npm@11.5.1
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
 
       - name: Install deps
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Determine target version
         id: version
-        # Compute the next version in pure bash. `npm version --dry-run`
-        # actually mutates package.json/package-lock.json in npm 11.x, so
-        # we don't use it.
+        # Compute the next version in pure bash against the CLI subpackage.
+        # `npm version --dry-run` mutates package.json in npm 11.x, so we
+        # don't use it.
         run: |
           set -euo pipefail
-          CURRENT=$(node -p "require('./package.json').version")
+          CURRENT=$(node -p "require('./packages/cli/package.json').version")
 
           bump_semver() {
             local ver="$1" kind="$2"
-            # Strip a leading 'v' and any pre-release/build metadata for math.
-            local core="${ver%%-+}" # drop pre-release/build
+            local core="${ver%%-+}"
             core="${core#v}"
             local IFS='.'
             read -r major minor patch <<< "$core"
@@ -98,17 +97,15 @@ jobs:
           echo "target=$TARGET" >> "$GITHUB_OUTPUT"
           echo "bump=$BUMP_KIND" >> "$GITHUB_OUTPUT"
 
-      - name: Bump version in package.json
+      - name: Bump version in packages/cli/package.json
         if: steps.version.outputs.target != steps.version.outputs.current
-        # Always set package.json to the exact TARGET — never rely on
-        # `npm version <bump>` which could mutate twice if the file was
-        # touched by a prior step.
         run: |
           set -euo pipefail
-          npm version "${{ steps.version.outputs.target }}" --no-git-tag-version
+          cd packages/cli
+          npm version "${{ steps.version.outputs.target }}" --no-git-tag-version --workspaces=false
 
       - name: Build
-        run: npm run build
+        run: pnpm --filter @iamcoder18/huly-cli build
 
       - name: Publish to npm
         if: ${{ !inputs.dry_run }}
@@ -116,7 +113,7 @@ jobs:
         # OIDC token for a publish token. No NPM_TOKEN secret required.
         run: |
           set -euo pipefail
-          npm publish --access public --tag "${{ inputs.tag }}"
+          pnpm publish --filter @iamcoder18/huly-cli --access public --tag "${{ inputs.tag }}" --no-git-checks
 
       - name: Commit & tag version bump
         if: ${{ !inputs.dry_run && steps.version.outputs.target != steps.version.outputs.current }}
@@ -124,7 +121,7 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add package.json package-lock.json
+          git add packages/cli/package.json pnpm-lock.yaml
           git commit -m "chore(release): v${{ steps.version.outputs.target }}"
           git tag "v${{ steps.version.outputs.target }}"
           git push

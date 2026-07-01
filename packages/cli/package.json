@@ -1,0 +1,44 @@
+{
+  "name": "@iamcoder18/huly-cli",
+  "version": "0.1.2",
+  "description": "AI-agent-first CLI for self-hosted Huly",
+  "type": "module",
+  "bin": {
+    "huly": "./bin/huly"
+  },
+  "main": "./dist/index.js",
+  "files": [
+    "dist",
+    "bin"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && chmod +x dist/index.js",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "smoke": "bash scripts/smoke.sh all"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/IamCoder18/huly-cli.git"
+  },
+  "engines": {
+    "node": ">=22.11"
+  },
+  "dependencies": {
+    "@hcengineering/account-client": "^0.7.423",
+    "@hcengineering/api-client": "^0.7.423",
+    "chalk": "^5.3.0",
+    "commander": "^12.1.0",
+    "inquirer": "^12.1.0",
+    "ora": "^8.1.1",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/inquirer": "^9.0.7",
+    "@types/node": "^22.7.0",
+    "@types/ws": "^8.5.12",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
