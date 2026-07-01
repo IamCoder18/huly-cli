@@ -1296,13 +1296,15 @@ When you pass a value to a flag like `--assignee`, `--project`, `--owner`,
 3. **Prefixed form** (`PREFIX-123`, e.g. `TSK-1`, `USR-42`) — looked up via the index.
 4. **Bare number** (`42`) — uses `$HULY_PROJECT` env var for project context.
 5. **`identifier | name | label | title` (lowercased)** — exact match against the index.
-6. **Substring fallback** (loose `includes()` match) for `--assignee` and `--owner`. May produce false positives — pass an exact email/name to avoid.
+6. **Substring fallback** (loose `includes()` match) for `--assignee` only. NOT applied to `--owner` — see step 6b. May produce false positives; pass an exact email/name to avoid.
+6b. **`--owner` is exact-match only** — `resolveEmployeeId` does a strict `===` comparison against `Person.name` and `Person.email` (if the field is populated). There is no fuzzy fallback. Pass the full name or email.
 7. **Account lookup** — `accountClient.findPersonBySocialKey` for `--person`; falls back to workspace-local `Person` scan.
 8. **Single-other-member heuristic** — `resolvePersonId` in DM/Channel code picks the only other workspace member if exactly one exists. Documented for awareness; avoid relying on it.
 
-> **Heads up:** the substring fallback in step 6 is silently enabled. If
+> **Heads up:** the substring fallback in step 6 is silently enabled for `--assignee` only. If
 > you pass `--assignee bob` and there's a `Bob Anderson` and a `Bob
 > Bishop`, the first alphabetical match wins. Use exact email to disambiguate.
+> `--owner` does NOT have this fallback — it requires an exact name or email match.
 
 ### Auto-coercion in `--set key=value`
 

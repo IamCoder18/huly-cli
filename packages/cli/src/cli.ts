@@ -1122,10 +1122,11 @@ Defaults (when omitted):
   doneOn               null
   rank                 '0|aaaaa:'
 
-Ref resolution for --owner: tries me|empty, raw _id, exact match against
-Person.name (case-insensitive) and Person.email if the field is populated,
-then substring (includes) match against Person.name. Limit 200 results.
-Pass exact email to avoid ambiguity in substring matching.`)
+Ref resolution for --owner: tries me|empty, raw _id, then exact match
+against Person.name (case-insensitive) or Person.email if the field is
+populated. There is NO substring or partial-match fallback. Pass the
+exact email or full name — e.g. '--owner alice@example.com' or
+'--owner "Alice Smith"'. Limit 200 results per call.`)
     .action(async (opts, cmd) => {
       try { await createAction({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
