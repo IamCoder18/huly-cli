@@ -47,18 +47,20 @@ the rationale behind design decisions.
    - [time](#time)
 9. [Common workflows](#common-workflows)
 10. [Platform behaviors & best practices](#platform-behaviors--best-practices)
-11. [Output mode reference](#output-mode-reference)
-12. [Class ID reference](#class-id-reference)
-13. [Plugin / model surface map](#plugin--model-surface-map)
-14. [Escape hatches](#escape-hatches)
-15. [Internal architecture](#internal-architecture)
-16. [Environment variables reference](#environment-variables-reference)
-17. [Troubleshooting](#troubleshooting)
-18. [Performance & limits](#performance--limits)
-19. [Security model](#security-model)
-20. [Compatibility matrix](#compatibility-matrix)
-21. [Development](#development)
-22. [Cross-references](#cross-references)
+11. [CLI behaviors and smart defaults](#cli-behaviors-and-smart-defaults)
+12. [Operational tips](#operational-tips)
+13. [Output mode reference](#output-mode-reference)
+14. [Class ID reference](#class-id-reference)
+15. [Plugin / model surface map](#plugin--model-surface-map)
+16. [Escape hatches](#escape-hatches)
+17. [Internal architecture](#internal-architecture)
+18. [Environment variables reference](#environment-variables-reference)
+19. [Troubleshooting](#troubleshooting)
+20. [Performance & limits](#performance--limits)
+21. [Security model](#security-model)
+22. [Compatibility matrix](#compatibility-matrix)
+23. [Development](#development)
+24. [Cross-references](#cross-references)
 22. [License](#license)
 
 ---
@@ -1135,19 +1137,424 @@ unexpected result.
 | `Spaces Admin` | Can archive system channels (`#general`/`#random`). |
 | TraceX roles | `Qualified User`, `Manager`, `QARA` for controlled-document workflows. |
 | Private space + `autoJoin` | New workspace members auto-added regardless of explicit member list. |
+| Read-only guest | A magic UUID (`83bbed9a-0867-4851-be32-31d49d1d42ce`) represents the global read-only guest. When `workspace guests --read-only true` is set, all workspace members get re-granted to this identity; their notifications are force-read; sessions get `data.connection.readOnly = true`. |
+| Per-space `Permission` records | Every TxCUD is checked against the space type's `Permission` matrix. There is no global role override; granting rights is per-space. |
+| Disabling RBAC | Settings → General → disable RBAC for the whole workspace. Useful for scripting tests; do not leave enabled in production. |
 
-### Best practices for CLI users
+### Calendar & recurring events
 
-1. **Expect cascades.** Treat `huly issue update --assignee ...` as "assign + create todo + notify", not just "assign". When scripting, factor in that the operation produces downstream inbox notifications for the assignee.
-2. **Use `huly action list --issue <ref>` to verify.** After updating an issue, list its todos to confirm the server-side behavior matched expectations.
-3. **Check `projectType.classic` before relying on todo automation.** Custom Tracker space types may have `classic: false`. Use `huly project get <ref> --json` and inspect.
-4. **Prefer `--json` for verification.** Side-effect objects (todos, inbox notifications, activity messages) emit in transactions; pair mutations with `huly <resource> get <ref> --json` to verify state.
-5. **Use `huly issue preview-delete <ref...>` before destructive ops.** Deletions cascade aggressively (project → issues/components/milestones/templates; card type → cards).
-6. **Schedule via `huly action schedule` rather than raw `WorkSlot` create.** `OnWorkSlotCreate` only auto-advances issue status on the **first** slot, and only when current status is `Backlog`/`Todo` in a classic project.
-7. **Time reports propagate to parents.** Logging time on a sub-issue updates the parent's `reportedTime`/`remainingTime`. There's no opt-out.
-8. **Refuse shortcuts that hide side effects.** The CLI is intentionally thin; "this only updates one field" is rarely true. If a side effect is undesirable (e.g., you don't want todos auto-created), work around it: e.g., update the issue without `--assignee`, then call `huly action create` separately.
-9. **Inline comments are not notifications.** Resolve them through the web UI; the CLI does not surface the `Resolve inline comment` action.
-10. **Document state changes are gated by approval flow.** `huly document update --state effective` only works after the review/approval workflow has produced all required signatures (Author → Reviewer → Approver).
+| Behavior | Notes |
+|---|---|
+| `--rrule` accepted on `huly calendar create` | iCalendar RRULE string (e.g. `FREQ=DAILY;COUNT=3`). Server coerces `BYDAY`/`BYMONTH`/`BYMONTHDAY`/`BYSETPOS` to numeric arrays. |
+| Recurring exceptions (EXDATE) | **Not implemented.** The `ReccuringEvent` model has no `exdates` field; exception dates are silently ignored. There is no UI to skip a single occurrence. |
+| Recurring instance model | Each instance is a `ReccuringInstance` carrying `recurringEventId` + `originalStartTime`. To list instances, query by `recurringEventId`. |
+| `blockTime` defaults to false | Events don't block the user's calendar by default. Pass `--block-time` to set. |
+| `visibility` mapping for Google sync | Google `transparency:transparent` ↔ Huly `visibility:freeBusy`; Huly `private` ↔ Google `private`. |
+| Visibility levels | `public` (everyone sees title+time), `freeBusy` (only "Busy"), `private` (only you). Title is always shown to those with view rights. |
+| `--time-zone` defaults to `UTC` | For recurring events, the RRULE is evaluated in the given TZ. Pass `--time-zone America/New_York` etc. |
+| `WorkSlot` visibility mirrors to event | Changing `WorkSlot.visibility` mirrors back to the parent `ToDo` and derived calendar events. |
+
+### Search and indexing
+
+| Behavior | Notes |
+|---|---|
+| Full-text backend | Elasticsearch. `fulltextSummary` field is concatenated from markup text + all `isFullTextAttribute` fields + link preview metadata. |
+| Searchable fields | Determined by `FullTextSearchContext` per class; default includes title, description, body. Custom attribute opt-in via `isFullTextAttribute: true`. |
+| Operators | No Huly-specific DSL. ES `query_string` passes through: `AND`, `OR`, `NOT`, `+`, `-`, `"…"`, `*`, `~`, `field:value`. The CLI does not wrap queries. |
+| Index cap | `fulltextSummary` capped at `textLimit` (~1 MB); huge bodies are truncated server-side. |
+| Reindex | `fullReindex` workspace event triggers a clean rebuild (the CLI has no direct hook — you can call `huly ws` with `{"method":"triggerReindex","params":[...]}` if needed). |
+| `domain: fulltext-blob` is excluded from backups | Transient; not restorable. |
+| Indexing is per-workspace | Each workspace gets its own pipeline; queries are workspace-scoped. |
+
+### Locking, audit, soft-delete
+
+| Behavior | Notes |
+|---|---|
+| Concurrency model | Optimistic locking via `modifiedOn` / `modifiedBy`. No version counter. Last write wins. |
+| Y-doc collaborative fields | Concurrent edits to rich text merge via Y.js CRDT (per-character). |
+| Audit trail | The `tx` domain IS the audit log. Every `TxCreateDoc`/`TxUpdateDoc`/`TxRemoveDoc`/`TxMixin` is persisted with `modifiedBy`/`modifiedOn`/`objectId`. Query it: `huly ws findAll core.class.Tx --json \| jq '.[] \| select(.objectId=="…")'`. |
+| Activity feed | User-visible summaries built from the tx stream by `ActivityMessagesHandler`. Excludes ActivityMessage/InboxNotification/DocNotifyContext. |
+| Soft delete | `Card.removed:boolean`, `Project.archived`, `Vacancy.archived`, `Document.state ∈ {Deleted, Obsolete, Archived}`. Other entities are hard-deleted (`TxRemoveDoc`). |
+| Workspace states | `pending-creation` → `creating` → `active`; `pending-upgrade` → `upgrading` → `active`; `pending-deletion` → `deleting`; `archiving-*` chain; `migration-*` chain; `pending-restore` → `restoring` → `active`. |
+| `WS_OPERATION` env var (server-side) | `all` (default) covers `pending-creation` + `pending-upgrade`; `all+backup` adds `pending-deletion`, archiving, migration, restoring. For selfhost single-pod, set `all+backup` on the workspace pod. |
+| Read-only guest data | The CLI's `connectCli` returns a `PlatformClient` augmented with `__workspaceId` so the resolver cache is workspace-scoped. No cross-workspace data leakage. |
+
+### Markup handling (the CLI bypasses the SDK)
+
+| Behavior | Notes |
+|---|---|
+| Why raw strings? | The SDK's `processMarkup` uploads any `MarkupContent` to the collaborator service via `createMarkup` RPC. On selfhost, that RPC hangs (no hocuspocus session). The CLI deliberately passes body content as a raw string, which the SDK's else-branch forwards unchanged. |
+| Where it applies | `document create`, `comment add`, `channel message send`, `dm message send`, `thread add`, `card create`, `component create`, `milestone create`, `issue-template create`, `todo create`. |
+| `--markdown` on read | Wraps `client.fetchMarkup` in a 5-second timeout. On timeout or error, falls back to `String(doc.content)`. CLI-created docs return body verbatim; web-UI-created docs return the markup-ref string instead. |
+| Markup on legacy docs | This selfhost has no web-UI-created docs; `--markdown` works correctly. On a multi-user cloud instance, `--markdown` may print ref strings for docs that were created via the web UI. |
+| What this means | The CLI's body content is treated as **plain text or raw Markdown**; rich-text features (mentions, formatting nodes, embeds) won't round-trip. Sufficient for scripting; not for content-authoring workflows. |
+
+### Integrations
+
+| Integration | Behavior |
+|---|---|
+| GitHub linked repo | Issues/comments/PRs sync bidirectionally. PRs appear as a separate task type `Pull request` in Settings → Task Types (auto-created on connect). Per-issue `Create issue without GitHub` override stops sync. |
+| Gmail | On first connect, historical emails with each contact back-fill on the contact page (not into a centralized inbox — that's a roadmap item). Mail icon under contact name lets you send. |
+| Google Calendar | Two-way event sync with visibility mapping (`Public` ↔ `Visible to everyone`, `Private` ↔ `Only visible to you`). Pre-sync Huly events do NOT retro-push to Google. Disconnect preserves already-synced events. Sync is per-calendar toggle. |
+| Telegram | `hulyio_bot` bridge. `Sync all channels` / `Sync starred channels` menu commands. Multi-workspace requires `/sync_all_channels`. Reply in Telegram becomes a thread reply in Huly. Per-event-type notification toggles. |
+| GitHub link in issue Activity | After creating an issue in a synced repo, a direct URL to the GitHub issue appears in the issue's Activity section. |
+| Recordings | Meeting recordings auto-save to Drive (visible to anyone with Drive access). |
+| Live transcription (Hulia) | Workspace-wide visibility by default; privacy hardening planned. |
+| `PublicLink` | `url: ''` → server auto-fills with a signed JWT token. |
+| Self-host → cloud migration | No GUI; contact Huly team. Cloud → self-host: owner can use desktop `Backup` menu and restore. |
+
+### Cards & knowledge management (deep)
+
+| Behavior | Notes |
+|---|---|
+| Adding attribute to one Card | Adds to **every** Card of that Type or Tag (`OnCardTag`). Cannot be scoped. |
+| Derived Type inheritance | Sub-types auto-inherit all parent properties; intermediate mixins apply automatically. |
+| Tag application | Tag properties only appear after the Tag is applied; removing the Tag drops values. |
+| Relation kinds | `1:1` / `1:N` / `N:N`. N:N is symmetric; 1:N has owner/child sides. Relations are bi-directional, References are not. |
+| Reference vs Relation | Reference is a one-directional attribute, filterable and sortable. Relation is a separate `Relation` doc with cardinality rules. |
+| Reproving Cards | Card Type can be re-assigned post-creation (re-organization without data loss). |
+| Card hierarchy cycle detection | Reparenting a Card walks up the parent chain; cycles are detected and the tx is rolled back. |
+| File Type undeletable | The default `File` MasterTag cannot be deleted; uploaded files on File-Cards are permanent. |
+| Drive versioning | Re-uploading onto an existing file creates a new version automatically. All versions listed under the original. |
+| Default Drive | Every new workspace ships with one Drive named `Records`. |
+| Mermaid | Slash command → `Diagram`; valid MermaidJS auto-renders below editor. Press Delete to remove. |
+| Drawing board | Slash command → `Drawing board`; multi-user real-time. Clear is irreversible. Scribble history tracks who drew what. |
+| Backlinks | Paper-clip icon (top-right of doc) opens panel of every `@mention` pointing to the doc. |
+| Notes on highlights | Highlight text → `Note` icon → color; persists as inline note. Re-highlight to edit. |
+| Inline comments vs Activity comments | Inline comments are isolated to the doc/issue and DON'T notify. Resolving a thread **deletes all replies**. |
+| Saved messages in chat | Bookmark any message → appears in `Saved` tab in Chat sidebar. |
+| `[] ` action items in docs | Typing `[] ` at line start inserts a checkbox; assigning it creates a Planner todo + sends notification. |
+
+---
+
+## CLI behaviors and smart defaults
+
+The CLI silently applies several defaults and auto-creations to keep common
+flows one-liners. This section catalogs them all so you know what the CLI
+will do when you don't.
+
+### Auto-creations (the CLI makes things for you)
+
+| Command | What gets auto-created | When |
+|---|---|---|
+| `huly document create` | A `General` teamspace (type `space-type:default`, members `[]`, description "Default teamspace (auto-created)") | Workspace has zero teamspaces. |
+| `huly issue create` | 5 default `IssueStatus` records (`Backlog`, `To do`, `In progress`, `Done`, `Canceled`) in `core:space:Model` | Workspace has zero `IssueStatus`. |
+| `huly issue create` | First `ProjectToDo` (classic projects only) | `--assignee` set, status `Todo`/`Active`. See cascade table. |
+| `huly dm create --person <email>` / `huly dm send --person <email>` | A DM with that person (resolves via `resolvePersonId`) | No existing DM with that person. |
+| `huly issue label add <ref> --label <name>` | A `TagElement` in `tags:space:Tag` (first `TagCategory`) | Label doesn't exist yet. |
+| `huly project create` | The current user is added as a `members: [<uuid>]` | Always, unless `--minimal`. |
+| `huly calendar create` | A new `Calendar` doc | Always; `--type public\|private` defaults to `public`. |
+| `huly action create` | If `--attached-to` omitted, the task is attached to the owner's `Person` (or current user) | Default. |
+
+> **Note:** `huly issue create` re-tries the auto-seed on the **second**
+> call if the first failed silently (model-load race). If the issue create
+> keeps failing on a fresh workspace, run any other issue-list command
+> first to nudge the model.
+
+### Smart defaults (values the CLI fills for you)
+
+| Command | Flag | Default |
+|---|---|---|
+| `huly project create` | `--sequence` | `0` |
+| `huly project create` | `--members` | `[<current-user-uuid>]` |
+| `huly project create` | `--description` | `''` (omitted with `--minimal`) |
+| `huly issue create` | `--status` | Lowest-rank `IssueStatus` (usually `Backlog`) |
+| `huly issue create` | `--priority` | `Normal` if it exists in the workspace; else first priority; else omitted |
+| `huly issue create` | `--task-type` | `tracker:issue:default` |
+| `huly issue create` | `parent` | `null` (top-level), unless `--minimal` |
+| `huly issue create` | `space` | `project._id` (unless `--minimal`) |
+| `huly calendar create` | `--type` | `public` |
+| `huly calendar create` | `--private` | `false` |
+| `huly calendar create` | `--time-zone` (recurring) | `UTC` |
+| `huly schedule create` | `--duration` | `30` (minutes) |
+| `huly schedule create` | `--interval` | `15` (minutes) |
+| `huly event create` | `--calendar` | User's `PrimaryCalendar`, else first non-hidden calendar |
+| `huly event create` | `--attached-to` | Current user (`contact:class:Person`) |
+| `huly event create` | `--access` | `owner` |
+| `huly event create` | `--visibility` | `public` |
+| `huly event create` | `--block-time` | `false` |
+| `huly action create` | `--priority` | `NoPriority` |
+| `huly action create` | `--visibility` | `public` |
+| `huly action create` | `--owner` | Current user |
+| `huly action create` | `--attached-to-class` | `contact:class:Person` |
+| `huly action create` | `--due` | none (`dueDate: null`) |
+| `huly action create` | `doneOn` | `null` |
+| `huly action create` | `rank` | `0\|aaaaa:` |
+| `huly time log` | `--date` | `Date.now()` |
+| `huly time log` | value conversion | minutes → man-hours (`value = minutes/60`); rounds to nearest 15 min |
+| `huly card create` | `--card-space` | `card:space:Default` (may not exist; create one first) |
+| `huly teamspace create` | `--type` | `public` |
+| `huly card-space create` | `--private` | `false` |
+
+### Ref resolution order (how `--assignee`, `--project`, etc. resolve)
+
+When you pass a value to a flag like `--assignee`, `--project`, `--owner`,
+`--person`, `--calendar`, etc., the CLI tries in this order:
+
+1. **`me` / `""`** (empty string) — resolves to current user.
+2. **Raw `_id`** (matches `^[a-z-]+:[a-z-]+:[0-9a-f-]{36}$`) — used as-is.
+3. **Prefixed form** (`PREFIX-123`, e.g. `TSK-1`, `USR-42`) — looked up via the index.
+4. **Bare number** (`42`) — uses `$HULY_PROJECT` env var for project context.
+5. **`identifier | name | label | title` (lowercased)** — exact match against the index.
+6. **Substring fallback** (loose `includes()` match) for `--assignee` and `--owner`. May produce false positives — pass an exact email/name to avoid.
+7. **Account lookup** — `accountClient.findPersonBySocialKey` for `--person`; falls back to workspace-local `Person` scan.
+8. **Single-other-member heuristic** — `resolvePersonId` in DM/Channel code picks the only other workspace member if exactly one exists. Documented for awareness; avoid relying on it.
+
+> **Heads up:** the substring fallback in step 6 is silently enabled. If
+> you pass `--assignee bob` and there's a `Bob Anderson` and a `Bob
+> Bishop`, the first alphabetical match wins. Use exact email to disambiguate.
+
+### Auto-coercion in `--set key=value`
+
+`huly project update --set key=value` (and `huly issue update --set`) coerce
+values automatically:
+
+- `key=null` → clears the field (sends `TxUpdateDoc` with `operations[key]: null`)
+- `key=true` / `key=false` → boolean
+- `key=<numeric string>` → `Number`
+- `key=<anything else>` → string
+
+Reserved keys (silently stripped): `set`, `unset`, `json`, `ci`, `markdown`, `dryRun`, `minimal`, `yes`, `workspace`, `url`, `defaultProjectIdentifier`.
+
+### Cache & index behavior
+
+| Cache | Lifetime | Invalidation |
+|---|---|---|
+| Resolver index (`workspaceId\|classId` → `Map<key, _id>`) | In-memory, **no TTL** | Explicit `invalidateIndex()` after every write. |
+| Account `_accounts` URL cache | In-memory, per-host | Never invalidated; restart the CLI process to refresh. |
+| `~/.config/huly/credentials.json` (account + workspace tokens) | On disk, mode 0600, no expiry | Refreshed on re-login. Delete the file to reset. |
+| `~/.config/huly/active-workspace` | On disk, mode 0606 | Updated on `huly workspace use <name>` or `--workspace`. |
+| `~/.config/huly/active-account` | On disk, mode 0606 | One line per host, updated on login. |
+| Resolver cache for the entire workspace | In-memory | Wiped when workspace UUID cannot be determined (rare). |
+
+> **Stale-cache gotcha:** the resolver index never expires. If someone
+> deletes or renames a project between two CLI commands in the same shell,
+> the second command may still see the old name. Restart the CLI process
+> (or run any write against the changed resource) to force a refresh.
+
+### Markup handling (the SDK bypass)
+
+The CLI deliberately bypasses the SDK's markup-upload path because the
+collaborator service hangs on selfhost. The body for `document create`,
+`comment add`, `channel message send`, `dm message send`, `thread add`,
+`card create`, `component create`, `milestone create`, `issue-template
+create`, and `todo create` is sent as a **raw string**, not a
+`MarkupContent` instance.
+
+Practical consequences:
+- **Round-trip works for plain Markdown** — create with `--body "hello"`, get back `"hello"` on `--markdown`.
+- **Rich-text features don't survive** — mentions, formatted nodes, embeds are stripped.
+- **Web-UI-created docs return ref strings** on `--markdown`. This selfhost has no such docs; on a cloud instance you may see ref strings instead of body text.
+- **No y-doc upload** — collaborative editing on CLI-created docs is disabled.
+
+If you need rich-text features, use the raw escape hatch: `huly ws tx '{"method":"createDoc", ...}'`.
+
+### Timeouts
+
+| Path | Timeout | Fallback |
+|---|---|---|
+| `client.fetchMarkup` (all `--markdown` reads) | **5 seconds** | `'(body fetch timed out)'` |
+| `ws` raw command | **60 seconds** | Promise rejects |
+| `ws` raw command ping | **5 seconds** (interval) | `--no-ping` disables |
+| `retry()` helper (defined, unused) | `429` only | `500 * attempt² ms` backoff, max 3 attempts |
+
+There is **no WebSocket auto-reconnect** in the CLI. Each command opens a
+fresh WS, runs, and closes in `finally`. If the connection drops mid-call,
+the error bubbles up.
+
+### Filtering & matching semantics
+
+| Flag | Match type | Case-sensitive? |
+|---|---|---|
+| `--status` (issue) | Exact label/name | No |
+| `--status-category` | Strips `task:statusCategory:` prefix, exact | No |
+| `--priority` (issue) | Exact label/name | No |
+| `--task-type` (issue) | Exact label/name OR raw `_id` | No |
+| `--role` (member) | Aliases (`owner\|admin\|guest\|docguest\|readonlyguest\|maintainer`) | No |
+| `--priority` (todo) | Strict enum (`High\|Medium\|Low\|NoPriority\|Urgent`), throws on invalid | No |
+| `--visibility` (todo) | Strict enum (`public\|busy\|private`) | No |
+| `--archived` (channel/document) | Anything that isn't `'false'` or `'0'` → `true` | n/a |
+| `--completed` (todo) | `true\|false\|all` | n/a |
+| `--description-search` / `--content-search` / `--title` (todo) | **MongoDB-style regex** with `$options: 'i'` | **No** |
+| `--private` (channel) | Non-strict coercion (anything not `'false'`/`'0'` → true) | n/a |
+
+### Idempotency (auto-retry on duplicate)
+
+| Command | Behavior |
+|---|---|
+| `huly issue create` | If the create returns `duplicate`/`exists`/`already`, the CLI re-runs the lookup and returns the existing issue's `_id` (idempotent). |
+| `huly project create` | Pre-flight `findAll({identifier})`; on `already exists|duplicate|exists` error, repeats the lookup and returns the existing project. |
+
+### Error messages include next-step hints
+
+| Error | Hint |
+|---|---|
+| `PLATFORM_NOT_FOUND` / `not found` | "check the ref or run `huly <resource> list`" |
+| `PLATFORM_UNAUTHORIZED` / 401 | "run `huly login` or set `HULY_TOKEN`" |
+| `PLATFORM_FORBIDDEN` / 403 | "insufficient permissions" |
+| `PLATFORM_ALREADY_EXISTS` | mapped to `ExitCode.Conflict(6)` |
+| `PLATFORM_RATE_LIMITED` / 429 | mapped to `ExitCode.RateLimited(5)` |
+| `PLATFORM_VALIDATION` / 400 | mapped to `ExitCode.Validation(4)` |
+| `>=500` | mapped to `ExitCode.Server(7)` |
+| Bad `--status` | lists all available statuses |
+| Bad `--priority` | lists available priorities |
+| `ref-resolver` NotFound | shows first 10 candidates |
+
+### Pagination
+
+The CLI loads the full result set in one `findAll` call, then slices
+in-memory with `--limit`/`--offset`. There is no server-side pagination.
+For very large workspaces (>10k docs of a type), prefer filtering by
+project/space/date to bound the result set before piping to `jq`.
+
+### Confirmation prompts (`--yes`)
+
+Required for:
+- `workspace create`
+- `workspace delete` (active workspace also needs `--force`)
+- Any delete of ≥2 refs (`issue delete`, `project delete`, `channel delete`, `document delete`, `teamspace delete`, `action delete`, `comment delete`, `time delete`, `calendar delete`, `card delete`, `card-space delete`, `thread delete`, `channel message delete`, `action unschedule` of multiple slots)
+
+NOT required for:
+- `dm create --person` (auto-creates a DM silently)
+- `dm send --person` (auto-creates a DM silently)
+- `action unschedule` of a single slot
+- All single-ref deletes
+
+### Connection pooling
+
+**None.** Every CLI invocation opens a fresh `PlatformClient` /
+`AccountClient` and closes it in `finally`. The SDK keeps a single WS open
+for the duration of the client. This is fast (sub-second per command) but
+means you cannot pipeline multiple mutations over one WS.
+
+---
+
+## Operational tips
+
+Lessons learned from running the CLI against a self-hosted Huly instance.
+These are CLI-user-facing, not server-admin-facing.
+
+### Environment variables (cheat sheet)
+
+| Var | Default | Purpose |
+|---|---|---|
+| `HULY_URL` | `https://huly.aaravlabs.com` | Server URL |
+| `HULY_EMAIL` | — | Login email (used by `--headless` login) |
+| `HULY_PASSWORD` | — | Login password (used by `--headless` login) |
+| `HULY_TOKEN` | — | Pre-issued account JWT (bypasses login + caching) |
+| `HULY_WORKSPACE` | — | Default workspace (URL or UUID) |
+| `HULY_PROJECT` | — | Default project for `--project` and bare-number issue refs |
+| `HULY_TEAMSPACE` | — | Default teamspace for `--teamspace` |
+| `HULY_ENV_FILE` | `~/.config/huly/.env` | Path to the dotenv file |
+| `HULY_NONINTERACTIVE` | — | `1` disables all prompts |
+| `HULY_INSECURE_TLS` | — | `1` disables TLS verification globally (sets `NODE_TLS_REJECT_UNAUTHORIZED=0` + `https.globalAgent.options.rejectUnauthorized = false`) |
+| `NO_COLOR` | — | Disables chalk colors |
+| `XDG_CONFIG_HOME` | `~/.config` | Base for credential/config files |
+| `CI` | — | Triggers JSON output and disables spinner |
+
+Precedence for global flags: **flag > env > cached file**. The cached
+`~/.config/huly/active-workspace` is the lowest-priority default.
+
+### Auth caching
+
+- Tokens are persisted at `~/.config/huly/credentials.json` (mode 0600).
+- Account token + per-workspace tokens are stored separately.
+- Re-login **preserves existing workspace tokens** when the account token is refreshed.
+- `HULY_TOKEN` bypasses all caching (account-level pre-issued JWT).
+- The CLI will NOT re-login if a cached account token exists for the given email — this avoids clobbering workspace tokens.
+- Workspace-scoped tokens are re-fetched via `selectWorkspace` on every `connectPlatform` call.
+
+### Known selfhost quirks (CLI workarounds)
+
+| Symptom | Cause | Workaround |
+|---|---|---|
+| `huly component create` returns success but `huly component list` returns 0 | Server-side model-load issue on fresh workspaces | Run `huly issue list` first to nudge the model; on stubborn cases use `huly ws findAll tracker:class:Component` to confirm. |
+| `huly document get --markdown` hangs | Collaborator's `getContent` hangs without a y-doc | Wrapped in 5s timeout in this CLI; returns `'(body fetch timed out)'` on fallback. |
+| `huly user find <email>` returns `Forbidden` | Server's `findPersonBySocialKey` permission gate | Falls back to workspace-local `Person` scan (name match). |
+| `huly issue create` fails with `no IssueStatus in workspace` | Workspace hasn't seeded any `IssueStatus` | CLI auto-seeds 5 defaults on first issue create; re-run the create after the seed. |
+| `huly issue create` fails with `cannot be used for objects inherited from AttachedDoc` | Local model thinks the issue class inherits from `AttachedDoc` (false positive) | CLI catches the error and retries with `priority` field omitted. |
+| `huly project create` allows duplicate identifiers | Selfhost server doesn't enforce identifier uniqueness | CLI pre-checks via `findAll({identifier})`; will throw if you pass `--yes` on a duplicate. |
+| `huly workspace delete` silently leaves the workspace | Server sets `pending-deletion`; worker drops it | Wait for the worker (~30s) or use `WS_OPERATION=all+backup` on the workspace pod. |
+| Markup appears as `{content: {}}` in JSON | The body is a `MarkupBlob` ref | Use `huly <resource> get <ref> --markdown` (5s timeout, fallback to string). |
+| `huly issue get <ref>` shows `(blob, use get --markdown)` for body | Body is a `MarkupContent` ref, not raw | Use `--markdown` to fetch with timeout + fallback. |
+
+### Inspect the live server (for debugging)
+
+```bash
+# Account-level data:
+docker exec -e PGPASSWORD=<CR_USER_PASSWORD> \
+  huly_v7-cockroach-1 /cockroach/cockroach sql --insecure -d defaultdb -u selfhost \
+  -e "SELECT uuid, name, mode, processing_attempts, is_disabled FROM global_account.workspace_status;"
+
+# Per-workspace data (use the workspace's dataId):
+# The workspace DB name is global_account.workspace.dataId.
+# Connect to cockroach as selfhost; tables live in public.* schema.
+
+# Recent txes on a doc:
+huly ws findAll core.class.Tx '{"objectId":"<doc-id>"}' --json | jq '.[0:5]'
+```
+
+### Reset the CLI
+
+```bash
+rm -f ~/.config/huly/credentials.json \
+      ~/.config/huly/active-account \
+      ~/.config/huly/active-workspace
+huly login --headless
+```
+
+### WebSocket session reconnect (during workspace upgrade)
+
+When a workspace is being upgraded, the server allows the previous session
+to multiplex for up to **30 seconds** (`sessionManager.reconnectTimeout`).
+After that window, the client is force-disconnected. The CLI doesn't
+auto-reconnect — restart the command. If you see `Model version mismatch`,
+the workspace was upgraded under you; refresh and retry.
+
+### Concurrent edit semantics
+
+- All `Doc` updates use optimistic locking via `modifiedOn` / `modifiedBy`.
+- Last write wins. There is no version counter.
+- Rich-text fields (in y-docs) merge via Y.js CRDT (per-character).
+- No pessimistic locks anywhere.
+
+### Large lists and fulltext
+
+For workspaces with >10k issues, prefer server-side filtering by project
+or status before piping to `jq`. The CLI does not paginate server-side;
+each `list` command fetches the full result set then slices in-memory.
+
+For fulltext search, use `huly ws findAll` with a `FullTextSearchContext`
+query — the CLI does not wrap search syntax, so ES query string operators
+(`AND`, `OR`, `NOT`, `+`, `-`, `"…"`, `*`, `~`, `field:value`) pass
+through.
+
+### Audit trail queries
+
+The `tx` domain is the audit log. To see who changed what:
+
+```bash
+huly ws findAll core.class.Tx '{"objectId":"<doc-id>","modifiedOn":{"$gte":<start-ms>,"$lte":<end-ms>}}' --json
+```
+
+Each tx carries `modifiedBy`, `modifiedOn`, `space`, `objectId`, and the
+full operations payload.
+
+### Account-server workspace limit
+
+`WORKSPACE_LIMIT_PER_USER` defaults to **10** on the account pod. If you
+hit it, you get `WorkspaceLimitReached`. Either increase the env var on
+the account pod or delete some workspaces (use `WS_OPERATION=all+backup`
+to make the worker actually clean up `pending-deletion` workspaces).
+
+### Model upgrade queue
+
+New plugin versions ship new `model-upgrade txs`. The workspace pod
+applies them automatically when `WS_OPERATION=all` and the workspace's
+`version_major/minor/patch` is below the current. On a fresh workspace,
+this takes ~30 seconds. If `findAll` returns 0 for classes that should
+have data, the model may not have applied yet — wait or restart the
+workspace pod with `WS_OPERATION=upgrade` to force a re-apply.
 
 ---
 

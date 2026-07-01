@@ -365,7 +365,19 @@ Examples:
       --description "Internal projects"
 
 Required: --name, --identifier. Identifier must be uppercase letters/digits.
-The CLI pre-checks for duplicate identifiers (server may not enforce).`)
+The CLI pre-checks for duplicate identifiers (server may not enforce).
+
+Auto-creation & defaults:
+  - The current user is auto-added as members:[<uuid>] unless --minimal.
+    This is required for SpaceSecurityMiddleware to allow findAll.
+  - --sequence defaults to 0.
+  - --description is omitted entirely with --minimal.
+  - On duplicate identifier, the CLI re-fetches and returns the existing
+    project (idempotent).
+  - Requires --yes.`)
+    .action(async (opts, cmd) => {
+      try { await createProject({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
+    })
     .action(async (opts, cmd) => {
       try { await createProject({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
@@ -483,7 +495,22 @@ Side effects: in a classic project (Tracker default), setting --assignee on
 an issue in status category Todo or Active auto-creates a ProjectToDo for the
 assignee and sends them an inbox notification. No auto-todo for status
 Backlog/Done/Canceled. Status names are mapped to categories internally; the
-trigger fires on the category, not the literal name.`)
+trigger fires on the category, not the literal name.
+
+Defaults & auto-creation:
+  --status   lowest-rank IssueStatus (Backlog) if omitted
+  --priority 'Normal' if it exists, else first available priority, else omitted
+  --task-type 'tracker:issue:default' if omitted
+  parent     null (top-level) unless --minimal
+  space      project._id unless --minimal
+  If the workspace has zero IssueStatus, this command auto-seeds 5 defaults
+  (Backlog/To do/In progress/Done/Canceled) into core:space:Model. The auto-seed
+  is best-effort; if it fails silently (model-load race), re-run the command.
+
+Ref resolution for --assignee: tries me|empty, raw _id, prefixed (USR-N),
+bare number, identifier/name/email match, then substring fallback (first
+alphabetical match wins — pass exact email to avoid ambiguity). See 'CLI
+behaviors and smart defaults' in README.md for full resolution order.`)
     .action(async (opts, cmd) => {
       try { await createIssue({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
@@ -737,7 +764,7 @@ Examples:
     .option('--description <text>')
     .option('--topic <text>')
     .option('--private', 'private channel (members only)')
-    .option('--auto-join', 'new workspace members join automatically')
+    .option('--auto-join', 'new workspace members join automatically (FORWARD-ONLY; does NOT add existing members)')
     .option('--members <email...>', 'initial members (workspace members only)')
     .addHelpText('after', `
 Examples:
@@ -746,7 +773,18 @@ Examples:
   $ huly channel create --name general --auto-join
 
 Required: --name. Optional: --description, --topic, --private,
---auto-join, --members (space-separated emails).`)
+--auto-join, --members (space-separated emails).
+
+Side effects:
+  - --auto-join is FORWARD-ONLY: only members who join the workspace AFTER
+    the channel is created get auto-added. Existing members are NOT
+    retroactively added.
+  - --private channels still appear in the channel sidebar; users must
+    request access. For fully hidden conversations, use a group DM.
+  - #general and #random are auto-created by the system when a workspace
+    is created; archiving them requires Spaces Admin or Workspace Owner.
+  - Sending the first message auto-adds the sender to channel members.
+  - --members emails must resolve to workspace members (no auto-invite).`)
     .action(async (opts, cmd) => {
       try { await createChannel({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
@@ -867,7 +905,15 @@ will not see the message in the channel history until they join.`)
     .addHelpText('after', `
 Examples:
   $ huly dm create --person alice@example.com
-  $ huly dm create --members alice@.. bob@..   # group DM`)
+  $ huly dm create --members alice@.. bob@..   # group DM
+
+Auto-creation: no prompt is required to create a DM. If --person resolves
+to a workspace member with no existing DM, the DM is auto-created.
+--person resolution order: workspace-local Person scan (exact, startsWith,
+includes), account findSocialIdBySocialKey, raw UUID, single-other-member
+heuristic (if exactly one other workspace member exists, picks them).
+
+Note: --dm-create does NOT require --yes.`)
     .action(async (opts, cmd) => {
       try { await createDm({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
@@ -1066,7 +1112,21 @@ Best practices & side effects:
 
   --owner resolves to an Employee ref; if omitted, defaults to the current
   user. Visibility accepts: public | busy | private. Priority accepts:
-  Urgent | High | Medium | Low | NoPriority.`)
+  Urgent | High | Medium | Low | NoPriority.
+
+Defaults (when omitted):
+  --priority           NoPriority
+  --visibility         public
+  --owner              current user (resolves via Employee)
+  --attached-to-class contact:class:Person (when --attached-to omitted)
+  --attached-to        owner Employee (when --attached-to omitted)
+  --due                none (dueDate: null)
+  doneOn               null
+  rank                 '0|aaaaa:'
+
+Ref resolution for --owner: tries me|empty, raw _id, exact Person name,
+then substring (includes) match. Limit 200 results. Pass exact email to
+avoid ambiguity in substring matching.`)
     .action(async (opts, cmd) => {
       try { await createAction({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
@@ -1150,6 +1210,25 @@ check 'huly action list --issue <ref>' first.`)
     .option('--body <md>')
     .option('--body-file <path>')
     .option('--parent <ref|title>', 'parent ref or title (resolved within teamspace)')
+    .addHelpText('after', `
+Examples:
+  $ huly document create --title "API spec" --body-file ./spec.md
+  $ huly document create --teamspace Engineering --title "RFC-001" \\
+      --body "# Motivation\n\n...markdown..."
+
+Auto-creation: if the workspace has zero teamspaces, this command
+auto-creates a 'General' teamspace (type space-type:default, members [],
+description 'Default teamspace (auto-created)') and uses it. No prompt.
+
+Body handling: --body is stored as a RAW STRING, not a MarkupContent
+instance. The SDK's markup-upload path is deliberately bypassed (the
+collaborator service hangs on selfhost). This means: round-trip works
+for plain Markdown; rich-text features (mentions, formatted nodes, embeds)
+won't survive; --markdown on read uses a 5s timeout with a string fallback.
+
+Ref resolution for --teamspace: tries raw _id, index lookup, exact name
+match (case-sensitive), then first teamspace. --parent resolves within
+the teamspace by exact title match (lowercased).`)
     .action(async (opts, cmd) => {
       try { await createDocument({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
@@ -1372,7 +1451,18 @@ To fetch a calendar (the container, not an event inside it), use
 Side effects: updates the issue's reportedTime and recomputes remainingTime.
 If the issue has a parent, the change walks up the parent chain via
 OnIssueUpdate (server-side, automatic, no opt-out). Use --hours or
---minutes, not both; if both are provided --hours takes precedence.`)
+--minutes, not both; if both are provided --hours takes precedence.
+
+Defaults:
+  --date     now (Date.now())
+  value      minutes are converted to man-hours (value = minutes/60);
+             rounded to nearest 15 min server-side.
+
+Notes:
+  - Past and future dates are allowed (no server-side validation).
+  - Negative values are not validated (would corrupt reportedTime).
+  - The entry is tracker:class:TimeSpendReport (NOT time:class:...).
+  - Use 'huly time report <issue>' to read back; 'huly time list' to scan.`)
     .action(async (opts, cmd) => {
       try { await logTime({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
