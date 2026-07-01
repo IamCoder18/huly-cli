@@ -60,11 +60,9 @@ export async function listCardSpaces(opts: { limit?: number; offset?: number; js
 export async function getCardSpace(ref: string, opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string }): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const id = await resolveRef(ref, {
       client,
       classId: CLASS.CardSpace as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     const doc = await client.findOne(CLASS.CardSpace as Ref<Class<CardSpace>>, { _id: id as Ref<CardSpace> })
     if (!doc) throw new CliError(ExitCode.NotFound, `card-space ${ref} not found`)
@@ -106,7 +104,7 @@ export async function createCardSpace(opts: {
       () => client.createDoc(CLASS.CardSpace as Ref<Class<CardSpace>>, 'core:space:Workspace' as Ref<Space>, data as any),
       opts
     )
-    invalidateIndex((await client.getAccount()).uuid, CLASS.CardSpace)
+    invalidateIndex(client, CLASS.CardSpace)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ _id: id, ...data }) }
     else success(`created card-space`, opts.name, id)
   } finally { await client.close() }
@@ -115,11 +113,9 @@ export async function createCardSpace(opts: {
 export async function deleteCardSpaces(refs: string[], opts: { workspace?: string; url?: string; yes?: boolean; dryRun?: boolean } = {}): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const ids = await resolveRefs(refs, {
       client,
       classId: CLASS.CardSpace as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     if (!opts.yes && ids.length > 1) throw new CliError(ExitCode.Validation, `destructive: deleting ${ids.length} card-spaces requires --yes`, 're-run with --yes to confirm')
     let deleted = 0, skipped = 0
@@ -139,11 +135,9 @@ export async function listMasterTags(opts: { cardSpace?: string; limit?: number;
   try {
     const query: Record<string, unknown> = {}
     if (opts.cardSpace) {
-      const account = await client.getAccount()
       const spaceId = await resolveRef(opts.cardSpace, {
         client,
         classId: CLASS.CardSpace as Ref<Class<Doc>>,
-        workspaceId: account.uuid
       })
       query.space = spaceId
     }
@@ -170,20 +164,16 @@ export async function listCards(opts: { cardSpace?: string; masterTag?: string; 
   try {
     const query: Record<string, unknown> = {}
     if (opts.cardSpace) {
-      const account = await client.getAccount()
       const spaceId = await resolveRef(opts.cardSpace, {
         client,
         classId: CLASS.CardSpace as Ref<Class<Doc>>,
-        workspaceId: account.uuid
       })
       query.space = spaceId
     }
     if (opts.masterTag) {
-      const account = await client.getAccount()
       const tagId = await resolveRef(opts.masterTag, {
         client,
         classId: CLASS.MasterTag as Ref<Class<Doc>>,
-        workspaceId: account.uuid
       })
       query._class = tagId
     }
@@ -201,11 +191,9 @@ export async function listCards(opts: { cardSpace?: string; masterTag?: string; 
 export async function getCard(ref: string, opts: { json?: boolean; ci?: boolean; markdown?: boolean; workspace?: string; url?: string }): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const id = await resolveRef(ref, {
       client,
       classId: CLASS.Card as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     const doc = await client.findOne(CLASS.Card as Ref<Class<CardDoc>>, { _id: id as Ref<CardDoc> })
     if (!doc) throw new CliError(ExitCode.NotFound, `card ${ref} not found`)
@@ -243,17 +231,14 @@ export async function createCard(opts: {
   if (!opts.masterTag) throw new CliError(ExitCode.Validation, 'missing --master-tag')
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const tagId = await resolveRef(opts.masterTag, {
       client,
       classId: CLASS.MasterTag as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     const space = opts.cardSpace
       ? await resolveRef(opts.cardSpace, {
         client,
         classId: CLASS.CardSpace as Ref<Class<Doc>>,
-        workspaceId: account.uuid
       })
       : ('card:space:Default' as Ref<Space>)
 
@@ -284,7 +269,7 @@ export async function createCard(opts: {
       () => client.createDoc(CLASS.Card as Ref<Class<CardDoc>>, space as Ref<Space>, data as any),
       opts
     )
-    invalidateIndex(account.uuid, CLASS.Card)
+    invalidateIndex(client, CLASS.Card)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ _id: id, ...data }) }
     else success(`created card`, opts.title, id)
   } finally { await client.close() }
@@ -295,6 +280,7 @@ export async function updateCard(ref: string, opts: {
   description?: string
   body?: string
   bodyFile?: string
+  replaceContent?: boolean
   json?: boolean
   ci?: boolean
   dryRun?: boolean
@@ -304,6 +290,16 @@ export async function updateCard(ref: string, opts: {
   if (opts.body && opts.bodyFile) {
     throw new CliError(ExitCode.Validation, 'ambiguous body input', 'pass only one of --body or --body-file')
   }
+  if ((opts.body !== undefined || opts.bodyFile !== undefined) && opts.description !== undefined) {
+    throw new CliError(ExitCode.Validation, 'ambiguous: pass either --body/--body-file (full content) OR --description (with --replace-content), not both')
+  }
+  if (opts.description !== undefined && !opts.replaceContent && !opts.body && !opts.bodyFile) {
+    throw new CliError(
+      ExitCode.Validation,
+      '--description would overwrite the card body',
+      'use --body or --body-file to set content, or pass --replace-content to confirm overwriting the existing body with --description'
+    )
+  }
   let bodyFromFile: string | undefined
   if (opts.bodyFile) {
     const fs = await import('node:fs/promises')
@@ -311,11 +307,9 @@ export async function updateCard(ref: string, opts: {
   }
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const id = await resolveRef(ref, {
       client,
       classId: CLASS.Card as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     const doc = await client.findOne(CLASS.Card as Ref<Class<CardDoc>>, { _id: id as Ref<CardDoc> })
     if (!doc) throw new CliError(ExitCode.NotFound, `card ${ref} not found`)
@@ -323,8 +317,8 @@ export async function updateCard(ref: string, opts: {
     if (opts.title) ops.title = opts.title
     if (opts.body) ops.content = opts.body
     else if (bodyFromFile !== undefined) ops.content = bodyFromFile
-    else if (opts.description !== undefined) ops.content = opts.description ? opts.description : ''
-    if (Object.keys(ops).length === 0) throw new CliError(ExitCode.Validation, 'nothing to update', 'pass --title, --description, --body, or --body-file')
+    else if (opts.description !== undefined && opts.replaceContent) ops.content = opts.description ? opts.description : ''
+    if (Object.keys(ops).length === 0) throw new CliError(ExitCode.Validation, 'nothing to update', 'pass --title, --description (with --replace-content), --body, or --body-file')
     if (opts.dryRun) {
       console.log(`would update card ${id}:`)
       console.log(JSON.stringify({ _class: CLASS.Card, objectId: id, space: doc.space, ops }, null, 2))
@@ -342,11 +336,9 @@ export async function updateCard(ref: string, opts: {
 export async function deleteCards(refs: string[], opts: { workspace?: string; url?: string; yes?: boolean; dryRun?: boolean } = {}): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const ids = await resolveRefs(refs, {
       client,
       classId: CLASS.Card as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     if (!opts.yes && ids.length > 1) throw new CliError(ExitCode.Validation, `destructive: deleting ${refs.length} cards requires --yes`, 're-run with --yes to confirm')
     let deleted = 0, skipped = 0

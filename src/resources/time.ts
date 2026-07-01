@@ -35,11 +35,9 @@ export async function listTimeEntries(opts: {
       collection: 'reports'
     }
     if (opts.issue) {
-      const account = await client.getAccount()
       const issueId = await resolveRef(opts.issue, {
         client,
         classId: CLASS.Issue as Ref<Class<Doc>>,
-        workspaceId: account.uuid,
         defaultProjectIdentifier: readEnv().project
       })
       query.attachedTo = issueId
@@ -85,6 +83,12 @@ export async function logTime(opts: {
   url?: string
 }): Promise<void> {
   if (!opts.issue) throw new CliError(ExitCode.Validation, 'missing --issue')
+  if (opts.minutes !== undefined && opts.hours !== undefined) {
+    throw new CliError(ExitCode.Validation, 'pass only one of --minutes or --hours')
+  }
+  if ((opts.minutes ?? 0) < 0 || (opts.hours ?? 0) < 0) {
+    throw new CliError(ExitCode.Validation, '--minutes and --hours must be positive')
+  }
   const totalMinutes = opts.minutes ?? (opts.hours !== undefined ? Math.round(opts.hours * 60) : 0)
   if (totalMinutes <= 0) throw new CliError(ExitCode.Validation, 'missing --minutes (or --hours)', 'pass one of --minutes or --hours')
   const description = opts.description ?? ''
@@ -94,15 +98,14 @@ export async function logTime(opts: {
   }
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const issueId = await resolveRef(opts.issue, {
       client,
       classId: CLASS.Issue as Ref<Class<Doc>>,
-      workspaceId: account.uuid,
       defaultProjectIdentifier: readEnv().project
     })
     const issue = await client.findOne(CLASS.Issue as Ref<Class<Doc>>, { _id: issueId })
     if (!issue) throw new CliError(ExitCode.NotFound, `issue ${opts.issue} not found`)
+    const account = await client.getAccount()
     const dateMs = opts.date
       ? (() => {
           const t = new Date(opts.date).getTime()
@@ -129,7 +132,7 @@ export async function logTime(opts: {
       ),
       opts
     )
-    invalidateIndex(account.uuid, CLASS.TimeSpendReport)
+    invalidateIndex(client, CLASS.TimeSpendReport)
     if (shouldJson({ json: opts.json, ci: opts.ci })) {
       json({ _id: id, attachedTo: issueId, ...data })
     } else {
@@ -141,11 +144,9 @@ export async function logTime(opts: {
 export async function deleteTimeEntries(refs: string[], opts: { workspace?: string; url?: string; yes?: boolean } = {}): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const ids = await resolveRefs(refs, {
       client,
       classId: CLASS.TimeSpendReport as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     if (!opts.yes && ids.length > 1) {
       throw new CliError(

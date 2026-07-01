@@ -9,8 +9,6 @@ import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
 import { deleteDoc } from '../commands/dry-run.js'
 
-type ResolverClient = PlatformClient & { __workspaceId?: string }
-
 const DELETE_GAP_MS = 100
 
 export interface GlobalRunOpts {
@@ -73,11 +71,9 @@ export function makeGet<T extends Doc>(opts: GetOpts<T>) {
   return async function runGet(ref: string, runOpts: GlobalRunOpts & { defaultProjectIdentifier?: string } = {}): Promise<void> {
     const client = await connectCli({ url: runOpts.url, workspace: runOpts.workspace })
     try {
-      const account = await client.getAccount()
       const id = await resolveRef(ref, {
         client,
         classId: opts.classId as Ref<Class<Doc>>,
-        workspaceId: account.uuid,
         identifierField: opts.identifierField as string | undefined,
         defaultProjectIdentifier: runOpts.defaultProjectIdentifier
       })
@@ -185,11 +181,9 @@ export function makeUpdate<T extends Doc>(opts: UpdateOpts<T>) {
   ): Promise<void> {
     const client = await connectCli({ url: updateOpts.url, workspace: updateOpts.workspace })
     try {
-      const account = await client.getAccount()
       const id = await resolveRef(ref, {
         client,
         classId: opts.classId as Ref<Class<Doc>>,
-        workspaceId: account.uuid,
         identifierField: opts.identifierField as string | undefined,
         defaultProjectIdentifier: updateOpts.defaultProjectIdentifier
       })
@@ -250,11 +244,9 @@ export function makeDelete<T extends Doc>(opts: DeleteOpts<T>) {
   return async function runDelete(refs: string[], deleteOpts: GlobalRunOpts & { defaultProjectIdentifier?: string } = {}): Promise<void> {
     const client = await connectCli({ url: deleteOpts.url, workspace: deleteOpts.workspace })
     try {
-      const account = await client.getAccount()
       const ids = await resolveRefs(refs, {
         client,
         classId: opts.classId as Ref<Class<Doc>>,
-        workspaceId: account.uuid,
         identifierField: opts.identifierField as string | undefined,
         defaultProjectIdentifier: deleteOpts.defaultProjectIdentifier
       })
@@ -296,18 +288,6 @@ export async function readBodyText(opts: { body?: string; bodyFile?: string }): 
 export function wrapBody(body: string | undefined): string | undefined {
   if (!body) return undefined
   return body
-}
-
-export async function resolveByTitle<T extends Doc>(
-  client: PlatformClient,
-  classId: Ref<Class<T>>,
-  workspaceId: string,
-  title: string,
-  extraQuery: Record<string, unknown> = {}
-): Promise<T | undefined> {
-  const docs = (await client.findAll(classId, { ...extraQuery })) as unknown as T[]
-  const lower = title.toLowerCase()
-  return docs.find((d) => String((d as Record<string, unknown>).title ?? '').toLowerCase() === lower)
 }
 
 /**

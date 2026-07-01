@@ -65,12 +65,13 @@ export async function wsCommand(method: string, paramsRaw: string | undefined, o
 
   const sessionId = Math.random().toString(36).slice(2, 12)
   const host = wsLoginEndpoint.replace(/^https?:\/\//, '').replace(/^wss?:\/\//, '')
-  const wsUrl = `${scheme}://${host}/${wsToken}?sessionId=${sessionId}`
+  const wsUrl = `${scheme}://${host}/_transactor/${wsToken}?sessionId=${sessionId}`
   const wsOpts: WebSocket.ClientOptions = insecure ? { rejectUnauthorized: false } : {}
   const ws = new WebSocket(wsUrl, wsOpts)
 
   let id = 0
   let helloDone = false
+  let settled = false
   const chunks: unknown[] = []
 
   return await new Promise<void>((resolve, reject) => {
@@ -84,6 +85,8 @@ export async function wsCommand(method: string, paramsRaw: string | undefined, o
     }
 
     const settle = (fn: () => void, err?: Error): void => {
+      if (settled) return
+      settled = true
       cleanup()
       if (err !== undefined) reject(err)
       else resolve()
@@ -102,9 +105,11 @@ export async function wsCommand(method: string, paramsRaw: string | undefined, o
 
     ws.on('error', (e) => settle(() => { /* no-op */ }, new Error(`ws error: ${e.message}`)))
 
-    ws.on('close', () => {
-      if (pingTimer) clearInterval(pingTimer)
-      if (timeout) clearTimeout(timeout)
+    ws.on('close', (code, reasonBuf) => {
+      if (settled) return
+      const reason = reasonBuf?.toString?.() ?? ''
+      const msg = reason !== '' ? reason : `socket closed (code=${code}) before response`
+      settle(() => { /* no-op */ }, new Error(`ws closed unexpectedly: ${msg}`))
     })
 
     const done = (err?: Error): void => {

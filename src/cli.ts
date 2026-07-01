@@ -940,6 +940,7 @@ List available tags with \`huly master-tag list\`.`)
     .option('--description <text>')
     .option('--body <md>')
     .option('--body-file <path>')
+    .option('--replace-content', 'allow --description to overwrite the existing body content')
     .action(async (ref, opts, cmd) => {
       try { await updateCard(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })

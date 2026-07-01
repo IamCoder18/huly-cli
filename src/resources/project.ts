@@ -50,11 +50,9 @@ export async function listProjects(opts: { json?: boolean; ci?: boolean; limit?:
 export async function getProject(ref: string, opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string } = {}): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const id = await resolveRef(ref, {
       client,
       classId: CLASS.Project as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     const doc = await client.findOne(CLASS.Project as Ref<Class<Project>>, { _id: id as Ref<Project> })
     if (!doc) throw new CliError(ExitCode.NotFound, `project ${ref} not found`)
@@ -165,7 +163,7 @@ export async function createProject(opts: {
       }
       throw err
     }
-    invalidateIndex((await client.getAccount()).uuid, CLASS.Project)
+    invalidateIndex(client, CLASS.Project)
     if (shouldJson({ json: opts.json, ci: opts.ci })) {
       json({ _id: id, ...data, created: true })
     } else {
@@ -182,11 +180,9 @@ export async function updateProject(
 ): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const id = await resolveRef(ref, {
       client,
       classId: CLASS.Project as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     const setOps = parseSet(opts.set ?? [])
     const unsetOps = opts.unset ?? []
@@ -207,7 +203,7 @@ export async function updateProject(
       ),
       opts
     )
-    invalidateIndex(account.uuid, CLASS.Project)
+    invalidateIndex(client, CLASS.Project)
     console.log(`updated project: ${id}`)
   } finally {
     await client.close()
@@ -217,11 +213,9 @@ export async function updateProject(
 export async function deleteProjects(refs: string[], opts: { dryRun?: boolean; workspace?: string; url?: string; yes?: boolean } = {}): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const ids = await resolveRefs(refs, {
       client,
       classId: CLASS.Project as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     if (!opts.yes && ids.length > 1) {
       throw new CliError(ExitCode.Validation, `destructive: deleting ${ids.length} projects requires --yes`, 're-run with --yes to confirm')
@@ -233,7 +227,7 @@ export async function deleteProjects(refs: string[], opts: { dryRun?: boolean; w
       if (r.skipped) skipped++
       else { deleted++; await new Promise((res) => setTimeout(res, 100)) }
     }
-    invalidateIndex(account.uuid, CLASS.Project)
+    invalidateIndex(client, CLASS.Project)
     bulkRemoved(deleted, skipped)
   } finally {
     await client.close()
@@ -243,8 +237,7 @@ export async function deleteProjects(refs: string[], opts: { dryRun?: boolean; w
 export async function pickProjectInteractive(client: PlatformClient): Promise<Project> {
   const env = readEnv()
   if (env.project) {
-    const account = await client.getAccount()
-    const idx = await buildIndex<Project>(client, CLASS.Project as Ref<Class<Project>>, account.uuid)
+    const idx = await buildIndex<Project>(client, CLASS.Project as Ref<Class<Project>>)
     const hit = idx.get(env.project)
     if (hit) {
       const doc = await client.findOne(CLASS.Project as Ref<Class<Project>>, { _id: hit as Ref<Project> })

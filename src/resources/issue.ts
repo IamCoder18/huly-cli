@@ -73,8 +73,7 @@ async function readBody(opts: { body?: string; bodyFile?: string }): Promise<str
 async function resolveProject(client: PlatformClient, identifier?: string): Promise<Project> {
   const env = readEnv()
   const candidate = identifier ?? env.project
-  const account = await client.getAccount()
-  const idx = await buildIndex<Project>(client, CLASS.Project as Ref<Class<Project>>, account.uuid)
+  const idx = await buildIndex<Project>(client, CLASS.Project as Ref<Class<Project>>)
   if (candidate) {
     const hit = idx.get(candidate)
     if (hit) {
@@ -278,7 +277,7 @@ export async function listIssues(opts: {
     // possible. If the server doesn't support that pattern, results will be
     // an empty set, which is no worse than not searching.
     if (opts.descriptionSearch) {
-      query.description = { $regex: opts.descriptionSearch, $options: 'i' }
+      query.description = { $regex: opts.descriptionSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' }
     }
 
     // Parent filter
@@ -288,7 +287,6 @@ export async function listIssues(opts: {
         : await resolveRef(opts.parent, {
           client,
           classId: CLASS.Issue as Ref<Class<Doc>>,
-          workspaceId: (await client.getAccount()).uuid,
           defaultProjectIdentifier: readEnv().project
         })
       query.parent = parentRef
@@ -310,11 +308,9 @@ export async function listIssues(opts: {
 export async function getIssue(ref: string, opts: { json?: boolean; ci?: boolean; markdown?: boolean; workspace?: string; url?: string } = {}): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const id = await resolveRef(ref, {
       client,
       classId: CLASS.Issue as Ref<Class<Doc>>,
-      workspaceId: account.uuid,
       defaultProjectIdentifier: readEnv().project
     })
     const issue = await client.findOne(CLASS.Issue as Ref<Class<Issue>>, { _id: id as Ref<Issue> })
@@ -416,11 +412,9 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
     }
 
     if (opts.parent) {
-      const parentAccount = await client.getAccount()
       data.parent = await resolveRef(opts.parent, {
         client,
         classId: CLASS.Issue as Ref<Class<Doc>>,
-        workspaceId: parentAccount.uuid,
         defaultProjectIdentifier: readEnv().project
       }) as Ref<Doc>
     } else if (!opts.minimal) {
@@ -509,18 +503,22 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
       }
     }
 
-    invalidateIndex((await client.getAccount()).uuid, CLASS.Issue)
+    invalidateIndex(client, CLASS.Issue)
 
     if (shouldJson({ json: opts.json, ci: opts.ci })) {
       json({ _id: id, identifier: '?', title, created: true, ...data })
       return
     }
-    // The id from createDoc may differ from the server-assigned _id (the bypass
-    // path uses the locally-computed tx._id). Look up the actual stored doc so
-    // users can immediately `huly issue get <id>` to inspect their creation.
+    // Verify the create succeeded by looking the issue up by the returned _id.
+    // We query by _id (not title, which is not unique) so this is race-free
+    // even on the bypass path. Note: if the server's stored _id differs from
+    // the locally-computed tx._id returned by the bypass path (a known issue
+    // when tracker:class:Issue inherits from AttachedDoc), findOne returns
+    // null and we silently fall back to the id createDoc returned — that id
+    // may not match a server query but is the best signal we have.
     let actualId = id as string
     try {
-      const fresh = (await client.findOne(CLASS.Issue as Ref<Class<Issue>>, { title })) as { _id?: string } | null
+      const fresh = (await client.findOne(CLASS.Issue as Ref<Class<Issue>>, { _id: id as Ref<Issue> })) as { _id?: string } | null
       if (fresh?._id != null) actualId = fresh._id
     } catch { /* fall through with the local id */ }
     console.log(C.ok('created issue') + C.muted('  ') + C.emphasis(title) + C.muted('  ') + C.id(`(${actualId})`))
@@ -546,11 +544,9 @@ export async function updateIssue(
 ): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const id = await resolveRef(ref, {
       client,
       classId: CLASS.Issue as Ref<Class<Doc>>,
-      workspaceId: account.uuid,
       defaultProjectIdentifier: readEnv().project
     })
     const issue = await client.findOne(CLASS.Issue as Ref<Class<Issue>>, { _id: id as Ref<Issue> })
@@ -599,11 +595,9 @@ export async function updateIssue(
 export async function deleteIssues(refs: string[], opts: { dryRun?: boolean; workspace?: string; url?: string; yes?: boolean } = {}): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const ids = await resolveRefs(refs, {
       client,
       classId: CLASS.Issue as Ref<Class<Doc>>,
-      workspaceId: account.uuid,
       defaultProjectIdentifier: readEnv().project
     })
     if (!opts.yes && ids.length > 1) {
@@ -630,11 +624,9 @@ export async function deleteIssues(refs: string[], opts: { dryRun?: boolean; wor
 export async function addIssueLabel(ref: string, labelName: string, opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string }): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const issueId = await resolveRef(ref, {
       client,
       classId: CLASS.Issue as Ref<Class<Doc>>,
-      workspaceId: account.uuid,
       defaultProjectIdentifier: readEnv().project
     })
     const issue = await client.findOne(CLASS.Issue as Ref<Class<Issue>>, { _id: issueId as Ref<Issue> })
@@ -676,7 +668,7 @@ export async function addIssueLabel(ref: string, labelName: string, opts: { json
       ),
       opts
     )
-    invalidateIndex(account.uuid, CLASS.Issue)
+    invalidateIndex(client, CLASS.Issue)
     success(`added label`, labelName)
   } finally { await client.close() }
 }
@@ -684,11 +676,9 @@ export async function addIssueLabel(ref: string, labelName: string, opts: { json
 export async function removeIssueLabel(ref: string, labelName: string, opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string }): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const issueId = await resolveRef(ref, {
       client,
       classId: CLASS.Issue as Ref<Class<Doc>>,
-      workspaceId: account.uuid,
       defaultProjectIdentifier: readEnv().project
     })
     const issue = await client.findOne(CLASS.Issue as Ref<Class<Issue>>, { _id: issueId as Ref<Issue> })
@@ -711,7 +701,7 @@ export async function removeIssueLabel(ref: string, labelName: string, opts: { j
         'labels'
       )
     }
-    invalidateIndex(account.uuid, CLASS.Issue)
+    invalidateIndex(client, CLASS.Issue)
     success(`removed label`, labelName)
   } finally { await client.close() }
 }
@@ -741,17 +731,14 @@ export async function addIssueRelation(ref: string, type: string, targetRef: str
   const rel = validateRelationType(type)
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const sourceId = await resolveRef(ref, {
       client,
       classId: CLASS.Issue as Ref<Class<Doc>>,
-      workspaceId: account.uuid,
       defaultProjectIdentifier: readEnv().project
     })
     const targetId = await resolveRef(targetRef, {
       client,
       classId: CLASS.Issue as Ref<Class<Doc>>,
-      workspaceId: account.uuid,
       defaultProjectIdentifier: readEnv().project
     })
     const issue = await client.findOne(CLASS.Issue as Ref<Class<Issue>>, { _id: sourceId as Ref<Issue> })
@@ -772,17 +759,14 @@ export async function removeIssueRelation(ref: string, type: string, targetRef: 
   const rel = validateRelationType(type)
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const sourceId = await resolveRef(ref, {
       client,
       classId: CLASS.Issue as Ref<Class<Doc>>,
-      workspaceId: account.uuid,
       defaultProjectIdentifier: readEnv().project
     })
     const targetId = await resolveRef(targetRef, {
       client,
       classId: CLASS.Issue as Ref<Class<Doc>>,
-      workspaceId: account.uuid,
       defaultProjectIdentifier: readEnv().project
     })
     const issue = await client.findOne(CLASS.Issue as Ref<Class<Issue>>, { _id: sourceId as Ref<Issue> })
@@ -802,11 +786,9 @@ export async function removeIssueRelation(ref: string, type: string, targetRef: 
 export async function listIssueRelations(ref: string, opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string }): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const issueId = await resolveRef(ref, {
       client,
       classId: CLASS.Issue as Ref<Class<Doc>>,
-      workspaceId: account.uuid,
       defaultProjectIdentifier: readEnv().project
     })
     const issue = await client.findOne(CLASS.Issue as Ref<Class<Issue>>, { _id: issueId as Ref<Issue> })
@@ -831,17 +813,14 @@ export async function listIssueRelations(ref: string, opts: { json?: boolean; ci
 export async function linkDocument(issueRef: string, docRef: string, opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string }): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const issueId = await resolveRef(issueRef, {
       client,
       classId: CLASS.Issue as Ref<Class<Doc>>,
-      workspaceId: account.uuid,
       defaultProjectIdentifier: readEnv().project
     })
     const docId = await resolveRef(docRef, {
       client,
       classId: CLASS.Document as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     const issue = await client.findOne(CLASS.Issue as Ref<Class<Issue>>, { _id: issueId as Ref<Issue> })
     if (!issue) throw new CliError(ExitCode.NotFound, `issue ${issueRef} not found`)
@@ -863,17 +842,14 @@ export async function linkDocument(issueRef: string, docRef: string, opts: { jso
 export async function unlinkDocument(issueRef: string, docRef: string, opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string }): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const issueId = await resolveRef(issueRef, {
       client,
       classId: CLASS.Issue as Ref<Class<Doc>>,
-      workspaceId: account.uuid,
       defaultProjectIdentifier: readEnv().project
     })
     const docId = await resolveRef(docRef, {
       client,
       classId: CLASS.Document as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     const issue = await client.findOne(CLASS.Issue as Ref<Class<Issue>>, { _id: issueId as Ref<Issue> })
     if (!issue) throw new CliError(ExitCode.NotFound, `issue ${issueRef} not found`)
@@ -891,11 +867,9 @@ export async function unlinkDocument(issueRef: string, docRef: string, opts: { j
 export async function moveIssue(ref: string, parentRef: string | null, opts: { json?: boolean; ci?: boolean; dryRun?: boolean; workspace?: string; url?: string }): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const issueId = await resolveRef(ref, {
       client,
       classId: CLASS.Issue as Ref<Class<Doc>>,
-      workspaceId: account.uuid,
       defaultProjectIdentifier: readEnv().project
     })
     const issue = await client.findOne(CLASS.Issue as Ref<Class<Issue>>, { _id: issueId as Ref<Issue> })
@@ -906,7 +880,6 @@ export async function moveIssue(ref: string, parentRef: string | null, opts: { j
       newParent = await resolveRef(parentRef, {
         client,
         classId: CLASS.Issue as Ref<Class<Doc>>,
-        workspaceId: account.uuid,
         defaultProjectIdentifier: readEnv().project
       }) as Ref<Doc>
     }
@@ -926,11 +899,9 @@ export async function moveIssue(ref: string, parentRef: string | null, opts: { j
 export async function previewDelete(refs: string[], opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string }): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const ids = await resolveRefs(refs, {
       client,
       classId: CLASS.Issue as Ref<Class<Doc>>,
-      workspaceId: account.uuid,
       defaultProjectIdentifier: readEnv().project
     })
     const preview: Array<{ ref: string; subIssues: number; comments: number; relations: number }> = []

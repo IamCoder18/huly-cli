@@ -12,12 +12,18 @@ export async function resolveProjectForCommand(client: PlatformClient, ref?: str
   const env = readEnv()
   const candidate = ref ?? env.project
   if (candidate) {
-    const account = await client.getAccount()
-    const idx = await buildIndex<Project>(client, CLASS.Project as Ref<Class<Project>>, account.uuid)
-    const hit = idx.get(candidate)
-    if (hit) {
-      const doc = await client.findOne(CLASS.Project as Ref<Class<Project>>, { _id: hit as Ref<Project> })
-      if (doc) return doc
+    const idx = await buildIndex<Project>(client, CLASS.Project as Ref<Class<Project>>)
+    // Normalize to a key first (the index uses string keys, not Refs).
+    // Try the exact candidate, then a case-insensitive match against any key.
+    const key = idx.has(candidate)
+      ? candidate
+      : [...idx.keys()].find((k) => k.toLowerCase() === candidate.toLowerCase())
+    if (key !== undefined) {
+      const id = idx.get(key)
+      if (id !== undefined) {
+        const doc = await client.findOne(CLASS.Project as Ref<Class<Project>>, { _id: id as Ref<Project> })
+        if (doc) return doc
+      }
     }
   }
   const all = (await client.findAll(CLASS.Project as Ref<Class<Project>>, {})) as Project[]

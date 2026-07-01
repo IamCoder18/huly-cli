@@ -43,11 +43,9 @@ export async function getUser(opts: GlobalOpts & { ref?: string } = {}): Promise
 async function getUserByRef(ref: string, opts: GlobalOpts): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const id = await resolveRef(ref, {
       client,
       classId: CLASS.Person as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     const person = await client.findOne(CLASS.Person as Ref<Class<Person>>, { _id: id as Ref<Person> })
     if (!person) throw new CliError(ExitCode.NotFound, `person ${ref} not found`)
