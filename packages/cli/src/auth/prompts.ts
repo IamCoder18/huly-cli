@@ -33,6 +33,26 @@ export async function promptPassword(opts: PromptOpts = {}): Promise<string> {
   return password
 }
 
+export async function promptText(label: string, opts: PromptOpts = {}): Promise<string> {
+  if (!opts.forceInteractive && isNonInteractive()) {
+    throw new CliError(ExitCode.Validation, `no ${label.toLowerCase()}`, `set the env var or run interactively`)
+  }
+  const { value } = await inquirer.prompt<{ value: string }>([
+    { type: 'input', name: 'value', message: `${label}:`, validate: (v) => (v.trim().length > 0 ? true : 'required') }
+  ])
+  return value.trim()
+}
+
+export async function promptConfirm(message: string, opts: PromptOpts & { default?: boolean } = {}): Promise<boolean> {
+  if (!opts.forceInteractive && isNonInteractive()) {
+    throw new CliError(ExitCode.Validation, 'no confirm answer', 'run interactively or pass an explicit flag')
+  }
+  const { value } = await inquirer.prompt<{ value: boolean }>([
+    { type: 'confirm', name: 'value', message, default: opts.default ?? false }
+  ])
+  return value
+}
+
 export async function pickWorkspace(
   workspaces: WorkspaceInfoWithStatus[],
   opts: PromptOpts = {}

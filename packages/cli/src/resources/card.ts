@@ -221,6 +221,7 @@ export async function createCard(opts: {
   body?: string
   bodyFile?: string
   description?: string
+  parent?: string
   json?: boolean
   ci?: boolean
   dryRun?: boolean
@@ -251,14 +252,36 @@ export async function createCard(opts: {
       body = opts.body
     }
 
+    // Mirror card-resources/src/utils.ts:createChildCard — when a card has a
+    // parent, parentInfo is the parent's parentInfo + the parent's own
+    // ref/class/title. Without this, ancestor chain breaks and the
+    // server-side rank/parent updates can't compute hierarchy.
+    let parent: CardDoc | null = null
+    let parentInfo: Array<{ _id: Ref<Doc>; _class: Ref<Class<Doc>>; title: string }> = []
+    if (opts.parent) {
+      const parentId = await resolveRef(opts.parent, {
+        client,
+        classId: CLASS.Card as Ref<Class<Doc>>,
+      })
+      parent = (await client.findOne(CLASS.Card as Ref<Class<CardDoc>>, { _id: parentId as Ref<CardDoc> })) as CardDoc | null
+      if (parent === null) {
+        throw new CliError(ExitCode.NotFound, `parent card ${opts.parent} not found`)
+      }
+      parentInfo = [
+        ...((parent.parentInfo ?? []) as Array<{ _id: Ref<Doc>; _class: Ref<Class<Doc>>; title: string }>),
+        { _id: parent._id, _class: parent._class as Ref<Class<Doc>>, title: parent.title }
+      ]
+    }
+
     const data: Record<string, unknown> = {
       title: opts.title,
       content: body ? body : '',
-      parentInfo: [],
+      parentInfo,
       rank: '0|aaaaa:',
       blobs: {},
       _class: tagId
     }
+    if (parent !== null) data.parent = parent._id as Ref<Doc>
     if (opts.dryRun) {
       console.log('would create card:')
       console.log(JSON.stringify({ _class: tagId, space, data }, null, 2))

@@ -14,8 +14,6 @@ export const CLASS = {
 
   // tracker
   Project: 'tracker:class:Project' as const,
-  ProjectType: 'tracker:class:ProjectType' as const,
-  TaskType: 'tracker:class:TaskType' as const,
   ProjectTargetPreference: 'tracker:class:ProjectTargetPreference' as const,
   Issue: 'tracker:class:Issue' as const,
   IssueStatus: 'tracker:class:IssueStatus' as const,
@@ -27,6 +25,8 @@ export const CLASS = {
 
   // task
   Task: 'task:class:Task' as const,
+  ProjectType: 'task:class:ProjectType' as const,
+  TaskType: 'task:class:TaskType' as const,
 
   // card module (kanban cards live under `card:`, not `board:`)
   Card: 'card:class:Card' as const,

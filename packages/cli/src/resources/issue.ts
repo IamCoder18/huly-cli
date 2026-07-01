@@ -390,6 +390,23 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
     const title = opts.title
     if (!title) throw new CliError(ExitCode.Validation, 'missing --title')
 
+    // Server-side triggers don't assign `number`/`identifier` on issue create
+    // (see `OnIssueUpdate` in server-plugins/tracker-resources). The reference
+    // front-end does it in CreateIssue.svelte: $inc the project's sequence,
+    // read the new value, build `${project.identifier}-${number}`. The CLI must
+    // do the same or every issue ends up with `identifier: '?'` and no number.
+    const incResult = await withSpinner('Reserving issue number…', () =>
+      client.updateDoc(
+        CLASS.Project as Ref<Class<Doc>>,
+        'core:space:Space' as Ref<Space>,
+        project._id as Ref<Space>,
+        { $inc: { sequence: 1 } },
+        true
+      )
+    )
+    const number = (incResult as unknown as { object: { sequence: number } }).object.sequence
+    const identifier = `${project.identifier}-${number}`
+
     const status = await resolveStatus(client, project, opts.status)
     const priority = await resolvePriority(client, opts.priority)
     const body = await readBody(opts)
@@ -401,22 +418,49 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
       status,
       labels: opts.label ?? [],
       dueDate,
-      space: project._id
+      space: project._id,
+      number,
+      identifier
     }
     if (priority !== undefined) data.priority = priority
 
     if (opts.taskType) {
       data.kind = await resolveTaskType(client, opts.taskType, project)
     } else {
-      data.kind = 'tracker:issue:default' as Ref<Doc>
+      // Default to the project's first available TaskType. The hard-coded
+      // `tracker:issue:default` is the bootstrap id, but projects can define
+      // custom task types and may not have a default-issue ref. The first
+      // TaskType in the project is the right fallback for both.
+      const taskTypes = (await client.findAll(CLASS.TaskType as Ref<Class<Doc>>, { space: project._id })) as Array<Doc & { _id: Ref<Doc> }>
+      const defaultKind = taskTypes[0]?._id ?? ('tracker:issue:default' as Ref<Doc>)
+      data.kind = defaultKind
     }
 
     if (opts.parent) {
-      data.parent = await resolveRef(opts.parent, {
+      const parentId = (await resolveRef(opts.parent, {
         client,
         classId: CLASS.Issue as Ref<Class<Doc>>,
         defaultProjectIdentifier: readEnv().project
-      }) as Ref<Doc>
+      })) as Ref<Doc>
+      data.parent = parentId
+      // Mirror the front-end's `parents` walk (CreateIssue.svelte:492-503):
+      // the new issue's `parents` is the immediate parent plus all of the
+      // parent's own ancestors. Without this, child issues have no
+      // ancestor chain and `OnIssueUpdate.updateIssueParentEstimations`
+      // can't compute rollups up the hierarchy.
+      const parentIssue = (await client.findOne(CLASS.Issue as Ref<Class<Issue>>, { _id: parentId as Ref<Issue> })) as (Issue & { parents?: Array<{ parentId: string; identifier?: string; parentTitle?: string; space: string }> }) | null
+      if (parentIssue === null) {
+        throw new CliError(ExitCode.NotFound, `parent issue ${opts.parent} not found`)
+      }
+      data.parents = [
+        {
+          parentId: parentIssue._id,
+          identifier: parentIssue.identifier,
+          parentTitle: parentIssue.title,
+          space: parentIssue.space
+        },
+        ...((parentIssue.parents ?? []) as Array<{ parentId: string; identifier: string; parentTitle: string; space: string }>)
+      ]
     } else if (!opts.minimal) {
       // CLI-12: top-level issues must have parent=null so that
       // `issue list --parent null` matches them. Setting parent=project._id
@@ -463,7 +507,7 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
                 space: Ref<Space>,
                 attributes: Record<string, unknown>,
                 objectId?: Ref<Doc>
-              ) => { _id: string }
+              ) => { _id: string; objectId: string }
             }
           }
         }).client?.txFactory
@@ -476,7 +520,7 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
               undefined
             )
             await conn.tx(tx)
-            return tx._id as Ref<Doc>
+            return tx.objectId as Ref<Doc>
           }) as Ref<Doc>
           if (id === undefined) throw err
         } else {
@@ -506,22 +550,18 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
     invalidateIndex(client, CLASS.Issue)
 
     if (shouldJson({ json: opts.json, ci: opts.ci })) {
-      json({ _id: id, identifier: '?', title, created: true, ...data })
+      json({ _id: id, identifier, number, title, created: true, ...data })
       return
     }
-    // Verify the create succeeded by looking the issue up by the returned _id.
-    // We query by _id (not title, which is not unique) so this is race-free
-    // even on the bypass path. Note: if the server's stored _id differs from
-    // the locally-computed tx._id returned by the bypass path (a known issue
-    // when tracker:class:Issue inherits from AttachedDoc), findOne returns
-    // null and we silently fall back to the id createDoc returned — that id
-    // may not match a server query but is the best signal we have.
-    let actualId = id as string
+    // Re-fetch the issue so we display its TSK-N form (if the local server
+    // has assigned one) rather than the internal UUID. Falls back to the
+    // returned _id if findOne returns null (model-load race).
+    let displayId = identifier ?? (id as string)
     try {
-      const fresh = (await client.findOne(CLASS.Issue as Ref<Class<Issue>>, { _id: id as Ref<Issue> })) as { _id?: string } | null
-      if (fresh?._id != null) actualId = fresh._id
+      const fresh = (await client.findOne(CLASS.Issue as Ref<Class<Issue>>, { _id: id as Ref<Issue> })) as { identifier?: string; _id?: string } | null
+      if (fresh?.identifier != null && fresh.identifier !== '') displayId = fresh.identifier
     } catch { /* fall through with the local id */ }
-    console.log(C.ok('created issue') + C.muted('  ') + C.emphasis(title) + C.muted('  ') + C.id(`(${actualId})`))
+    console.log(C.ok('created issue') + C.muted('  ') + C.emphasis(title) + C.muted('  ') + C.id(`(${displayId})`))
   } finally { await client.close() }
 }
 

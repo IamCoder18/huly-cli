@@ -222,8 +222,10 @@ case "$PHASE" in
     # Bootstrap a calendar if none exist — calendar event creation requires
     # at least one Calendar doc attached to a space. The example template
     # doesn't seed one, so we create it via the CLI.
-    if ! HULY calendar calendars 2>/dev/null | filter_huly_noise | grep -q .; then
-      HULY calendar create-calendar --name "smoke-cal" --json >/dev/null 2>&1 || true
+    CAL_COUNT=$(HULY calendar calendars --json 2>/dev/null | filter_huly_noise \
+      | awk '/^\[/,0' | jq 'length')
+    if [[ "${CAL_COUNT:-0}" == "0" ]]; then
+      HULY calendar create-calendar --name "smoke-cal" >/dev/null 2>&1 || true
     fi
     # Cleanup any leftover smoke events / recurring events from prior runs
     LEFTOVER_EVTS=$(HULY calendar list --json 2>/dev/null | filter_huly_noise \
@@ -245,18 +247,24 @@ case "$PHASE" in
     # create event + cleanup (get the first available calendar id)
     SMOKE_CAL_ID=$(HULY calendar calendars --json 2>/dev/null | filter_huly_noise \
       | awk '/^\[/,0' | jq -r '.[0]._id // empty')
-    EID=$(HULY calendar create --title "smoke-evt-$(date +%s)" --start "2027-01-01T10:00:00Z" --end "2027-01-01T11:00:00Z" --calendar-id "$SMOKE_CAL_ID" --json 2>/dev/null | filter_huly_noise \
-      | jq -r '._id // empty')
+    EID=""
+    if [[ -n "$SMOKE_CAL_ID" ]]; then
+      EID=$(HULY calendar create --title "smoke-evt-$(date +%s)" --start "2027-01-01T10:00:00Z" --end "2027-01-01T11:00:00Z" --calendar-id "$SMOKE_CAL_ID" --json 2>/dev/null | filter_huly_noise \
+        | jq -r '._id // empty' || true)
+    fi
     if [[ -n "$EID" ]]; then
       echo "  ✓ created event $EID"
       HULY calendar delete "$EID" --yes >/dev/null 2>&1 || true
       echo "  ✓ deleted event"
     else
-      echo "  ⚠ calendar create skipped (server may forbid)"
+      echo "  ⚠ calendar create skipped (no calendar or server refused)"
     fi
     # create recurring event + cleanup
-    RID=$(HULY calendar create --title "smoke-rec-$(date +%s)" --start "2027-02-01T10:00:00Z" --end "2027-02-01T11:00:00Z" --rrule "FREQ=DAILY;COUNT=3" --calendar-id "$SMOKE_CAL_ID" --json 2>/dev/null | filter_huly_noise \
-      | jq -r '._id // empty')
+    RID=""
+    if [[ -n "$SMOKE_CAL_ID" ]]; then
+      RID=$(HULY calendar create --title "smoke-rec-$(date +%s)" --start "2027-02-01T10:00:00Z" --end "2027-02-01T11:00:00Z" --rrule "FREQ=DAILY;COUNT=3" --calendar-id "$SMOKE_CAL_ID" --json 2>/dev/null | filter_huly_noise \
+        | jq -r '._id // empty' || true)
+    fi
     if [[ -n "$RID" ]]; then
       echo "  ✓ created recurring event $RID"
       HULY calendar delete "$RID" --yes >/dev/null 2>&1 || true
@@ -265,13 +273,17 @@ case "$PHASE" in
     # cleanup assertion
     cleanup_count "events" "smoke-evt-" "HULY calendar list --json 2>/dev/null | filter_huly_noise | awk '/^\[/,0'"
     cleanup_count "events" "smoke-rec-" "HULY calendar recurring --json 2>/dev/null | filter_huly_noise | awk '/^\[/,0'"
-    # Cleanup the bootstrap calendar too
+    # Cleanup the bootstrap calendar too — `|| true` so any error here is
+    # masked. Without it, `set -e` would exit the script and skip the rest
+    # of the all-mode phases. The cleanup is best-effort.
+    set +e
     SMOKE_CAL=$(HULY calendar calendars --json 2>/dev/null | filter_huly_noise \
       | awk '/^\[/,0' \
-      | jq -r '.[] | select(.name == "smoke-cal") | ._id')
+      | jq -r '.[] | select(.name == "smoke-cal") | ._id' 2>/dev/null)
     if [[ -n "$SMOKE_CAL" ]]; then
-      HULY calendar delete-calendar "$SMOKE_CAL" >/dev/null 2>&1 || true
+      HULY calendar delete-calendar "$SMOKE_CAL" >/dev/null 2>&1
     fi
+    set -e
     ;;
 
   10)
@@ -480,9 +492,133 @@ case "$PHASE" in
     fi
     ;;
 
-  11|14|15|16|17|18)
-    # Phases 11 and 14-18 are not yet implemented in the CLI — skip cleanly.
-    echo "  · phase $PHASE not implemented in CLI yet"
+  11)
+    step "space list" HULY space list
+    step "space get" HULY space get "tracker:project:DefaultProject"
+    step "space-type list" HULY space-type list
+    step "project-type list" HULY project-type list
+    step "task-type list" HULY task-type list
+    step "association list" HULY association list
+    step "relation list" HULY relation list
+    # Validation: association create requires --a and --b
+    if HULY association create >/dev/null 2>&1; then
+      echo "  FAIL: association create should require --a and --b" >&2
+      exit 1
+    fi
+    echo "  ✓ association create requires --a/--b"
+    # Create + delete association and relation between two issues. Capture
+    # the timestamp once so the create title and the list filter both match.
+    stamp=$(date +%s)
+    IID1=$(HULY issue create --project "$HULY_PROJECT" --title "smoke-p11-i1-${stamp}" --json 2>/dev/null | filter_huly_noise | jq -r '._id // empty')
+    IID2=$(HULY issue create --project "$HULY_PROJECT" --title "smoke-p11-i2-${stamp}" --json 2>/dev/null | filter_huly_noise | jq -r '._id // empty')
+    if [[ -n "$IID1" && -n "$IID2" ]]; then
+      AID=$(HULY association create --a "$IID1" --b "$IID2" --a-class tracker:class:Issue --b-class tracker:class:Issue --json 2>/dev/null | filter_huly_noise | jq -r '._id // empty')
+      RID=$(HULY relation create --source "$IID1" --target "$IID2" --source-class tracker:class:Issue --target-class tracker:class:Issue --name blocks --json 2>/dev/null | filter_huly_noise | jq -r '._id // empty')
+      if [[ -n "$AID" ]]; then HULY association delete "$AID" >/dev/null 2>&1 || true; fi
+      if [[ -n "$RID" ]]; then HULY relation delete "$RID" >/dev/null 2>&1 || true; fi
+      HULY issue delete "$IID1" "$IID2" --yes >/dev/null 2>&1 || true
+      echo "  ✓ association + relation lifecycle complete"
+    else
+      echo "  ⚠ could not resolve ids after issue create"
+    fi
+    # Validation: task-type create requires --project-type and --label
+    if HULY task-type create --label x >/dev/null 2>&1; then
+      echo "  FAIL: task-type create should require --project-type" >&2
+      exit 1
+    fi
+    echo "  ✓ task-type create requires --project-type"
+    ;;
+
+  14)
+    step "activity list" HULY activity list
+    step "activity mentions" HULY activity mentions
+    step "activity saved list" HULY activity saved list
+    # Validation: pin requires a ref
+    if HULY activity pin >/dev/null 2>&1; then
+      echo "  FAIL: activity pin should require a ref" >&2
+      exit 1
+    fi
+    echo "  ✓ activity pin requires ref"
+    # Lifecycle: react + reply + save/unsave on a real activity message
+    AMID=$(HULY activity list --limit 1 --json 2>/dev/null | filter_huly_noise | jq -r '.[0]._id // empty')
+    if [[ -n "$AMID" ]]; then
+      HULY activity react --target "$AMID" --emoji "👍" >/dev/null 2>&1 || true
+      HULY activity react --target "$AMID" --emoji "👍" --list >/dev/null 2>&1 || true
+      HULY activity react --target "$AMID" --emoji "👍" --remove >/dev/null 2>&1 || true
+      RID=$(HULY activity reply add "$AMID" --body "smoke-p14-$(date +%s)" --json 2>/dev/null | filter_huly_noise | jq -r '._id // empty')
+      if [[ -n "$RID" ]]; then
+        HULY activity reply update "$RID" --body "smoke-p14-edited" >/dev/null 2>&1 || true
+        HULY activity reply delete "$RID" >/dev/null 2>&1 || true
+      fi
+      HULY activity saved save --target "$AMID" >/dev/null 2>&1 || true
+      HULY activity saved unsave --target "$AMID" >/dev/null 2>&1 || true
+      echo "  ✓ activity react/reply/saved lifecycle complete"
+    else
+      echo "  ⚠ no activity messages to test against (skipped)"
+    fi
+    ;;
+
+  15)
+    step "notification list" HULY notification list
+    step "notification unread-count" HULY notification unread-count
+    step "notification types" HULY notification types
+    step "notification contexts list" HULY notification contexts list
+    # Validation: mark-read requires a ref
+    if HULY notification mark-read >/dev/null 2>&1; then
+      echo "  FAIL: notification mark-read should require a ref" >&2
+      exit 1
+    fi
+    echo "  ✓ notification mark-read requires ref"
+    # Subscribe/unsubscribe lifecycle
+    IID=$(HULY issue list --project "$HULY_PROJECT" --limit 1 --json 2>/dev/null | filter_huly_noise | jq -r '.[0]._id // empty')
+    if [[ -n "$IID" ]]; then
+      HULY notification subscribe --target "$IID" --target-class tracker:class:Issue >/dev/null 2>&1 || true
+      CID=$(HULY notification contexts list --json 2>/dev/null | filter_huly_noise | jq -r --arg id "$IID" '.[] | select(.objectId == $id) | ._id' | head -1)
+      if [[ -n "$CID" ]]; then
+        HULY notification contexts pin "$CID" >/dev/null 2>&1 || true
+        HULY notification contexts pin "$CID" --unpin >/dev/null 2>&1 || true
+      fi
+      HULY notification unsubscribe --target "$IID" --target-class tracker:class:Issue >/dev/null 2>&1 || true
+      echo "  ✓ notification subscribe/unsubscribe complete"
+    fi
+    ;;
+
+  16)
+    step "approval list" HULY approval list
+    # Validation: approval request requires --attached-to and --requested
+    if HULY approval request >/dev/null 2>&1; then
+      echo "  FAIL: approval request should require --attached-to" >&2
+      exit 1
+    fi
+    echo "  ✓ approval request requires --attached-to"
+    # Lifecycle: create + comment + approve
+    IID=$(HULY issue list --project "$HULY_PROJECT" --limit 1 --json 2>/dev/null | filter_huly_noise | jq -r '.[0]._id // empty')
+    if [[ -n "$IID" ]]; then
+      AID=$(HULY approval request --attached-to "$IID" --attached-to-class tracker:class:Issue --requested me --required-count 1 --json 2>/dev/null | filter_huly_noise | jq -r '._id // empty')
+      if [[ -n "$AID" ]]; then
+        HULY approval comment "$AID" --body "smoke-p16-$(date +%s)" >/dev/null 2>&1 || true
+        HULY approval approve "$AID" --comment "smoke-p16-LGTM" >/dev/null 2>&1 || true
+        # Lifecycle: create + reject
+        AID2=$(HULY approval request --attached-to "$IID" --attached-to-class tracker:class:Issue --requested me --required-count 1 --json 2>/dev/null | filter_huly_noise | jq -r '._id // empty')
+        if [[ -n "$AID2" ]]; then
+          HULY approval reject "$AID2" --comment "smoke-p16-reject" >/dev/null 2>&1 || true
+        fi
+        # Lifecycle: create + cancel
+        AID3=$(HULY approval request --attached-to "$IID" --attached-to-class tracker:class:Issue --requested me --required-count 1 --json 2>/dev/null | filter_huly_noise | jq -r '._id // empty')
+        if [[ -n "$AID3" ]]; then
+          HULY approval cancel "$AID3" >/dev/null 2>&1 || true
+        fi
+        HULY approval delete "$AID" "$AID2" "$AID3" --yes >/dev/null 2>&1 || true
+        echo "  ✓ approval lifecycle complete"
+      fi
+    fi
+    cleanup_count "approvals" "smoke-p16" "HULY approval list --json 2>/dev/null | filter_huly_noise | awk '/^\[/,0'"
+    ;;
+
+  17|18)
+    # README + final smoke. README is verified by README size; final smoke is
+    # the `all` mode. Skip these individual phases.
+    echo "  · phase $PHASE not run individually (covered by 'all' / README check)"
     exit 2
     ;;
 

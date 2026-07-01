@@ -16,7 +16,7 @@ declare module '@hcengineering/api-client' {
   export interface PlatformClient {
     getHierarchy(): any
     getModel(): any
-    getAccount(): Promise<{ uuid: string; role: string; primarySocialId?: string; socialIds?: string[]; fullSocialIds?: any[] }>
+    getAccount(): Promise<{ uuid: string; role: string; primarySocialId?: string; socialIds?: string[]; fullSocialIds?: any[]; person?: string }>
     close(): Promise<void>
     findOne<T = any>(_class: any, query: any, options?: any): Promise<T | undefined>
     findAll<T = any>(_class: any, query: any, options?: any): Promise<T[]>

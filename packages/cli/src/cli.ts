@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path'
 import { handleError } from './output/errors.js'
 import { isNonInteractive, markNonInteractive } from './auth/env.js'
 import { loginCommand } from './commands/login.js'
+import { signupCommand } from './commands/signup.js'
 import { whoamiCommand } from './commands/whoami.js'
 import { listWorkspaces, currentWorkspace, useWorkspace, createWorkspace, deleteWorkspace, listMembers, updateMemberRole, workspaceInfo, updateWorkspaceName, workspaceGuests, createAccessLink, listRegions } from './resources/workspace.js'
 import { getUser, updateUser, findUser } from './resources/user.js'
@@ -67,6 +68,36 @@ import {
 } from './resources/channel.js'
 import { apiCommand } from './raw/api.js'
 import { wsCommand } from './raw/ws.js'
+import {
+  listSpaces, getSpace, updateSpace,
+  listSpaceTypes, getSpaceType, listSpacePermissions,
+  addSpaceMembers, removeSpaceMembers, setSpaceOwners,
+  listAssociations, createAssociation, deleteAssociations,
+  listRelations, createRelation, deleteRelations,
+  listProjectTypes, getProjectType,
+  listTaskTypes, createTaskType,
+  createIssueStatus
+} from './resources/spaces.js'
+import {
+  listActivity, getActivity, pinActivity,
+  addReaction, removeReaction, listReactions,
+  listReplies, addReply, updateReply, deleteReplies,
+  listSaved, saveMessage, unsaveMessage,
+  listMentions
+} from './resources/activity.js'
+import {
+  listProviders, listTypes,
+  listInbox, getInbox,
+  markRead, markUnread, markAllRead,
+  archive, unarchive, archiveAll, deleteInbox, unreadCount,
+  listContexts, getContext, pinContext, hideContext,
+  subscribe, unsubscribe,
+  listSettings, updateSetting
+} from './resources/notifications.js'
+import {
+  listApprovals, getApproval, createApproval,
+  commentOnApproval, approveRequest, rejectRequest, cancelRequest, deleteApprovals
+} from './resources/approvals.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const pkg = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf8'))
@@ -160,6 +191,46 @@ export async function run(argv: string[] = process.argv): Promise<void> {
           workspace: g.workspace,
           email: opts.email ?? g.email,
           password: opts.password ?? g.password,
+          nonInteractive: g.nonInteractive,
+          headless: opts.headless ?? g.headless,
+          json: g.json ?? g.ci
+        })
+      } catch (e) { handleError(e) }
+    })
+
+  program
+    .command('signup')
+    .description('Create a new account on the Huly server (use when login returns AccountNotFound)')
+    .option('--headless', 'use env vars only, no prompts')
+    .option('--email <email>')
+    .option('--password <pwd>')
+    .option('--first <name>')
+    .option('--last <name>')
+    .option('--create-workspace <name>', 'also create a workspace with this name and set it as active (optional: pass a name or use --yes)')
+    .addHelpText('after', `
+Examples:
+  $ huly signup --email alice@example.com --password '***' --first Alice --last Doe
+  $ HULY_EMAIL=bob@.. HULY_PASSWORD=*** HULY_FIRST_NAME=Bob HULY_LAST_NAME=Smith \\
+      huly signup --headless
+  $ huly signup --email alice@.. --password '***' --first Alice --last Doe \\
+      --create-workspace alice-ws  # signup + create workspace in one shot
+
+Notes:
+  - Selfhost's signUp is open. On production / hosted, account creation may be
+    invite-only and require a separate signup flow.
+  - The new account is NOT a member of any existing workspace. Pass
+    --create-workspace <name> to create one as part of signup, or run
+    \`huly workspace create --name <name> --yes\` after signup.`)
+    .action(async (opts, cmd) => {
+      try {
+        const g = globalsFrom(cmd)
+        await signupCommand({
+          url: g.url,
+          email: opts.email ?? g.email,
+          password: opts.password ?? g.password,
+          firstName: opts.first,
+          lastName: opts.last,
+          workspace: opts.createWorkspace,
           nonInteractive: g.nonInteractive,
           headless: opts.headless ?? g.headless,
           json: g.json ?? g.ci
@@ -1007,6 +1078,7 @@ as thread replies.`)
     .requiredOption('--title <t>')
     .requiredOption('--master-tag <name|ref>', 'master-tag name (e.g. "Task") or _id')
     .option('--card-space <ref>', 'card space; defaults to card:space:Default')
+    .option('--parent <ref>', 'parent card _id; sets parent + parentInfo ancestor chain')
     .option('--description <text>')
     .option('--body <md>')
     .option('--body-file <path>')
@@ -1015,6 +1087,7 @@ Examples:
   $ huly card create --title "My card" --master-tag "Task"
   $ huly card create --title "..." --master-tag card:master-tag.Task \\
       --card-space card:space:Default --body-file ./spec.md
+  $ huly card create --title "Sub" --master-tag Task --parent <parent-card-id>
 
 N9: --master-tag is REQUIRED. First-time setup usually requires creating a
 master-tag via the web UI (the CLI doesn't expose master-tag creation).
@@ -1480,6 +1553,224 @@ by OnIssueUpdate).`)
     .action(async (refs, opts, cmd) => {
       try { await deleteTimeEntries(refs, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
+
+  // ---- Phase 11: Associations + Spaces + Task Management ----
+
+  const space = program.command('space').description('Manage core Spaces (containers) — Phase 11'); withGlobalHelp(space)
+  space.command('list').description('List spaces')
+    .option('--type <id>')
+    .option('--archived <bool>', '(true|false)', (v) => v !== 'false' && v !== '0')
+    .option('--private <bool>', '(true|false)', (v) => v !== 'false' && v !== '0')
+    .action(async (opts, cmd) => { try { await listSpaces({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+  space.command('get <ref>').description('Get a space')
+    .action(async (ref, opts, cmd) => { try { await getSpace(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+  space.command('update <ref>').description('Update a space')
+    .option('--name <n>').option('--description <text>')
+    .option('--private <bool>').option('--archived <bool>')
+    .action(async (ref, opts, cmd) => { try { await updateSpace(ref, { ...opts, private: opts.private === undefined ? undefined : !!opts.private, archived: opts.archived === undefined ? undefined : !!opts.archived, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+  space.command('permissions <ref>').description('List permissions on a space')
+    .action(async (ref, opts, cmd) => { try { await listSpacePermissions(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+  space.command('members').description('Manage space members')
+  space.command('add-member <ref>').description('Add members to a space')
+    .requiredOption('--members <email...>')
+    .action(async (ref, opts, cmd) => { try { await addSpaceMembers(ref, opts.members, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+  space.command('remove-member <ref>').description('Remove members from a space')
+    .requiredOption('--members <email...>')
+    .action(async (ref, opts, cmd) => { try { await removeSpaceMembers(ref, opts.members, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+  space.command('set-owners <ref>').description('Set owners on a space')
+    .requiredOption('--members <email...>')
+    .action(async (ref, opts, cmd) => { try { await setSpaceOwners(ref, opts.members, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+
+  const spaceType = program.command('space-type').description('List/get space types — Phase 11')
+  spaceType.command('list').description('List space types')
+    .action(async (opts, cmd) => { try { await listSpaceTypes({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+  spaceType.command('get <ref>').description('Get a space type')
+    .action(async (ref, opts, cmd) => { try { await getSpaceType(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+
+  const assoc = program.command('association').description('Manage Associations (a↔b) — Phase 11'); withGlobalHelp(assoc)
+  assoc.command('list').description('List associations')
+    .option('--a <ref>').option('--b <ref>')
+    .option('--a-class <id>').option('--b-class <id>')
+    .action(async (opts, cmd) => { try { await listAssociations({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+  assoc.command('create').description('Create an association')
+    .requiredOption('--a <ref>').requiredOption('--b <ref>')
+    .option('--a-class <id>').option('--b-class <id>')
+    .action(async (opts, cmd) => { try { await createAssociation({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+  assoc.command('delete <ref...>').description('Delete associations')
+    .action(async (refs, opts, cmd) => { try { await deleteAssociations(refs, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+
+  const rel = program.command('relation').description('Manage Relations (a→b on parent) — Phase 11'); withGlobalHelp(rel)
+  rel.command('list').description('List relations')
+    .option('--source <ref>').option('--source-class <id>').option('--target <ref>')
+    .action(async (opts, cmd) => { try { await listRelations({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+  rel.command('create').description('Create a relation')
+    .requiredOption('--source <ref>').requiredOption('--target <ref>')
+    .option('--source-class <id>').option('--target-class <id>').option('--name <n>')
+    .action(async (opts, cmd) => { try { await createRelation({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+  rel.command('delete <ref...>').description('Delete relations')
+    .action(async (refs, opts, cmd) => { try { await deleteRelations(refs, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+
+  const projectType = program.command('project-type').description('List/get tracker project types — Phase 11')
+  projectType.command('list').description('List project types')
+    .action(async (opts, cmd) => { try { await listProjectTypes({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+  projectType.command('get <ref>').description('Get a project type')
+    .action(async (ref, opts, cmd) => { try { await getProjectType(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+
+  const taskType = program.command('task-type').description('Manage task types — Phase 11')
+  taskType.command('list').description('List task types')
+    .option('--project-type <ref>')
+    .action(async (opts, cmd) => { try { await listTaskTypes({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+  taskType.command('create').description('Create a task type')
+    .requiredOption('--project-type <ref>')
+    .requiredOption('--label <name>')
+    .option('--description <text>')
+    .action(async (opts, cmd) => { try { await createTaskType({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+
+  program.command('issue-status').description('Manage issue statuses — Phase 11').alias('issue-statuses')
+  const issueStatus = program.commands.find((c) => c.name() === 'issue-status')!
+  issueStatus.command('create').description('Create an issue status')
+    .requiredOption('--project-type <ref>')
+    .option('--task-type <ref>')
+    .requiredOption('--name <n>')
+    .requiredOption('--category <c>', 'UnStarted|ToDo|Active|Won|Lost')
+    .option('--description <text>').option('--rank <r>')
+    .action(async (opts, cmd) => { try { await createIssueStatus({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+
+  // ---- Phase 14: Activity ----
+
+  const activity = program.command('activity').description('Manage activity messages, reactions, mentions — Phase 14'); withGlobalHelp(activity)
+  activity.command('list').description('List activity messages')
+    .option('--target <ref>').option('--target-class <id>')
+    .option('--pinned')
+    .option('--limit <n>', '', (v) => parseInt(v, 10))
+    .action(async (opts, cmd) => { try { await listActivity({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+  activity.command('get <ref>').description('Get a single activity message')
+    .action(async (ref, opts, cmd) => { try { await getActivity(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+  activity.command('pin <ref>').description('Pin an activity message (--unpin to remove)')
+    .option('--unpin')
+    .action(async (ref, opts, cmd) => { try { await pinActivity(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+  activity.command('react').description('Add/remove/list reactions on an activity message')
+    .requiredOption('--target <ref>').requiredOption('--emoji <e>')
+    .option('--remove')
+    .option('--list')
+    .action(async (opts, cmd) => {
+      try {
+        const g = globalsFrom(cmd)
+        if (opts.list) await listReactions(opts.target, { ...opts, ...g })
+        else if (opts.remove) await removeReaction({ ...opts, ...g })
+        else await addReaction({ ...opts, ...g })
+      } catch (e) { handleError(e) }
+    })
+  activity.command('reply').description('Manage replies on an activity message')
+  activity.commands.find((c) => c.name() === 'reply')!.command('list <target>').description('List replies')
+    .action(async (target, opts, cmd) => { try { await listReplies(target, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+  activity.commands.find((c) => c.name() === 'reply')!.command('add <target>').description('Add a reply')
+    .requiredOption('--body <md>')
+    .action(async (target, opts, cmd) => { try { await addReply({ ...opts, target, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+  activity.commands.find((c) => c.name() === 'reply')!.command('update <ref>').description('Update a reply')
+    .requiredOption('--body <md>')
+    .action(async (ref, opts, cmd) => { try { await updateReply(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+  activity.commands.find((c) => c.name() === 'reply')!.command('delete <ref...>').description('Delete replies')
+    .action(async (refs, opts, cmd) => { try { await deleteReplies(refs, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+  activity.command('saved').description('Manage saved messages')
+  activity.commands.find((c) => c.name() === 'saved')!.command('list').description('List saved messages')
+    .action(async (opts, cmd) => { try { await listSaved({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+  activity.commands.find((c) => c.name() === 'saved')!.command('save').description('Save a message (--target)')
+    .requiredOption('--target <ref>')
+    .action(async (opts, cmd) => { try { await saveMessage({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+  activity.commands.find((c) => c.name() === 'saved')!.command('unsave').description('Unsave a message (--target)')
+    .requiredOption('--target <ref>')
+    .action(async (opts, cmd) => { try { await unsaveMessage({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+  activity.command('mentions').description('List @-mentions of the current user')
+    .action(async (opts, cmd) => { try { await listMentions({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+
+  // ---- Phase 15: Notifications ----
+
+  const notification = program.command('notification').description('Manage inbox notifications — Phase 15'); withGlobalHelp(notification)
+  notification.command('list').description('List inbox notifications')
+    .option('--read').option('--unread').option('--archived <bool>', '', (v) => v !== 'false' && v !== '0')
+    .option('--limit <n>', '', (v) => parseInt(v, 10))
+    .action(async (opts, cmd) => { try { await listInbox({ ...opts, archived: opts.archived === undefined ? undefined : !!opts.archived, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+  notification.command('get <ref>').description('Get a notification')
+    .action(async (ref, opts, cmd) => { try { await getInbox(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+  notification.command('mark-read <ref...>').description('Mark notifications read')
+    .action(async (refs, opts, cmd) => { try { await markRead(refs, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+  notification.command('mark-unread <ref...>').description('Mark notifications unread')
+    .action(async (refs, opts, cmd) => { try { await markUnread(refs, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+  notification.command('mark-all-read').description('Mark all unread notifications read')
+    .action(async (opts, cmd) => { try { await markAllRead({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+  notification.command('archive <ref...>').description('Archive notifications')
+    .action(async (refs, opts, cmd) => { try { await archive(refs, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+  notification.command('unarchive <ref...>').description('Unarchive notifications')
+    .action(async (refs, opts, cmd) => { try { await unarchive(refs, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+  notification.command('archive-all').description('Archive all notifications')
+    .action(async (opts, cmd) => { try { await archiveAll({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+  notification.command('delete <ref...>').description('Delete notifications')
+    .action(async (refs, opts, cmd) => { try { await deleteInbox(refs, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+  notification.command('unread-count').description('Print unread inbox count')
+    .action(async (opts, cmd) => { try { await unreadCount({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+  notification.command('providers').description('List notification providers')
+    .action(async (opts, cmd) => { try { await listProviders({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+  notification.command('types').description('List notification types')
+    .action(async (opts, cmd) => { try { await listTypes({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+  notification.command('contexts').description('Manage notification contexts')
+  notification.commands.find((c) => c.name() === 'contexts')!.command('list').description('List contexts')
+    .option('--pinned').option('--hidden')
+    .action(async (opts, cmd) => { try { await listContexts({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+  notification.commands.find((c) => c.name() === 'contexts')!.command('get <ref>').description('Get a context')
+    .action(async (ref, opts, cmd) => { try { await getContext(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+  notification.commands.find((c) => c.name() === 'contexts')!.command('pin <ref>').description('Pin a context (--unpin to remove)')
+    .option('--unpin')
+    .action(async (ref, opts, cmd) => { try { await pinContext(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+  notification.commands.find((c) => c.name() === 'contexts')!.command('hide <ref>').description('Hide a context (--unhide)')
+    .option('--unhide')
+    .action(async (ref, opts, cmd) => { try { await hideContext(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+  notification.command('subscribe').description('Subscribe to notifications on a target')
+    .requiredOption('--target <ref>').option('--target-class <id>')
+    .action(async (opts, cmd) => { try { await subscribe({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+  notification.command('unsubscribe').description('Unsubscribe from notifications on a target')
+    .requiredOption('--target <ref>').option('--target-class <id>')
+    .action(async (opts, cmd) => { try { await unsubscribe({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+  notification.command('settings').description('Manage notification settings')
+  notification.commands.find((c) => c.name() === 'settings')!.command('list').description('List notification settings')
+    .option('--provider <ref>')
+    .action(async (opts, cmd) => { try { await listSettings({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+  notification.commands.find((c) => c.name() === 'settings')!.command('update').description('Update a notification setting')
+    .requiredOption('--provider <ref>').requiredOption('--type <ref>')
+    .requiredOption('--enabled <bool>', 'true|false', (v) => v !== 'false' && v !== '0')
+    .action(async (opts, cmd) => { try { await updateSetting({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+
+  // ---- Phase 16: Approvals ----
+
+  const approval = program.command('approval').description('Manage approval requests — Phase 16'); withGlobalHelp(approval)
+  approval.command('list').description('List approval requests')
+    .option('--status <s>', 'Active|Completed|Rejected|Cancelled')
+    .option('--attached-to <ref>')
+    .action(async (opts, cmd) => { try { await listApprovals({ ...opts, status: opts.status as any, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+  approval.command('get <ref>').description('Get an approval request')
+    .action(async (ref, opts, cmd) => { try { await getApproval(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+  approval.command('request').description('Create an approval request on a target')
+    .requiredOption('--attached-to <ref>')
+    .option('--attached-to-class <id>')
+    .requiredOption('--requested <emails...>')
+    .option('--required-count <n>', '', (v) => parseInt(v, 10))
+    .option('--tx <json>', 'JSON-encoded tx object to apply on approval')
+    .action(async (opts, cmd) => { try { await createApproval({ ...opts, txJson: opts.tx, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+  approval.command('comment <ref>').description('Add a comment to an approval request')
+    .requiredOption('--body <md>')
+    .option('--decision <d>', 'approve|reject|comment')
+    .action(async (ref, opts, cmd) => { try { await commentOnApproval({ ...opts, ref, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+  approval.command('approve <ref>').description('Approve an approval request')
+    .option('--comment <md>')
+    .action(async (ref, opts, cmd) => { try { await approveRequest({ ...opts, ref, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+  approval.command('reject <ref>').description('Reject an approval request (requires --comment)')
+    .requiredOption('--comment <md>')
+    .option('--rejected-tx <json>', 'JSON-encoded rollback tx to apply on rejection')
+    .action(async (ref, opts, cmd) => { try { await rejectRequest({ ...opts, ref, rejectedTxJson: opts.rejectedTx, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+  approval.command('cancel <ref>').description('Cancel an approval request (requester only)')
+    .action(async (ref, opts, cmd) => { try { await cancelRequest({ ...opts, ref, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
+  approval.command('delete <ref...>').description('Delete approval requests')
+    .action(async (refs, opts, cmd) => { try { await deleteApprovals(refs, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
 
   const raw = program.command('api').description('Raw HTTP escape hatch')
   raw

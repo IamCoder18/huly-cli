@@ -105,7 +105,13 @@ export async function createProject(opts: {
     // findAll on this project. Without this, list/get returns 0 because
     // the security filter restricts the query to spaces the user is in.
     members: currentAccountUuid !== '' ? [currentAccountUuid] : [],
-    sequence: 0
+    sequence: 0,
+    // The tracker Project interface requires these fields. The reference
+    // front-end (CreateProject.svelte) sets `PreviousWorkDay` on create
+    // and leaves defaultIssueStatus as an empty ref on fresh projects.
+    defaultTimeReportDay: 0, // 0 = TimeReportDayType.PreviousWorkDay
+    defaultIssueStatus: '' as Ref<Doc>,
+    defaultAssignee: null
   }
   if (opts.minimal) {
     delete data.description
