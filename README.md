@@ -1177,7 +1177,7 @@ unexpected result.
 | Soft delete | `Card.removed:boolean`, `Project.archived`, `Vacancy.archived`, `Document.state ∈ {Deleted, Obsolete, Archived}`. Other entities are hard-deleted (`TxRemoveDoc`). |
 | Workspace states | `pending-creation` → `creating` → `active`; `pending-upgrade` → `upgrading` → `active`; `pending-deletion` → `deleting`; `archiving-*` chain; `migration-*` chain; `pending-restore` → `restoring` → `active`. |
 | `WS_OPERATION` env var (server-side) | `all` (default) covers `pending-creation` + `pending-upgrade`; `all+backup` adds `pending-deletion`, archiving, migration, restoring. For selfhost single-pod, set `all+backup` on the workspace pod. |
-| Read-only guest data | The CLI's `connectCli` returns a `PlatformClient` augmented with `__workspaceId` so the resolver cache is workspace-scoped. No cross-workspace data leakage. |
+| Read-only guest data | The CLI's resolver cache is **client-scoped via a `WeakMap<PlatformClient, …>`**, so each connected workspace gets its own cache automatically and entries die with the connection. No cross-workspace data leakage. |
 
 ### Markup handling (the CLI bypasses the SDK)
 
@@ -1320,17 +1320,21 @@ Reserved keys (silently stripped): `set`, `unset`, `json`, `ci`, `markdown`, `dr
 
 | Cache | Lifetime | Invalidation |
 |---|---|---|
-| Resolver index (`workspaceId\|classId` → `Map<key, _id>`) | In-memory, **no TTL** | Explicit `invalidateIndex()` after every write. |
+| Resolver index (`PlatformClient` → `Map<classId, Map<key, _id>>`, backed by a `WeakMap`) | In-memory, **no TTL**; dies with the `PlatformClient` | Explicit `invalidateIndex(client, classId)` after every write. |
 | Account `_accounts` URL cache | In-memory, per-host | Never invalidated; restart the CLI process to refresh. |
 | `~/.config/huly/credentials.json` (account + workspace tokens) | On disk, mode 0600, no expiry | Refreshed on re-login. Delete the file to reset. |
 | `~/.config/huly/active-workspace` | On disk, mode 0606 | Updated on `huly workspace use <name>` or `--workspace`. |
 | `~/.config/huly/active-account` | On disk, mode 0606 | One line per host, updated on login. |
-| Resolver cache for the entire workspace | In-memory | Wiped when workspace UUID cannot be determined (rare). |
 
 > **Stale-cache gotcha:** the resolver index never expires. If someone
 > deletes or renames a project between two CLI commands in the same shell,
 > the second command may still see the old name. Restart the CLI process
 > (or run any write against the changed resource) to force a refresh.
+>
+> **Cross-workspace safety:** because the cache is keyed on the
+> `PlatformClient` instance (WeakMap), switching workspaces — even within
+> the same process — gives you a fresh cache automatically. No risk of
+> stale entries bleeding across workspaces.
 
 ### Markup handling (the SDK bypass)
 

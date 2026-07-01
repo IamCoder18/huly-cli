@@ -1124,9 +1124,9 @@ Defaults (when omitted):
   doneOn               null
   rank                 '0|aaaaa:'
 
-Ref resolution for --owner: tries me|empty, raw _id, exact Person name,
-then substring (includes) match. Limit 200 results. Pass exact email to
-avoid ambiguity in substring matching.`)
+Ref resolution for --owner: tries me|empty, raw _id, exact Person name
+or email match (case-insensitive), then substring (includes) match. Limit
+200 results. Pass exact email to avoid ambiguity in substring matching.`)
     .action(async (opts, cmd) => {
       try { await createAction({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
@@ -1460,7 +1460,9 @@ Defaults:
 
 Notes:
   - Past and future dates are allowed (no server-side validation).
-  - Negative values are not validated (would corrupt reportedTime).
+  - Negative values for --minutes/--hours are rejected with a Validation
+    error ('--minutes and --hours must be positive') instead of corrupting
+    reportedTime.
   - The entry is tracker:class:TimeSpendReport (NOT time:class:...).
   - Use 'huly time report <issue>' to read back; 'huly time list' to scan.`)
     .action(async (opts, cmd) => {
