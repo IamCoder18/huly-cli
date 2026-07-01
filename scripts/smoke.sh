@@ -26,10 +26,11 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
 # Prefer the built binary; fall back to tsx.
-if [[ -x "$REPO_ROOT/dist/index.js" ]]; then
-  HULY() { node "$REPO_ROOT/dist/index.js" "$@"; }
-elif [[ -f "$REPO_ROOT/package.json" ]]; then
-  HULY() { npx --no-install tsx "$REPO_ROOT/src/index.ts" "$@"; }
+CLI_DIR="$REPO_ROOT/packages/cli"
+if [[ -x "$CLI_DIR/dist/index.js" ]]; then
+  HULY() { node "$CLI_DIR/dist/index.js" "$@"; }
+elif [[ -f "$CLI_DIR/package.json" ]]; then
+  HULY() { (cd "$CLI_DIR" && npx --no-install tsx ./src/index.ts "$@"); }
 else
   echo "no huly binary found" >&2
   exit 1
