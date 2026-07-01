@@ -654,7 +654,6 @@ async function resolveCalendarId(client: PlatformClient, arg?: string): Promise<
         return (await resolveRef(arg, {
           client,
           classId: CLASS.Calendar as Ref<Class<Doc>>,
-          
         })) as Ref<Doc>
       } catch {
         // fall through to name lookup

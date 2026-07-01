@@ -412,11 +412,9 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
     }
 
     if (opts.parent) {
-      const parentAccount = await client.getAccount()
       data.parent = await resolveRef(opts.parent, {
         client,
         classId: CLASS.Issue as Ref<Class<Doc>>,
-
         defaultProjectIdentifier: readEnv().project
       }) as Ref<Doc>
     } else if (!opts.minimal) {

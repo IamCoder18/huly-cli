@@ -43,7 +43,6 @@ export async function getUser(opts: GlobalOpts & { ref?: string } = {}): Promise
 async function getUserByRef(ref: string, opts: GlobalOpts): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const id = await resolveRef(ref, {
       client,
       classId: CLASS.Person as Ref<Class<Doc>>,
