@@ -23,19 +23,6 @@ function looksLikePrefixed(s: string): boolean {
   return /^[A-Z][A-Z0-9]+-\d+$/.test(s)
 }
 
-export interface IndexEntry {
-  id: Ref<Doc>
-  title?: string
-}
-
-export interface BuildIndexOpts<T extends Doc> {
-  client: PlatformClient
-  classId: Ref<Class<T>>
-  workspaceId?: string
-  identifierField?: keyof T
-  titleField?: keyof T
-}
-
 /**
  * Identity-bearing field names that CLI commands advertise as accepting
  * refs (e.g. "name", "label", "title"). Index them alongside the configured
@@ -110,7 +97,6 @@ export function clearResolverCache(): void {
 export interface ResolveOpts {
   client: PlatformClient
   classId: Ref<Class<Doc>>
-  workspaceId: string
   identifierField?: string
   titleField?: string
   defaultProjectIdentifier?: string

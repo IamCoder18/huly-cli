@@ -46,7 +46,6 @@ const CHAT_MESSAGE_CLASS = 'chunter:class:ChatMessage' as Ref<Class<ChatMessage>
 const DM_CLASS = 'chunter:class:DirectMessage' as Ref<Class<DirectMessage>>
 
 async function resolveChannel(client: PlatformClient, ref: string): Promise<Channel> {
-  const account = await client.getAccount()
   const idx = await buildIndex<Channel>(client, CHANNEL_CLASS)
   const hit = idx.get(ref)
   if (hit) {
@@ -760,11 +759,9 @@ export async function listDmMessages(dmRef: string, opts: {
 }): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const dmId = await resolveRef(dmRef, {
       client,
       classId: DM_CLASS as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     const messages = (await withSpinner(
       'Loading DM messages…',
@@ -818,11 +815,9 @@ export async function sendDmMessage(dmRef: string, opts: {
   }
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const dmId = await resolveRef(dmRef, {
       client,
       classId: DM_CLASS as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     const dm = await client.findOne(DM_CLASS, { _id: dmId as Ref<DirectMessage> })
     if (!dm) throw new CliError(ExitCode.NotFound, `DM ${dmRef} not found`)

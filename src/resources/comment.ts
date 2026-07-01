@@ -41,11 +41,9 @@ export async function listComments(opts: {
   if (!opts.issue) throw new CliError(ExitCode.Validation, 'missing --issue')
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const issueId = await resolveRef(opts.issue, {
       client,
       classId: CLASS.Issue as Ref<Class<Doc>>,
-      workspaceId: account.uuid,
       defaultProjectIdentifier: readEnv().project
     })
     const issue = await client.findOne(CLASS.Issue as Ref<Class<Doc>>, { _id: issueId })
@@ -77,11 +75,9 @@ export async function addComment(opts: {
   if (!body) throw new CliError(ExitCode.Validation, 'missing --body or --body-file')
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const issueId = await resolveRef(opts.issue, {
       client,
       classId: CLASS.Issue as Ref<Class<Doc>>,
-      workspaceId: account.uuid,
       defaultProjectIdentifier: readEnv().project
     })
     const issue = await client.findOne(CLASS.Issue as Ref<Class<Doc>>, { _id: issueId })
@@ -119,11 +115,9 @@ export async function updateComment(ref: string, opts: {
   if (!body) throw new CliError(ExitCode.Validation, 'missing --body or --body-file')
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const commentId = await resolveRef(ref, {
       client,
       classId: CLASS.ChatMessage as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     const comment = await client.findOne(CLASS.ChatMessage as Ref<Class<ChatMessage>>, { _id: commentId })
     if (!comment) throw new CliError(ExitCode.NotFound, `comment ${ref} not found`)
@@ -144,11 +138,9 @@ export async function updateComment(ref: string, opts: {
 export async function deleteComments(refs: string[], opts: { workspace?: string; url?: string; yes?: boolean } = {}): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const ids = await resolveRefs(refs, {
       client,
       classId: CLASS.ChatMessage as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     if (!opts.yes && ids.length > 1) {
       throw new CliError(ExitCode.Validation, `destructive: deleting ${ids.length} comments requires --yes`, 're-run with --yes to confirm')

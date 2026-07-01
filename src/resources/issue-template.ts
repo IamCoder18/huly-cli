@@ -37,11 +37,9 @@ export async function listIssueTemplates(opts: { project?: string; limit?: numbe
 export async function getIssueTemplate(ref: string, opts: { json?: boolean; ci?: boolean; markdown?: boolean; workspace?: string; url?: string } = {}): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const id = await resolveRef(ref, {
       client,
       classId: CLASS.IssueTemplate as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     const doc = await client.findOne(CLASS.IssueTemplate as Ref<Class<IssueTemplate>>, { _id: id as Ref<IssueTemplate> })
     if (!doc) throw new CliError(ExitCode.NotFound, `issue-template ${ref} not found`)
@@ -129,11 +127,9 @@ export async function createIssueTemplate(opts: {
 export async function updateIssueTemplate(ref: string, opts: { title?: string; description?: string; body?: string; json?: boolean; ci?: boolean; dryRun?: boolean; workspace?: string; url?: string }): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const id = await resolveRef(ref, {
       client,
       classId: CLASS.IssueTemplate as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     const doc = await client.findOne(CLASS.IssueTemplate as Ref<Class<IssueTemplate>>, { _id: id as Ref<IssueTemplate> })
     if (!doc) throw new CliError(ExitCode.NotFound, `issue-template ${ref} not found`)
@@ -159,11 +155,9 @@ export async function updateIssueTemplate(ref: string, opts: { title?: string; d
 export async function deleteIssueTemplates(refs: string[], opts: { dryRun?: boolean; workspace?: string; url?: string; yes?: boolean } = {}): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const ids = await resolveRefs(refs, {
       client,
       classId: CLASS.IssueTemplate as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     if (!opts.yes && ids.length > 1) throw new CliError(ExitCode.Validation, `destructive: deleting ${ids.length} templates requires --yes`, 're-run with --yes to confirm')
     let deleted = 0, skipped = 0
@@ -181,9 +175,8 @@ export async function deleteIssueTemplates(refs: string[], opts: { dryRun?: bool
 export async function addTemplateChild(templateRef: string, childRef: string, opts: { json?: boolean; ci?: boolean; dryRun?: boolean; workspace?: string; url?: string }): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
-    const templateId = await resolveRef(templateRef, { client, classId: CLASS.IssueTemplate as Ref<Class<Doc>>, workspaceId: account.uuid })
-    const childId = await resolveRef(childRef, { client, classId: CLASS.IssueTemplate as Ref<Class<Doc>>, workspaceId: account.uuid })
+    const templateId = await resolveRef(templateRef, { client, classId: CLASS.IssueTemplate as Ref<Class<Doc>> })
+    const childId = await resolveRef(childRef, { client, classId: CLASS.IssueTemplate as Ref<Class<Doc>> })
     const doc = await client.findOne(CLASS.IssueTemplate as Ref<Class<IssueTemplate>>, { _id: templateId as Ref<IssueTemplate> })
     if (!doc) throw new CliError(ExitCode.NotFound, `template ${templateRef} not found`)
     const children = [...(doc.children ?? []), { id: childId }]
@@ -203,9 +196,8 @@ export async function addTemplateChild(templateRef: string, childRef: string, op
 export async function removeTemplateChild(templateRef: string, childRef: string, opts: { json?: boolean; ci?: boolean; dryRun?: boolean; workspace?: string; url?: string }): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
-    const templateId = await resolveRef(templateRef, { client, classId: CLASS.IssueTemplate as Ref<Class<Doc>>, workspaceId: account.uuid })
-    const childId = await resolveRef(childRef, { client, classId: CLASS.IssueTemplate as Ref<Class<Doc>>, workspaceId: account.uuid })
+    const templateId = await resolveRef(templateRef, { client, classId: CLASS.IssueTemplate as Ref<Class<Doc>> })
+    const childId = await resolveRef(childRef, { client, classId: CLASS.IssueTemplate as Ref<Class<Doc>> })
     const doc = await client.findOne(CLASS.IssueTemplate as Ref<Class<IssueTemplate>>, { _id: templateId as Ref<IssueTemplate> })
     if (!doc) throw new CliError(ExitCode.NotFound, `template ${templateRef} not found`)
     const children = (doc.children ?? []).filter((c: Record<string, unknown>) => (c as { id?: string }).id !== childId)

@@ -126,11 +126,9 @@ export async function createCalendar(opts: {
 export async function deleteCalendar(ref: string, opts: { workspace?: string; url?: string; yes?: boolean } = {}): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const id = await resolveRef(ref, {
       client,
       classId: CLASS.Calendar as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     const doc = await client.findOne(CLASS.Calendar, { _id: id })
     if (!doc) throw new CliError(ExitCode.NotFound, `calendar ${ref} not found`)
@@ -165,11 +163,9 @@ export async function listSchedules(g: { json?: boolean; ci?: boolean; workspace
 export async function getSchedule(ref: string, opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string } = {}): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const id = await resolveRef(ref, {
       client,
       classId: CLASS.Schedule as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     const doc = await client.findOne(CLASS.Schedule as Ref<Class<Schedule>>, { _id: id as Ref<Schedule> })
     if (!doc) throw new CliError(ExitCode.NotFound, `schedule ${ref} not found`)
@@ -262,11 +258,9 @@ export async function updateSchedule(ref: string, opts: {
 }): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const id = await resolveRef(ref, {
       client,
       classId: CLASS.Schedule as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     const doc = await client.findOne(CLASS.Schedule as Ref<Class<Schedule>>, { _id: id as Ref<Schedule> })
     if (!doc) throw new CliError(ExitCode.NotFound, `schedule ${ref} not found`)
@@ -294,11 +288,9 @@ export async function updateSchedule(ref: string, opts: {
 export async function deleteSchedules(refs: string[], opts: { dryRun?: boolean; workspace?: string; url?: string; yes?: boolean } = {}): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const ids = await resolveRefs(refs, {
       client,
       classId: CLASS.Schedule as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     if (!opts.yes && ids.length > 1) throw new CliError(ExitCode.Validation, `destructive: deleting ${ids.length} schedules requires --yes`, 're-run with --yes to confirm')
     let deleted = 0, skipped = 0
@@ -350,11 +342,9 @@ export async function listEvents(opts: {
 export async function getEvent(ref: string, opts: { json?: boolean; ci?: boolean; markdown?: boolean; workspace?: string; url?: string } = {}): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const id = await resolveRef(ref, {
       client,
       classId: CLASS.Event as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     let doc = await client.findOne(CLASS.Event as Ref<Class<Event>>, { _id: id as Ref<Event> })
     if (!doc) {
@@ -443,7 +433,6 @@ export async function createEvent(opts: {
       attachedTo = await resolveRef(opts.attachedTo, {
         client,
         classId: opts.attachedToClass as Ref<Class<Doc>>,
-        workspaceId: account.uuid
       })
       attachedToClass = opts.attachedToClass as Ref<Class<Doc>>
     } else {
@@ -521,11 +510,9 @@ export async function updateEvent(ref: string, opts: {
 }): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const id = await resolveRef(ref, {
       client,
       classId: CLASS.Event as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     const doc = await client.findOne(CLASS.Event as Ref<Class<Event>>, { _id: id as Ref<Event> })
     if (!doc) throw new CliError(ExitCode.NotFound, `event ${ref} not found`)
@@ -562,7 +549,6 @@ export async function updateEvent(ref: string, opts: {
 export async function deleteEvents(refs: string[], opts: { dryRun?: boolean; workspace?: string; url?: string; yes?: boolean } = {}): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     if (!opts.yes && refs.length > 1) {
       throw new CliError(ExitCode.Validation, `destructive: deleting ${refs.length} events requires --yes`, 're-run with --yes to confirm')
     }
@@ -573,7 +559,6 @@ export async function deleteEvents(refs: string[], opts: { dryRun?: boolean; wor
       const id = await resolveRef(ref, {
         client,
         classId: CLASS.Event as Ref<Class<Doc>>,
-        workspaceId: account.uuid
       })
       let doc = await client.findOne(CLASS.Event as Ref<Class<Event>>, { _id: id as Ref<Event> })
       let classId: Ref<Class<Event>> = CLASS.Event as Ref<Class<Event>>
@@ -628,11 +613,9 @@ export async function listRecurringEvents(opts: { limit?: number; offset?: numbe
 export async function listRecurringInstances(ref: string, opts: { start?: string; end?: string; limit?: number; json?: boolean; ci?: boolean; workspace?: string; url?: string }): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const id = await resolveRef(ref, {
       client,
       classId: CLASS.ReccuringEvent as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     const query: Record<string, unknown> = { recurringEventId: id as string }
     if (opts.start || opts.end) {
@@ -671,7 +654,7 @@ async function resolveCalendarId(client: PlatformClient, arg?: string): Promise<
         return (await resolveRef(arg, {
           client,
           classId: CLASS.Calendar as Ref<Class<Doc>>,
-          workspaceId: (await client.getAccount()).uuid
+          
         })) as Ref<Doc>
       } catch {
         // fall through to name lookup

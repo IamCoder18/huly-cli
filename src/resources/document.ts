@@ -73,7 +73,6 @@ async function resolveTeamspace(client: PlatformClient, ref?: string): Promise<T
   const env = readEnv()
   const candidate = ref ?? env.teamspace
   if (candidate) {
-    const account = await client.getAccount()
     const idx = await buildIndex<Teamspace>(client, TEAMSPACE_CLASS)
     const hit = idx.get(candidate)
     if (hit) {
@@ -149,11 +148,9 @@ export async function listTeamspaces(opts: { limit?: number; offset?: number; js
 export async function getTeamspace(ref: string, opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string }): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const id = await resolveRef(ref, {
       client,
       classId: TEAMSPACE_CLASS as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     const doc = await client.findOne(TEAMSPACE_CLASS, { _id: id as Ref<Teamspace> })
     if (!doc) throw new CliError(ExitCode.NotFound, `teamspace ${ref} not found`)
@@ -219,11 +216,9 @@ export async function updateTeamspace(ref: string, opts: {
 }): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const id = await resolveRef(ref, {
       client,
       classId: TEAMSPACE_CLASS as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     const doc = await client.findOne(TEAMSPACE_CLASS, { _id: id as Ref<Teamspace> })
     if (!doc) throw new CliError(ExitCode.NotFound, `teamspace ${ref} not found`)
@@ -249,11 +244,9 @@ export async function updateTeamspace(ref: string, opts: {
 export async function deleteTeamspaces(refs: string[], opts: { dryRun?: boolean; workspace?: string; url?: string; yes?: boolean } = {}): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const ids = await resolveRefs(refs, {
       client,
       classId: TEAMSPACE_CLASS as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     if (!opts.yes && ids.length > 1) throw new CliError(ExitCode.Validation, `destructive: deleting ${ids.length} teamspaces requires --yes`, 're-run with --yes to confirm')
     let deleted = 0, skipped = 0
@@ -313,11 +306,9 @@ export async function listDocuments(opts: {
 export async function getDocument(ref: string, opts: { json?: boolean; ci?: boolean; markdown?: boolean; workspace?: string; url?: string }): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const id = await resolveRef(ref, {
       client,
       classId: DOCUMENT_CLASS as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     const doc = await client.findOne(DOCUMENT_CLASS, { _id: id as Ref<Document> })
     if (!doc) throw new CliError(ExitCode.NotFound, `document ${ref} not found`)
@@ -382,7 +373,6 @@ export async function createDocument(opts: {
   const body = await readBodyText(opts)
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const teamspace = await resolveTeamspace(client, opts.teamspace)
     let parent: Ref<Doc> | null = null
     if (opts.parent) {
@@ -390,7 +380,6 @@ export async function createDocument(opts: {
         parent = await resolveRef(opts.parent, {
           client,
           classId: DOCUMENT_CLASS as Ref<Class<Doc>>,
-          workspaceId: account.uuid
         })
       } catch {
         // try by title
@@ -446,11 +435,9 @@ export interface UpdateDocumentOpts {
 export async function updateDocument(ref: string, opts: UpdateDocumentOpts): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const id = await resolveRef(ref, {
       client,
       classId: DOCUMENT_CLASS as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     const doc = await client.findOne(DOCUMENT_CLASS, { _id: id as Ref<Document> })
     if (!doc) throw new CliError(ExitCode.NotFound, `document ${ref} not found`)
@@ -522,11 +509,9 @@ export async function updateDocument(ref: string, opts: UpdateDocumentOpts): Pro
 export async function deleteDocuments(refs: string[], opts: { dryRun?: boolean; workspace?: string; url?: string; yes?: boolean } = {}): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const ids = await resolveRefs(refs, {
       client,
       classId: DOCUMENT_CLASS as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     if (!opts.yes && ids.length > 1) throw new CliError(ExitCode.Validation, `destructive: deleting ${ids.length} documents requires --yes`, 're-run with --yes to confirm')
     let deleted = 0, skipped = 0
@@ -550,11 +535,9 @@ export async function deleteDocuments(refs: string[], opts: { dryRun?: boolean; 
 export async function listSnapshots(ref: string, opts: { limit?: number; offset?: number; json?: boolean; ci?: boolean; workspace?: string; url?: string } = {}): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const id = await resolveRef(ref, {
       client,
       classId: DOCUMENT_CLASS as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     const snapshots = (await client.findAll(SNAPSHOT_CLASS, { parent: id as Ref<Doc> })) as DocumentSnapshot[]
     let r = snapshots
@@ -572,17 +555,14 @@ export async function listSnapshots(ref: string, opts: { limit?: number; offset?
 export async function getSnapshot(ref: string, opts: { snapshotId?: string; json?: boolean; ci?: boolean; markdown?: boolean; workspace?: string; url?: string }): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const id = await resolveRef(ref, {
       client,
       classId: DOCUMENT_CLASS as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     if (!opts.snapshotId) throw new CliError(ExitCode.Validation, 'missing --snapshot-id')
     const snapId = await resolveRef(opts.snapshotId, {
       client,
       classId: SNAPSHOT_CLASS as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     const snap = await client.findOne(SNAPSHOT_CLASS, { _id: snapId as Ref<DocumentSnapshot> })
     if (!snap) throw new CliError(ExitCode.NotFound, `snapshot ${opts.snapshotId} not found`)
@@ -626,11 +606,9 @@ export async function getSnapshot(ref: string, opts: { snapshotId?: string; json
 export async function listInlineComments(ref: string, opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string } = {}): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const id = await resolveRef(ref, {
       client,
       classId: DOCUMENT_CLASS as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     const comments = (await client.findAll(
       'chunter:class:ChatMessage' as Ref<Class<InlineComment>>,

@@ -35,11 +35,9 @@ export async function listTimeEntries(opts: {
       collection: 'reports'
     }
     if (opts.issue) {
-      const account = await client.getAccount()
       const issueId = await resolveRef(opts.issue, {
         client,
         classId: CLASS.Issue as Ref<Class<Doc>>,
-        workspaceId: account.uuid,
         defaultProjectIdentifier: readEnv().project
       })
       query.attachedTo = issueId
@@ -100,15 +98,14 @@ export async function logTime(opts: {
   }
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const issueId = await resolveRef(opts.issue, {
       client,
       classId: CLASS.Issue as Ref<Class<Doc>>,
-      workspaceId: account.uuid,
       defaultProjectIdentifier: readEnv().project
     })
     const issue = await client.findOne(CLASS.Issue as Ref<Class<Doc>>, { _id: issueId })
     if (!issue) throw new CliError(ExitCode.NotFound, `issue ${opts.issue} not found`)
+    const account = await client.getAccount()
     const dateMs = opts.date
       ? (() => {
           const t = new Date(opts.date).getTime()
@@ -147,11 +144,9 @@ export async function logTime(opts: {
 export async function deleteTimeEntries(refs: string[], opts: { workspace?: string; url?: string; yes?: boolean } = {}): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const ids = await resolveRefs(refs, {
       client,
       classId: CLASS.TimeSpendReport as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     if (!opts.yes && ids.length > 1) {
       throw new CliError(

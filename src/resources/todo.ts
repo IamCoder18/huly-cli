@@ -121,11 +121,9 @@ export async function listActions(opts: ListActionsOpts = {}): Promise<void> {
       query.dueDate = range
     }
     if (opts.issue) {
-      const account = await client.getAccount()
       const issueId = await resolveRef(opts.issue, {
         client,
         classId: CLASS.Issue as Ref<Class<Doc>>,
-        workspaceId: account.uuid,
         defaultProjectIdentifier: readEnv().project
       })
       query.attachedTo = issueId
@@ -167,11 +165,9 @@ export interface GetActionOpts {
 export async function getAction(ref: string, opts: GetActionOpts = {}): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const id = await resolveRef(ref, {
       client,
       classId: TODO_CLASS as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     const doc = await client.findOne(TODO_CLASS, { _id: id as Ref<ToDo> })
     if (!doc) throw new CliError(ExitCode.NotFound, `action ${ref} not found`)
@@ -242,7 +238,6 @@ export async function createAction(opts: CreateActionOpts): Promise<void> {
     : (opts.description ? opts.description : '')
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const user = await resolveEmployeeId(client, opts.owner)
     if (opts.priority && !TODO_PRIORITIES.has(opts.priority)) {
       throw new CliError(ExitCode.Validation, `invalid --priority: ${opts.priority}`, `expected one of ${[...TODO_PRIORITIES].join(' | ')}`)
@@ -259,7 +254,6 @@ export async function createAction(opts: CreateActionOpts): Promise<void> {
       attachedTo = await resolveRef(opts.attachedTo, {
         client,
         classId: opts.attachedToClass as Ref<Class<Doc>>,
-        workspaceId: account.uuid
       })
       attachedToClass = opts.attachedToClass as Ref<Class<Doc>>
     } else {
@@ -317,11 +311,9 @@ export interface UpdateActionOpts {
 export async function updateAction(ref: string, opts: UpdateActionOpts): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const id = await resolveRef(ref, {
       client,
       classId: TODO_CLASS as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     const todo = await client.findOne(TODO_CLASS, { _id: id as Ref<ToDo> })
     if (!todo) throw new CliError(ExitCode.NotFound, `action ${ref} not found`)
@@ -379,11 +371,9 @@ export async function updateAction(ref: string, opts: UpdateActionOpts): Promise
 export async function completeAction(ref: string, opts: { dryRun?: boolean; json?: boolean; ci?: boolean; workspace?: string; url?: string } = {}): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const id = await resolveRef(ref, {
       client,
       classId: TODO_CLASS as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     const todo = await client.findOne(TODO_CLASS, { _id: id as Ref<ToDo> })
     if (!todo) throw new CliError(ExitCode.NotFound, `action ${ref} not found`)
@@ -411,11 +401,9 @@ export async function completeAction(ref: string, opts: { dryRun?: boolean; json
 export async function reopenAction(ref: string, opts: { dryRun?: boolean; json?: boolean; ci?: boolean; workspace?: string; url?: string } = {}): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const id = await resolveRef(ref, {
       client,
       classId: TODO_CLASS as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     const todo = await client.findOne(TODO_CLASS, { _id: id as Ref<ToDo> })
     if (!todo) throw new CliError(ExitCode.NotFound, `action ${ref} not found`)
@@ -445,11 +433,9 @@ export async function reopenAction(ref: string, opts: { dryRun?: boolean; json?:
 export async function deleteActions(refs: string[], opts: { dryRun?: boolean; workspace?: string; url?: string; yes?: boolean } = {}): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const ids = await resolveRefs(refs, {
       client,
       classId: TODO_CLASS as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     if (!opts.yes && ids.length > 1) throw new CliError(ExitCode.Validation, `destructive: deleting ${refs.length} actions requires --yes`, 're-run with --yes to confirm')
     let deleted = 0, skipped = 0
@@ -494,14 +480,13 @@ export async function scheduleAction(ref: string, opts: ScheduleActionOpts): Pro
 
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const todoId = await resolveRef(ref, {
       client,
       classId: TODO_CLASS as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     const todo = await client.findOne(TODO_CLASS, { _id: todoId as Ref<ToDo> })
     if (!todo) throw new CliError(ExitCode.NotFound, `action ${ref} not found`)
+    const account = await client.getAccount()
     const startMs = parseDate(opts.start, '--start')
     const dueMs = startMs + opts.duration * 60 * 1000
     const data: Record<string, unknown> = {
@@ -541,11 +526,9 @@ export async function scheduleAction(ref: string, opts: ScheduleActionOpts): Pro
 export async function unscheduleAction(ref: string, opts: { slotId?: string; yes?: boolean; dryRun?: boolean; workspace?: string; url?: string } = {}): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const todoId = await resolveRef(ref, {
       client,
       classId: TODO_CLASS as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     const todo = await client.findOne(TODO_CLASS, { _id: todoId as Ref<ToDo> })
     if (!todo) throw new CliError(ExitCode.NotFound, `action ${ref} not found`)

@@ -39,11 +39,9 @@ export async function listComponents(opts: { project?: string; limit?: number; o
 export async function getComponent(ref: string, opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string } = {}): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const id = await resolveRef(ref, {
       client,
       classId: CLASS.Component as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     const doc = await client.findOne(CLASS.Component as Ref<Class<Component>>, { _id: id as Ref<Component> })
     if (!doc) throw new CliError(ExitCode.NotFound, `component ${ref} not found`)
@@ -100,11 +98,9 @@ export async function createComponent(opts: {
 export async function updateComponent(ref: string, opts: { label?: string; description?: string; json?: boolean; ci?: boolean; dryRun?: boolean; workspace?: string; url?: string }): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const id = await resolveRef(ref, {
       client,
       classId: CLASS.Component as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     const doc = await client.findOne(CLASS.Component as Ref<Class<Component>>, { _id: id as Ref<Component> })
     if (!doc) throw new CliError(ExitCode.NotFound, `component ${ref} not found`)
@@ -129,11 +125,9 @@ export async function updateComponent(ref: string, opts: { label?: string; descr
 export async function deleteComponents(refs: string[], opts: { dryRun?: boolean; workspace?: string; url?: string; yes?: boolean } = {}): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const ids = await resolveRefs(refs, {
       client,
       classId: CLASS.Component as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     if (!opts.yes && ids.length > 1) throw new CliError(ExitCode.Validation, `destructive: deleting ${ids.length} components requires --yes`, 're-run with --yes to confirm')
     let deleted = 0, skipped = 0

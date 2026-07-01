@@ -60,11 +60,9 @@ export async function listCardSpaces(opts: { limit?: number; offset?: number; js
 export async function getCardSpace(ref: string, opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string }): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const id = await resolveRef(ref, {
       client,
       classId: CLASS.CardSpace as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     const doc = await client.findOne(CLASS.CardSpace as Ref<Class<CardSpace>>, { _id: id as Ref<CardSpace> })
     if (!doc) throw new CliError(ExitCode.NotFound, `card-space ${ref} not found`)
@@ -115,11 +113,9 @@ export async function createCardSpace(opts: {
 export async function deleteCardSpaces(refs: string[], opts: { workspace?: string; url?: string; yes?: boolean; dryRun?: boolean } = {}): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const ids = await resolveRefs(refs, {
       client,
       classId: CLASS.CardSpace as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     if (!opts.yes && ids.length > 1) throw new CliError(ExitCode.Validation, `destructive: deleting ${ids.length} card-spaces requires --yes`, 're-run with --yes to confirm')
     let deleted = 0, skipped = 0
@@ -139,11 +135,9 @@ export async function listMasterTags(opts: { cardSpace?: string; limit?: number;
   try {
     const query: Record<string, unknown> = {}
     if (opts.cardSpace) {
-      const account = await client.getAccount()
       const spaceId = await resolveRef(opts.cardSpace, {
         client,
         classId: CLASS.CardSpace as Ref<Class<Doc>>,
-        workspaceId: account.uuid
       })
       query.space = spaceId
     }
@@ -170,20 +164,16 @@ export async function listCards(opts: { cardSpace?: string; masterTag?: string; 
   try {
     const query: Record<string, unknown> = {}
     if (opts.cardSpace) {
-      const account = await client.getAccount()
       const spaceId = await resolveRef(opts.cardSpace, {
         client,
         classId: CLASS.CardSpace as Ref<Class<Doc>>,
-        workspaceId: account.uuid
       })
       query.space = spaceId
     }
     if (opts.masterTag) {
-      const account = await client.getAccount()
       const tagId = await resolveRef(opts.masterTag, {
         client,
         classId: CLASS.MasterTag as Ref<Class<Doc>>,
-        workspaceId: account.uuid
       })
       query._class = tagId
     }
@@ -201,11 +191,9 @@ export async function listCards(opts: { cardSpace?: string; masterTag?: string; 
 export async function getCard(ref: string, opts: { json?: boolean; ci?: boolean; markdown?: boolean; workspace?: string; url?: string }): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const id = await resolveRef(ref, {
       client,
       classId: CLASS.Card as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     const doc = await client.findOne(CLASS.Card as Ref<Class<CardDoc>>, { _id: id as Ref<CardDoc> })
     if (!doc) throw new CliError(ExitCode.NotFound, `card ${ref} not found`)
@@ -243,17 +231,14 @@ export async function createCard(opts: {
   if (!opts.masterTag) throw new CliError(ExitCode.Validation, 'missing --master-tag')
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const tagId = await resolveRef(opts.masterTag, {
       client,
       classId: CLASS.MasterTag as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     const space = opts.cardSpace
       ? await resolveRef(opts.cardSpace, {
         client,
         classId: CLASS.CardSpace as Ref<Class<Doc>>,
-        workspaceId: account.uuid
       })
       : ('card:space:Default' as Ref<Space>)
 
@@ -322,11 +307,9 @@ export async function updateCard(ref: string, opts: {
   }
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const id = await resolveRef(ref, {
       client,
       classId: CLASS.Card as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     const doc = await client.findOne(CLASS.Card as Ref<Class<CardDoc>>, { _id: id as Ref<CardDoc> })
     if (!doc) throw new CliError(ExitCode.NotFound, `card ${ref} not found`)
@@ -353,11 +336,9 @@ export async function updateCard(ref: string, opts: {
 export async function deleteCards(refs: string[], opts: { workspace?: string; url?: string; yes?: boolean; dryRun?: boolean } = {}): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const account = await client.getAccount()
     const ids = await resolveRefs(refs, {
       client,
       classId: CLASS.Card as Ref<Class<Doc>>,
-      workspaceId: account.uuid
     })
     if (!opts.yes && ids.length > 1) throw new CliError(ExitCode.Validation, `destructive: deleting ${refs.length} cards requires --yes`, 're-run with --yes to confirm')
     let deleted = 0, skipped = 0
