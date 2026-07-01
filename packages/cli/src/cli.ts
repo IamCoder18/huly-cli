@@ -378,9 +378,6 @@ Auto-creation & defaults:
     .action(async (opts, cmd) => {
       try { await createProject({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
-    .action(async (opts, cmd) => {
-      try { await createProject({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
-    })
   project
     .command('update <ref>')
     .description('Update a project')
@@ -913,7 +910,7 @@ to a workspace member with no existing DM, the DM is auto-created.
 includes), account findSocialIdBySocialKey, raw UUID, single-other-member
 heuristic (if exactly one other workspace member exists, picks them).
 
-Note: --dm-create does NOT require --yes.`)
+Note: huly dm create does NOT require --yes.`)
     .action(async (opts, cmd) => {
       try { await createDm({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
@@ -1125,9 +1122,10 @@ Defaults (when omitted):
   doneOn               null
   rank                 '0|aaaaa:'
 
-Ref resolution for --owner: tries me|empty, raw _id, exact Person name
-or email match (case-insensitive), then substring (includes) match. Limit
-200 results. Pass exact email to avoid ambiguity in substring matching.`)
+Ref resolution for --owner: tries me|empty, raw _id, exact match against
+Person.name (case-insensitive) and Person.email if the field is populated,
+then substring (includes) match against Person.name. Limit 200 results.
+Pass exact email to avoid ambiguity in substring matching.`)
     .action(async (opts, cmd) => {
       try { await createAction({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
@@ -1462,8 +1460,8 @@ Defaults:
 Notes:
   - Past and future dates are allowed (no server-side validation).
   - Negative values for --minutes/--hours are rejected with a Validation
-    error ('--minutes and --hours must be positive') instead of corrupting
-    reportedTime.
+    error ('--minutes and --hours must be positive'); passing --hours 0
+    or omitting both produces 'missing --minutes (or --hours)'.
   - The entry is tracker:class:TimeSpendReport (NOT time:class:...).
   - Use 'huly time report <issue>' to read back; 'huly time list' to scan.`)
     .action(async (opts, cmd) => {

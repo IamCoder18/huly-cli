@@ -987,7 +987,7 @@ done
 ```bash
 # Documents whose teamspace was deleted
 huly document list --json | \
-  jq -r '.[] | select(.space == null) ._id' \
+  jq -r '.[] | select(.space == null) | ._id' \
   | xargs -I{} huly document delete {} --yes
 ```
 
