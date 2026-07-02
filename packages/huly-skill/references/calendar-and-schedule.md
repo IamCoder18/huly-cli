@@ -260,7 +260,7 @@ There is no CLI surface for this. EXDATE is silently ignored. Options:
 START="$(date -u +%Y-%m-%dT00:00:00Z)"
 END="$(date -u -d 'tomorrow' +%Y-%m-%dT00:00:00Z)"
 huly calendar list --start "$START" --end "$END" --json \
-  | jq -r '.[] | "\(.startDate | fromdate | strftime("%H:%M"))\t\(.title)\t\(.location // "")"'
+  | jq -r '.[] | "\(.startDate / 1000 | strftime("%H:%M"))\t\(.title)\t\(.location // "")"'
 ```
 
 ### Log time and check the parent chain recomputed

@@ -184,7 +184,7 @@ huly time delete <entry-ref>... --yes
 
 ```bash
 huly time list --start "$(date -u +%Y-%m-%dT00:00:00Z)" --json --limit 1000 \
-  | jq --arg since "2026-06-01" '[.[] | select(.date >= ($since | todate))]'
+  | jq --arg since "2026-06-01" '[.[] | select(.date >= ($since | fromdateiso8601 * 1000))]'
 ```
 
 **Gotcha:** passing both `--minutes` and `--hours` throws `Validation: pass only one of --minutes or --hours` (`resources/time.ts:86-88`). Pick one.
