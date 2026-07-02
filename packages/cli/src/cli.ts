@@ -1294,10 +1294,10 @@ auto-creates a 'General' teamspace (type space-type:default, members [],
 description 'Default teamspace (auto-created)') and uses it. No prompt.
 
 Body handling: --body is stored as a RAW STRING, not a MarkupContent
-instance. The SDK's markup-upload path is deliberately bypassed (the
-collaborator service hangs on selfhost). This means: round-trip works
-for plain Markdown; rich-text features (mentions, formatted nodes, embeds)
-won't survive; --markdown on read uses a 5s timeout with a string fallback.
+instance. The CLI deliberately bypasses the SDK's markup-upload path;
+round-trip works for plain Markdown; rich-text features (mentions,
+formatted nodes, embeds) won't survive; --markdown on read uses a 5s
+timeout with a string fallback.
 
 Ref resolution for --teamspace: tries raw _id, index lookup, exact name
 match (case-sensitive), then first teamspace. --parent resolves within

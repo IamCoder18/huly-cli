@@ -1,4 +1,4 @@
-import { readEnv, isNonInteractive } from '../auth/env.js'
+import { readEnv, isNonInteractive, requireUrl } from '../auth/env.js'
 import { loginAndCache, listWorkspaces, accountClient, resolveToken } from '../auth/client.js'
 import { setCachedWorkspaceToken, writeActiveWorkspace, readActiveWorkspace } from '../auth/cache.js'
 import { promptEmail, promptPassword, pickWorkspace } from '../auth/prompts.js'
@@ -20,7 +20,7 @@ interface LoginOpts {
 
 export async function loginCommand(opts: LoginOpts = {}): Promise<void> {
   const env = readEnv()
-  const url = opts.url ?? env.url
+  const url = requireUrl(opts.url ?? env.url)
   const forceInteractive = !opts.headless && !opts.nonInteractive && !isNonInteractive()
 
   let email = opts.email ?? env.email

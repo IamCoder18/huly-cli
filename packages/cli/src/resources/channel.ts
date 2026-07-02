@@ -8,7 +8,6 @@ import { resolveRef, resolveRefs, buildIndex, invalidateIndex } from '../transpo
 import { shouldJson, json, table, COLUMNS, C, success, updated, bulkRemoved } from "../output/format.js"
 import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
-import { readEnv } from '../auth/env.js'
 
 type Channel = Doc & {
   name: string
@@ -87,8 +86,7 @@ async function resolvePersonId(
   // whether a contact:class:Person doc was created in the workspace.
   let otherMemberCount = -1
   try {
-    const env = readEnv()
-    const accountClient = await connectAccountCli({ url: opts.url ?? env.url, workspace: opts.workspace ?? env.workspace })
+    const accountClient = await connectAccountCli(opts)
     const members = await accountClient.getWorkspaceMembers()
     if (members.length > 0) {
       const me = await accountClient.getPerson().catch(() => null)

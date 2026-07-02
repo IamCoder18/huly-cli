@@ -1,4 +1,4 @@
-import { readEnv } from '../auth/env.js'
+import { readEnv, requireUrl } from '../auth/env.js'
 import { connectPlatform, accountClient, resolveToken } from '../auth/client.js'
 import { readActiveWorkspace, findAnyCachedCreds } from '../auth/cache.js'
 import { shouldJson, json, kv, header, C, colorizeStatus } from '../output/format.js'
@@ -6,7 +6,7 @@ import { withSpinner } from '../output/progress.js'
 
 export async function whoamiCommand(opts: { url?: string; workspace?: string; json?: boolean; ci?: boolean } = {}): Promise<void> {
   const env = readEnv()
-  const url = opts.url ?? env.url
+  const url = requireUrl(opts.url ?? env.url)
   const active = await readActiveWorkspace()
   const workspace = opts.workspace ?? env.workspace ?? active
 

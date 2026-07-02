@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 import https from 'node:https'
+import { CliError, ExitCode } from '../output/errors.js'
 
 export interface HulyEnv {
   url: string
@@ -40,7 +41,7 @@ function loadDotenvFile(): void {
 export function readEnv(env: NodeJS.ProcessEnv = process.env): HulyEnv {
   loadDotenvFile()
   return {
-    url: env.HULY_URL ?? 'https://huly.aaravlabs.com',
+    url: env.HULY_URL ?? '',
     email: env.HULY_EMAIL,
     password: env.HULY_PASSWORD,
     token: env.HULY_TOKEN,
@@ -50,6 +51,19 @@ export function readEnv(env: NodeJS.ProcessEnv = process.env): HulyEnv {
     firstName: env.HULY_FIRST_NAME,
     lastName: env.HULY_LAST_NAME
   }
+}
+
+/**
+ * Throws an explicit CliError when the resolved URL is empty. Use this at
+ * any call site that actually needs the URL (i.e. every connect/login/signup
+ * path) so the user sees `HULY_URL is required` instead of a downstream
+ * `invalid url` from undici / `ws`.
+ */
+export function requireUrl(url: string | undefined): string {
+  if (!url || url.trim() === '') {
+    throw new CliError(ExitCode.Validation, 'HULY_URL is required', 'pass --url <server> or set HULY_URL in your env')
+  }
+  return url
 }
 
 export function isNonInteractive(env: NodeJS.ProcessEnv = process.env): boolean {

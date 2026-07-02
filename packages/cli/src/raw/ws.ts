@@ -1,5 +1,5 @@
 import WebSocket from 'ws'
-import { readEnv, insecureTLS } from '../auth/env.js'
+import { readEnv, insecureTLS, requireUrl } from '../auth/env.js'
 import { accountClient, resolveToken } from '../auth/client.js'
 import { readActiveWorkspace } from '../auth/cache.js'
 import { CliError, ExitCode } from '../output/errors.js'
@@ -40,7 +40,7 @@ const PONG = 'pong!'
 
 export async function wsCommand(method: string, paramsRaw: string | undefined, opts: WsOpts = {}): Promise<void> {
   const env = readEnv()
-  const url = (opts.url ?? env.url).replace(/\/$/, '')
+  const url = requireUrl(opts.url ?? env.url).replace(/\/$/, '')
   const workspace = opts.workspace ?? env.workspace ?? (await readActiveWorkspace())
 
   // Parse params up front so errors throw before opening the socket.
