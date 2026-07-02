@@ -3,7 +3,7 @@ type Tx = any
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, invalidateIndex } from '../transport/ref-resolver.js'
-import { shouldJson, json, table, header, kv, C, success, updated, bulkRemoved, relTime } from '../output/format.js'
+import { shouldJson, json, table, header, kv, C, success, updated, bulkRemoved, refString, relTime } from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
 import { readEnv } from '../auth/env.js'
@@ -34,6 +34,15 @@ type Person = Doc & {
 
 const REQUEST_CLASS = CLASS.Request as Ref<Class<RequestDoc>>
 const PERSON_CLASS = CLASS.Person as Ref<Class<Person>>
+
+/**
+ * Canonical "current user" identity used for authorization checks.
+ * Prefers the Person ref when present; falls back to the account UUID
+ * right after signup when no Person doc has propagated yet.
+ */
+function currentUserId(account: { person?: Ref<Doc>; uuid: Ref<Doc> }): Ref<Doc> {
+  return account.person ?? account.uuid
+}
 
 async function resolvePersonIds(client: Awaited<ReturnType<typeof connectCli>>, emails: string[]): Promise<Ref<Doc>[]> {
   const persons = (await client.findAll(PERSON_CLASS, {}, { limit: 500 })) as Person[]
@@ -181,7 +190,7 @@ export async function createApproval(opts: CreateApprovalOpts): Promise<void> {
     const id = await withSpinner('Creating approval request…', () => client.addCollection(REQUEST_CLASS, (target as Doc).space as Ref<Doc>, aId, aClass, 'requests', data as any), opts)
     invalidateIndex(client, REQUEST_CLASS)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ _id: id, ...data }); return }
-    success('created approval', '', id as unknown as string)
+    success('created approval', '', refString(id))
   } finally { await client.close() }
 }
 
@@ -206,7 +215,7 @@ export async function commentOnApproval(opts: CommentOpts): Promise<void> {
     const data: Record<string, unknown> = { message: opts.body }
     if (opts.decision) data.decision = opts.decision
     const cid = await withSpinner('Commenting…', () => client.addCollection('chunter:class:ChatMessage' as Ref<Class<Doc>>, doc.space as Ref<Doc>, id, REQUEST_CLASS, 'comments', data as any), opts)
-    success('commented', '', cid as unknown as string)
+    success('commented', '', refString(cid))
   } finally { await client.close() }
 }
 
@@ -241,7 +250,7 @@ export async function approveRequest(opts: ApproveOpts): Promise<void> {
     if (opts.comment) {
       await client.addCollection('chunter:class:ChatMessage' as Ref<Class<Doc>>, doc.space as Ref<Doc>, id, REQUEST_CLASS, 'comments', { message: opts.comment, decision: 'approve' } as any)
     }
-    updated('approved', id as unknown as string)
+    updated('approved', refString(id))
   } finally { await client.close() }
 }
 
@@ -273,7 +282,7 @@ export async function rejectRequest(opts: RejectOpts): Promise<void> {
     if (opts.rejectedTxJson) ops.rejectedTx = JSON.parse(opts.rejectedTxJson)
     await withSpinner('Rejecting…', () => client.updateCollection(REQUEST_CLASS, doc.space as unknown as Ref<Space>, id as Ref<Doc>, doc.attachedTo, doc.attachedToClass, 'requests', ops as any), opts)
     await client.addCollection('chunter:class:ChatMessage' as Ref<Class<Doc>>, doc.space as Ref<Doc>, id, REQUEST_CLASS, 'comments', { message: opts.comment, decision: 'reject' } as any)
-    updated('rejected', id as unknown as string)
+    updated('rejected', refString(id))
   } finally { await client.close() }
 }
 
@@ -283,39 +292,46 @@ export async function cancelRequest(opts: { ref?: string; workspace?: string; ur
     const { id, doc } = await fetchRequest(client, opts.ref!)
     if (doc.status !== 'Active') throw new CliError(ExitCode.Validation, `request is ${doc.status}, not Active`)
     const account = await client.getAccount()
-    // Cancel allowed only by the requester. Filter once to avoid the
-    // `[undefined].includes(...)` TypeError when doc.requested is empty.
-    const requesterIds = (doc.requested ?? []).map(String)
-    const isRequester = requesterIds.includes(String(account.person ?? '')) || requesterIds.includes(String(account.uuid))
-    if (!isRequester) {
+    // Cancel allowed only by the requester. Use the canonical "current
+    // user" identity (Person._id when present, else account.uuid) so
+    // `[undefined].includes(...)` can't fire and requesters from any
+    // identity shape match consistently.
+    const requesterIds = (doc.requested ?? []).map((r) => String(r))
+    const meId = String(currentUserId(account as { person?: Ref<Doc>; uuid: Ref<Doc> }))
+    if (!requesterIds.includes(meId)) {
       throw new CliError(ExitCode.Auth, 'only requesters can cancel')
     }
     const ops: Record<string, unknown> = { status: 'Cancelled' }
     await withSpinner('Cancelling…', () => client.updateCollection(REQUEST_CLASS, doc.space as unknown as Ref<Space>, id as Ref<Doc>, doc.attachedTo, doc.attachedToClass, 'requests', ops as any), opts)
-    updated('cancelled', id as unknown as string)
+    updated('cancelled', refString(id))
   } finally { await client.close() }
 }
 
-export async function deleteApprovals(refs: string[], opts: { workspace?: string; url?: string; yes?: boolean } = {}): Promise<void> {
+export async function deleteApprovals(refs: string[], opts: { workspace?: string; url?: string; yes?: boolean; json?: boolean; ci?: boolean } = {}): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const ids = await resolveRefs(refs, { client, classId: REQUEST_CLASS as Ref<Class<Doc>> })
     if (!opts.yes && ids.length > 1) throw new CliError(ExitCode.Validation, `destructive: deleting ${ids.length} approvals requires --yes`)
-    let deleted = 0, skipped = 0
+    const removed: Ref<Doc>[] = []
+    const errors: Array<{ id: string; message: string }> = []
     for (const id of ids) {
       const doc = (await client.findOne(REQUEST_CLASS, { _id: id as Ref<RequestDoc> })) as RequestDoc | undefined
-      if (!doc) { skipped++; continue }
+      if (!doc) { errors.push({ id: String(id), message: 'not found' }); continue }
       try {
         // Request is an AttachedDoc — delete via removeCollection against
         // the 'requests' collection tuple on the attachedTo doc.
         await client.removeCollection(REQUEST_CLASS, doc.space as Ref<Doc>, id as Ref<Doc>, doc.attachedTo, doc.attachedToClass, 'requests')
-        deleted++
+        removed.push(id as Ref<Doc>)
       } catch (err) {
         // Surface non-silent failures to make debugging possible.
-        console.error('  approval delete error:', (err as Error).message)
-        skipped++
+        errors.push({ id: String(id), message: (err as Error).message })
       }
     }
-    bulkRemoved(deleted, skipped, 'approvals')
+    if (shouldJson({ json: opts.json, ci: opts.ci })) {
+      json({ removed, errors })
+      return
+    }
+    if (errors.length > 0) for (const e of errors) console.error(`  ${e.id}: ${e.message}`)
+    bulkRemoved(removed.length, errors.length === removed.length ? errors.length : errors.length, 'approvals')
   } finally { await client.close() }
 }

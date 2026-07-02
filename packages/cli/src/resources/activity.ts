@@ -3,7 +3,7 @@ import { SPACE } from '../transport/identifiers.js'
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, invalidateIndex } from '../transport/ref-resolver.js'
-import { shouldJson, json, table, header, kv, C, success, updated, bulkRemoved, relTime } from '../output/format.js'
+import { shouldJson, json, table, header, kv, C, success, updated, bulkRemoved, refString, relTime } from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
 
@@ -120,7 +120,7 @@ export async function pinActivity(ref: string, opts: { unpin?: boolean; workspac
     // NOT updateCollection. The latter would mutate a non-existent
     // 'activity' collection tuple on the attached-to doc.
     await client.updateDoc(ACTIVITY_CLASS, doc.space as unknown as Ref<Space>, id as Ref<Doc>, { isPinned: !opts.unpin } as any)
-    success(opts.unpin ? 'unpinned' : 'pinned', '', id as unknown as string)
+    success(opts.unpin ? 'unpinned' : 'pinned', '', refString(id))
   } finally { await client.close() }
 }
 
@@ -154,7 +154,7 @@ export async function addReaction(opts: ReactionOpts): Promise<void> {
     }
     const rid = await withSpinner('Adding reaction…', () => client.addCollection(REACTION_CLASS, doc.space as Ref<Doc>, id, ACTIVITY_CLASS, 'reactions', data as any), opts)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ _id: rid, ...data }); return }
-    success('reacted', `${opts.emoji} on ${opts.target}`, rid as unknown as string)
+    success('reacted', `${opts.emoji} on ${opts.target}`, refString(rid))
   } finally { await client.close() }
 }
 
@@ -225,7 +225,7 @@ export async function addReply(opts: ReplyOpts): Promise<void> {
     const rid = await withSpinner('Replying…', () => client.addCollection(ACTIVITY_CLASS, doc.space as Ref<Doc>, id, ACTIVITY_CLASS, 'replies', data as any), opts)
     invalidateIndex(client, ACTIVITY_CLASS)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ _id: rid, ...data }); return }
-    success('replied', '', rid as unknown as string)
+    success('replied', '', refString(rid))
   } finally { await client.close() }
 }
 
@@ -239,25 +239,33 @@ export async function updateReply(ref: string, opts: { body?: string; workspace?
     // doc itself — updateDoc, NOT updateCollection against the parent's
     // 'replies' tuple (which doesn't exist).
     await client.updateDoc(ACTIVITY_CLASS, doc.space as unknown as Ref<Space>, id as Ref<Doc>, { message: opts.body, modifiedOn: Date.now() } as any)
-    updated('updated reply', id as unknown as string)
+    updated('updated reply', refString(id))
   } finally { await client.close() }
 }
 
-export async function deleteReplies(refs: string[], opts: { workspace?: string; url?: string; yes?: boolean } = {}): Promise<void> {
+export async function deleteReplies(refs: string[], opts: { workspace?: string; url?: string; yes?: boolean; json?: boolean; ci?: boolean } = {}): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const ids = await resolveRefs(refs, { client, classId: ACTIVITY_CLASS as Ref<Class<Doc>> })
-    if (!opts.yes && ids.length > 1) throw new CliError(ExitCode.Validation, `destructive: deleting ${ids.length} replies requires --yes`)
-    let deleted = 0, skipped = 0
+    if (!opts.yes && ids.length > 1) throw new CliError(ExitCode.Validation, `destructive: deleting ${refs.length} replies requires --yes`)
+    const removed: Ref<Doc>[] = []
+    const errors: Array<{ id: string; message: string }> = []
     for (const id of ids) {
       const doc = (await client.findOne(ACTIVITY_CLASS, { _id: id as Ref<ActivityMessage> })) as ActivityMessage | undefined
-      if (!doc || !doc.attachedTo) { skipped++; continue }
+      if (!doc || !doc.attachedTo) { errors.push({ id: String(id), message: 'not found or unattached' }); continue }
       try {
         await client.removeCollection(ACTIVITY_CLASS, doc.space as Ref<Doc>, id as Ref<Doc>, doc.attachedTo, doc.attachedToClass ?? ACTIVITY_CLASS, doc.collection ?? 'replies')
-        deleted++
-      } catch { skipped++ }
+        removed.push(id as Ref<Doc>)
+      } catch (err) {
+        errors.push({ id: String(id), message: (err as Error).message })
+      }
     }
-    bulkRemoved(deleted, skipped, 'replies')
+    if (shouldJson({ json: opts.json, ci: opts.ci })) {
+      json({ removed, errors })
+      return
+    }
+    if (errors.length > 0) for (const e of errors) console.error(`  ${e.id}: ${e.message}`)
+    bulkRemoved(removed.length, errors.length, 'replies')
   } finally { await client.close() }
 }
 
@@ -280,7 +288,7 @@ export async function listSaved(opts: SavedOpts = {}): Promise<void> {
     // space = SPACE.Workspace so the server's per-user security
     // middleware can scope to the current account.
     const account = await client.getAccount()
-    const docs = (await client.findAll(SAVED_CLASS, { space: SPACE.Workspace as Ref<Doc>, modifiedBy: account.uuid as unknown as string })) as SavedMessage[]
+    const docs = (await client.findAll(SAVED_CLASS, { space: SPACE.Workspace as Ref<Doc>, modifiedBy: String(account.uuid) })) as SavedMessage[]
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json(docs); return }
     if (docs.length === 0) { console.log(C.muted('(no saved messages)')); return }
     table(docs as unknown as Record<string, unknown>[], [
@@ -301,7 +309,7 @@ export async function saveMessage(opts: SavedOpts): Promise<void> {
     // scope for a per-user preference.
     const data: Record<string, unknown> = { attachedTo: id }
     const sid = await withSpinner('Saving…', () => client.createDoc(SAVED_CLASS, SPACE.Workspace as Ref<Space>, data as any), opts)
-    success('saved', '', sid as unknown as string)
+    success('saved', '', refString(sid))
   } finally { await client.close() }
 }
 
@@ -313,7 +321,7 @@ export async function unsaveMessage(opts: SavedOpts): Promise<void> {
     // Per-user filter via modifiedBy; without this, unsave would wipe
     // every other user's bookmark of the message.
     const account = await client.getAccount()
-    const all = (await client.findAll(SAVED_CLASS, { space: SPACE.Workspace as Ref<Doc>, attachedTo: id, modifiedBy: account.uuid as unknown as string })) as SavedMessage[]
+    const all = (await client.findAll(SAVED_CLASS, { space: SPACE.Workspace as Ref<Doc>, attachedTo: id, modifiedBy: String(account.uuid) })) as SavedMessage[]
     for (const s of all) {
       await client.removeDoc(SAVED_CLASS, (s as Doc).space as Ref<Doc>, s._id as Ref<Doc>)
     }
@@ -330,21 +338,30 @@ export async function listMentions(opts: { workspace?: string; url?: string; jso
     // A newly-created account may have no Person doc yet. Without this
     // guard, findOne({ _id: undefined }) would have its undefined key
     // stripped by the query serializer and match every Person in the
-    // workspace — leaking everyone's mentions.
+    // workspace — leaking everyone's mentions. As a fallback, search by
+    // the account UUID (the UserMentionInfo.user field on the platform
+    // uses the same identity it was created with, which is the account
+    // UUID in single-user workspaces and the Person ref in multi-user).
     if (account.person === undefined) {
-      if (shouldJson({ json: opts.json, ci: opts.ci })) { json([]); return }
-      console.log(C.muted('(no mentions — current account has no Person profile yet)'))
+      const byUuid = (await client.findAll(MENTION_CLASS, { user: account.uuid as unknown as Ref<Doc> })) as UserMentionInfo[]
+      if (shouldJson({ json: opts.json, ci: opts.ci })) { json(byUuid); return }
+      if (byUuid.length === 0) { console.log(C.muted('(no mentions — current account has no Person profile yet)')) }
+      renderMentions(byUuid)
       return
     }
     const me = await client.findOne('contact:class:Person' as Ref<Class<Doc>>, { _id: account.person as unknown as Ref<Doc> })
     const userRef = (me?._id ?? account.person) as Ref<Doc>
     const all = (await client.findAll(MENTION_CLASS, { user: userRef })) as UserMentionInfo[]
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json(all); return }
-    if (all.length === 0) { console.log(C.muted('(no mentions)')); return }
-    table(all as unknown as Record<string, unknown>[], [
-      { key: 'content', header: 'CONTEXT', format: (r) => String((r as UserMentionInfo).content ?? '').slice(0, 60) },
-      { key: 'attachedTo', header: 'MESSAGE', format: (r) => C.id(String((r as UserMentionInfo).attachedTo ?? '').slice(-12)) },
-      { key: '_id', header: '_ID', format: (r) => C.id(String((r as UserMentionInfo)._id).slice(-12)) }
-    ], { count: true, title: 'mentions' })
+    renderMentions(all)
   } finally { await client.close() }
+}
+
+function renderMentions(all: UserMentionInfo[]): void {
+  if (all.length === 0) { console.log(C.muted('(no mentions)')); return }
+  table(all as unknown as Record<string, unknown>[], [
+    { key: 'content', header: 'CONTEXT', format: (r) => String((r as UserMentionInfo).content ?? '').slice(0, 60) },
+    { key: 'attachedTo', header: 'MESSAGE', format: (r) => C.id(String((r as UserMentionInfo).attachedTo ?? '').slice(-12)) },
+    { key: '_id', header: '_ID', format: (r) => C.id(String((r as UserMentionInfo)._id).slice(-12)) }
+  ], { count: true, title: 'mentions' })
 }

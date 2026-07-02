@@ -2,7 +2,7 @@ import type { Doc, Ref, Class } from '@hcengineering/core'
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, invalidateIndex } from '../transport/ref-resolver.js'
-import { shouldJson, json, table, header, kv, C, success, updated, bulkRemoved, relTime } from '../output/format.js'
+import { shouldJson, json, table, header, kv, C, success, updated, bulkRemoved, refString, relTime } from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
 
@@ -312,7 +312,7 @@ export async function pinContext(ref: string, opts: { unpin?: boolean; workspace
     const doc = await client.findOne(CONTEXT_CLASS, { _id: id })
     if (!doc) throw new CliError(ExitCode.NotFound, `context ${ref} not found`)
     await client.updateDoc(CONTEXT_CLASS, doc.space as Ref<Doc>, id as Ref<Doc>, { isPinned: !opts.unpin } as any)
-    success(opts.unpin ? 'unpinned context' : 'pinned context', '', id as unknown as string)
+    success(opts.unpin ? 'unpinned context' : 'pinned context', '', refString(id))
   } finally { await client.close() }
 }
 
@@ -323,7 +323,7 @@ export async function hideContext(ref: string, opts: { unhide?: boolean; workspa
     const doc = await client.findOne(CONTEXT_CLASS, { _id: id })
     if (!doc) throw new CliError(ExitCode.NotFound, `context ${ref} not found`)
     await client.updateDoc(CONTEXT_CLASS, doc.space as Ref<Doc>, id as Ref<Doc>, { hidden: !opts.unhide } as any)
-    success(opts.unhide ? 'unhid context' : 'hid context', '', id as unknown as string)
+    success(opts.unhide ? 'unhid context' : 'hid context', '', refString(id))
   } finally { await client.close() }
 }
 
@@ -359,7 +359,7 @@ export async function subscribe(opts: SubOpts): Promise<void> {
     const id = await withSpinner('Subscribing…', () => client.addCollection(CONTEXT_CLASS, (target as Doc).space as Ref<Doc>, tId, tClass, 'contexts', data as any), opts)
     invalidateIndex(client, CONTEXT_CLASS)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ _id: id, ...data }); return }
-    success('subscribed', opts.target, id as unknown as string)
+    success('subscribed', opts.target, refString(id))
   } finally { await client.close() }
 }
 
@@ -393,7 +393,7 @@ export async function listSettings(opts: SettingsOpts = {}): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const account = await client.getAccount()
-    const q: Record<string, unknown> = { modifiedBy: account.uuid as unknown as string }
+    const q: Record<string, unknown> = { modifiedBy: String(account.uuid) }
     if (opts.provider) q.attachedTo = opts.provider as Ref<Doc>
     const docs = (await client.findAll(TYPE_SETTING_CLASS, q as any)) as NotificationTypeSetting[]
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json(docs); return }
@@ -432,16 +432,16 @@ export async function updateSetting(opts: UpdateSettingOpts): Promise<void> {
         're-login once the Person profile has propagated'
       )
     }
-    const existing = (await client.findAll(TYPE_SETTING_CLASS, { attachedTo: opts.provider as Ref<Doc>, type: opts.type as Ref<Doc>, modifiedBy: account.uuid as unknown as string })) as NotificationTypeSetting[]
+    const existing = (await client.findAll(TYPE_SETTING_CLASS, { attachedTo: opts.provider as Ref<Doc>, type: opts.type as Ref<Doc>, modifiedBy: String(account.uuid) })) as NotificationTypeSetting[]
     if (existing.length > 0) {
       await client.updateDoc(TYPE_SETTING_CLASS, existing[0].space as Ref<Doc>, existing[0]._id as Ref<Doc>, { enabled: opts.enabled } as any)
-      updated('updated setting', existing[0]._id as unknown as string)
+      updated('updated setting', refString(existing[0]._id))
     } else {
       const id = await client.addCollection(TYPE_SETTING_CLASS, account.person as Ref<Doc>, opts.provider as Ref<Doc>, PROVIDER_CLASS, 'types', {
         type: opts.type as Ref<Doc>,
         enabled: opts.enabled
       } as any)
-      success('created setting', '', id as unknown as string)
+      success('created setting', '', refString(id))
     }
   } finally { await client.close() }
 }

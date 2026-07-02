@@ -500,6 +500,22 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
       return
     }
 
+    // Helper: decrement the project's sequence when create fails (e.g.
+    // server validation rejected the doc). Best-effort: errors are logged
+    // but suppressed so the original error isn't masked.
+    const rollbackSequence = async (): Promise<void> => {
+      try {
+        await client.updateDoc(
+          CLASS.Project as Ref<Class<Doc>>,
+          'core:space:Space' as Ref<Space>,
+          project._id as Ref<Space>,
+          { $inc: { sequence: -1 } }
+        )
+      } catch (rollbackErr) {
+        console.error(`warning: $inc rollback failed: ${(rollbackErr as Error).message}`)
+      }
+    }
+
     let id: Ref<Doc>
     try {
       id = await withSpinner('Creating issue…', () =>
@@ -541,18 +557,8 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
             }) as Ref<Doc>
           } catch (bypassErr) {
             // Create failed after we already $inc'd the project's sequence;
-            // decrement so the next issue gets the correct number. Best-effort;
-            // log but don't mask the original error.
-            await client
-              .updateDoc(
-                CLASS.Project as Ref<Class<Doc>>,
-                'core:space:Space' as Ref<Space>,
-                project._id as Ref<Space>,
-                { $inc: { sequence: -1 } }
-              )
-              .catch((rollbackErr) => {
-                console.error(`warning: $inc rollback failed: ${(rollbackErr as Error).message}`)
-              })
+            // decrement so the next issue gets the correct number.
+            await rollbackSequence()
             throw bypassErr
           }
           if (id === undefined) throw err
@@ -581,16 +587,7 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
       } else {
         // Unexpected create error: roll back the $inc so the next issue
         // gets this number instead of skipping it.
-        await client
-          .updateDoc(
-            CLASS.Project as Ref<Class<Doc>>,
-            'core:space:Space' as Ref<Space>,
-            project._id as Ref<Space>,
-            { $inc: { sequence: -1 } }
-          )
-          .catch((rollbackErr) => {
-            console.error(`warning: $inc rollback failed: ${(rollbackErr as Error).message}`)
-          })
+        await rollbackSequence()
         throw err
       }
     }

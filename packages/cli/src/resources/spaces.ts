@@ -2,7 +2,7 @@ import type { Doc, Ref, Class, Space } from '@hcengineering/core'
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, invalidateIndex } from '../transport/ref-resolver.js'
-import { shouldJson, json, table, header, kv, COLUMNS, C, success, updated, bulkRemoved } from '../output/format.js'
+import { shouldJson, json, table, header, kv, COLUMNS, C, success, updated, bulkRemoved, refString } from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
 
@@ -138,7 +138,7 @@ export async function updateSpace(ref: string, opts: {
     // doc._id as the space causes the SDK to look up a space with that _id,
     // which fails server-side. Use the standard parent space ref.
     await withSpinner('Updating space…', () => client.updateDoc(CLASS.Space as Ref<Class<SpaceDoc>>, 'core:space:Space' as Ref<Space>, id as Ref<Doc>, ops as any), opts)
-    updated('updated space', id as unknown as string)
+    updated('updated space', refString(id))
   } finally { await client.close() }
 }
 
@@ -234,7 +234,7 @@ export async function addSpaceMembers(ref: string, members: string[], opts: { js
     if (added.length === 0) { console.log(C.muted('(no new members)')); return }
     await withSpinner('Adding members…', () => client.updateDoc(CLASS.Space as Ref<Class<SpaceDoc>>, 'core:space:Space' as Ref<Space>, id as Ref<Doc>, { $push: { members: { $each: added } } } as any), opts)
     invalidateIndex(client, CLASS.Space)
-    success('added members', `${added.length} to ${doc.name}`, id as unknown as string)
+    success('added members', `${added.length} to ${doc.name}`, refString(id))
   } finally { await client.close() }
 }
 
@@ -248,7 +248,7 @@ export async function removeSpaceMembers(ref: string, members: string[], opts: {
     const toRemove = new Set(ids.map((i) => String(i)))
     const next = (doc.members ?? []).filter((m: any) => !toRemove.has(String(m)))
     await withSpinner('Removing members…', () => client.updateDoc(CLASS.Space as Ref<Class<SpaceDoc>>, 'core:space:Space' as Ref<Space>, id as Ref<Doc>, { members: next } as any), opts)
-    success('removed members', `${toRemove.size} from ${doc.name}`, id as unknown as string)
+    success('removed members', `${toRemove.size} from ${doc.name}`, refString(id))
   } finally { await client.close() }
 }
 
@@ -260,7 +260,7 @@ export async function setSpaceOwners(ref: string, members: string[], opts: { jso
     if (!doc) throw new CliError(ExitCode.NotFound, `space ${ref} not found`)
     const ids = await resolvePersonIds(client, members)
     await withSpinner('Setting owners…', () => client.updateDoc(CLASS.Space as Ref<Class<SpaceDoc>>, 'core:space:Space' as Ref<Space>, id as Ref<Doc>, { owners: ids } as any), opts)
-    success('set owners', `${ids.length} on ${doc.name}`, id as unknown as string)
+    success('set owners', `${ids.length} on ${doc.name}`, refString(id))
   } finally { await client.close() }
 }
 
@@ -331,25 +331,30 @@ export async function createAssociation(opts: CreateAssociationOpts): Promise<vo
     const id = await withSpinner('Creating association…', () => client.addCollection(CLASS.Association as Ref<Class<Association>>, (aDoc as Doc).space as Ref<Doc>, aId, aClass, 'associations', data as any), opts)
     invalidateIndex(client, CLASS.Association)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ _id: id, a: aId, b: bId }); return }
-    success('created association', '', id as unknown as string)
+    success('created association', '', refString(id))
   } finally { await client.close() }
 }
 
-export async function deleteAssociations(refs: string[], opts: { workspace?: string; url?: string; yes?: boolean } = {}): Promise<void> {
+export async function deleteAssociations(refs: string[], opts: { workspace?: string; url?: string; yes?: boolean; json?: boolean; ci?: boolean } = {}): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const ids = await resolveRefs(refs, { client, classId: CLASS.Association as Ref<Class<Doc>> })
     if (!opts.yes && ids.length > 1) throw new CliError(ExitCode.Validation, `destructive: deleting ${ids.length} associations requires --yes`, 're-run with --yes')
-    let deleted = 0, skipped = 0
+    const removed: Ref<Doc>[] = []
+    const errors: Array<{ id: string; message: string }> = []
     for (const id of ids) {
       const doc = (await client.findOne(CLASS.Association as Ref<Class<Association>>, { _id: id as Ref<Association> })) as Association | undefined
-      if (!doc) { skipped++; continue }
+      if (!doc) { errors.push({ id: String(id), message: 'not found' }); continue }
       try {
         await client.removeCollection(CLASS.Association as Ref<Class<Association>>, doc.space as Ref<Doc>, id as Ref<Doc>, doc.a, doc.aClass, 'associations')
-        deleted++
-      } catch { skipped++ }
+        removed.push(id as Ref<Doc>)
+      } catch (err) {
+        errors.push({ id: String(id), message: (err as Error).message })
+      }
     }
-    bulkRemoved(deleted, skipped, 'associations')
+    if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ removed, errors }); return }
+    if (errors.length > 0) for (const e of errors) console.error(`  ${e.id}: ${e.message}`)
+    bulkRemoved(removed.length, errors.length, 'associations')
   } finally { await client.close() }
 }
 
@@ -435,25 +440,30 @@ export async function createRelation(opts: CreateRelationOpts): Promise<void> {
     const id = await withSpinner('Creating relation…', () => client.addCollection(CLASS.Relation as Ref<Class<Relation>>, (sourceDoc as Doc).space as Ref<Doc>, sId, sClass, 'relations', data as any), opts)
     invalidateIndex(client, CLASS.Relation)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ _id: id, source: sId, target: tId }); return }
-    success('created relation', '', id as unknown as string)
+    success('created relation', '', refString(id))
   } finally { await client.close() }
 }
 
-export async function deleteRelations(refs: string[], opts: { workspace?: string; url?: string; yes?: boolean } = {}): Promise<void> {
+export async function deleteRelations(refs: string[], opts: { workspace?: string; url?: string; yes?: boolean; json?: boolean; ci?: boolean } = {}): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const ids = await resolveRefs(refs, { client, classId: CLASS.Relation as Ref<Class<Doc>> })
     if (!opts.yes && ids.length > 1) throw new CliError(ExitCode.Validation, `destructive: deleting ${ids.length} relations requires --yes`)
-    let deleted = 0, skipped = 0
+    const removed: Ref<Doc>[] = []
+    const errors: Array<{ id: string; message: string }> = []
     for (const id of ids) {
       const doc = (await client.findOne(CLASS.Relation as Ref<Class<Relation>>, { _id: id as Ref<Relation> })) as Relation | undefined
-      if (!doc) { skipped++; continue }
+      if (!doc) { errors.push({ id: String(id), message: 'not found' }); continue }
       try {
         await client.removeCollection(CLASS.Relation as Ref<Class<Relation>>, doc.space as Ref<Doc>, id as Ref<Doc>, doc.sourceDoc, doc.sourceDocClass, 'relations')
-        deleted++
-      } catch { skipped++ }
+        removed.push(id as Ref<Doc>)
+      } catch (err) {
+        errors.push({ id: String(id), message: (err as Error).message })
+      }
     }
-    bulkRemoved(deleted, skipped, 'relations')
+    if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ removed, errors }); return }
+    if (errors.length > 0) for (const e of errors) console.error(`  ${e.id}: ${e.message}`)
+    bulkRemoved(removed.length, errors.length, 'relations')
   } finally { await client.close() }
 }
 
@@ -557,7 +567,7 @@ export async function createTaskType(opts: CreateTaskTypeOpts): Promise<void> {
     const id = await withSpinner('Creating task type…', () => client.addCollection(CLASS.TaskType as Ref<Class<TaskType>>, (pt as Doc).space as Ref<Doc>, ptId, CLASS.ProjectType as Ref<Class<Doc>>, 'taskTypes', data as any), opts)
     invalidateIndex(client, CLASS.TaskType)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ _id: id, ...data }); return }
-    success('created task type', opts.label, id as unknown as string)
+    success('created task type', opts.label, refString(id))
   } finally { await client.close() }
 }
 
@@ -611,6 +621,6 @@ export async function createIssueStatus(opts: CreateIssueStatusOpts): Promise<vo
     const id = await withSpinner('Creating issue status…', () => client.addCollection(CLASS.IssueStatus as Ref<Class<IssueStatus>>, (pt as Doc).space as Ref<Doc>, ptId, CLASS.ProjectType as Ref<Class<Doc>>, 'statuses', data as any), opts)
     invalidateIndex(client, CLASS.IssueStatus)
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ _id: id, ...data }); return }
-    success('created issue status', `${opts.name} (${opts.category})`, id as unknown as string)
+    success('created issue status', `${opts.name} (${opts.category})`, refString(id))
   } finally { await client.close() }
 }
