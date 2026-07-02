@@ -1,4 +1,4 @@
-import { readEnv, isNonInteractive } from '../auth/env.js'
+import { readEnv, isNonInteractive, requireUrl } from '../auth/env.js'
 import { signUpAndCache, createWorkspace } from '../auth/client.js'
 import { writeActiveWorkspace } from '../auth/cache.js'
 import { promptEmail, promptPassword, promptText, promptConfirm } from '../auth/prompts.js'
@@ -30,7 +30,7 @@ function slugify(name: string): string {
 
 export async function signupCommand(opts: SignupOpts = {}): Promise<void> {
   const env = readEnv()
-  const url = opts.url ?? env.url
+  const url = requireUrl(opts.url ?? env.url)
   const forceInteractive = !opts.headless && !opts.nonInteractive && !isNonInteractive()
 
   let email = opts.email ?? env.email

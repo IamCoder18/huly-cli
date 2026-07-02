@@ -24,7 +24,7 @@ the rationale behind design decisions.
 6. [Output modes](#output-modes)
 7. [Ref resolution](#ref-resolution)
 8. [Command reference](#command-reference)
-   - [login / whoami](#login--whoami)
+   - [login / signup / whoami](#login--signup--whoami)
    - [workspace](#workspace)
    - [user](#user)
    - [project](#project)
@@ -45,6 +45,12 @@ the rationale behind design decisions.
    - [calendar](#calendar)
    - [schedule](#schedule)
    - [time](#time)
+   - [space](#space) / [space-type](#space-type)
+   - [association](#association) / [relation](#relation)
+   - [project-type](#project-type) / [task-type](#task-type) / [issue-status](#issue-status)
+   - [activity](#activity)
+   - [notification](#notification)
+   - [approval](#approval)
 9. [Common workflows](#common-workflows)
 10. [Platform behaviors & best practices](#platform-behaviors--best-practices)
 11. [CLI behaviors and smart defaults](#cli-behaviors-and-smart-defaults)
@@ -55,13 +61,9 @@ the rationale behind design decisions.
 16. [Escape hatches](#escape-hatches)
 17. [Internal architecture](#internal-architecture)
 18. [Environment variables reference](#environment-variables-reference)
-19. [Troubleshooting](#troubleshooting)
-20. [Performance & limits](#performance--limits)
-21. [Security model](#security-model)
-22. [Compatibility matrix](#compatibility-matrix)
-23. [Development](#development)
-24. [Cross-references](#cross-references)
-22. [License](#license)
+19. [Security model](#security-model)
+20. [Node compatibility](#node-compatibility)
+21. [Development](#development)
 
 ---
 
@@ -111,14 +113,11 @@ bun add -g @iamcoder18/huly-cli
 ### From source
 
 ```bash
-git clone https://github.com/iamcoder18/huly-cli.git
+git clone https://github.com/IamCoder18/huly-cli.git
 cd huly-cli
-npm install
-npm run build
-node dist/index.js --version
-
-# Optional: install `huly` on PATH
-ln -s "$(pwd)/dist/index.js" /usr/local/bin/huly
+pnpm install
+pnpm --filter @iamcoder18/huly-cli build
+pnpm --filter @iamcoder18/huly-cli start -- --version
 ```
 
 The repo's `bin/huly` script wraps `node dist/index.js "$@"`, so it's
@@ -238,14 +237,17 @@ don't accidentally drop credentials during a long automation run.
 
 ### Signup
 
-`huly signup` does not exist as a CLI command (the platform requires
-email-confirmation UX the CLI can't provide). Sign up via:
+Create a new account directly:
 
-- The web UI
-- The `accountClient.signUp` SDK call directly
-- An admin's invite link (`huly workspace access-link --role GUEST`)
+```bash
+huly signup --email you@example.com --password '***' --first You --last Name
+huly signup --headless                      # uses HULY_* env vars, no prompts
+huly signup --email ... --password ... --create-workspace my-ws   # signup + workspace
+```
 
-After signup, `huly login` works normally.
+On selfhost the signup endpoint is open. On hosted/invite-only deployments
+the account server may reject uninvited signups — in that case use an
+invite link (`huly workspace access-link --role GUEST`).
 
 ---
 
@@ -413,11 +415,14 @@ project index) require a fresh process.
 This section documents every command in detail. Commands are grouped by
 top-level resource.
 
-### login / whoami
+### login / signup / whoami
 
 ```bash
 huly login                          # interactive
 huly login --headless               # env-only
+huly signup --email ... --password ... --first ... --last ...
+huly signup --headless              # uses HULY_* env vars, no prompts
+huly signup --create-workspace my-ws   # signup + first workspace
 huly whoami                         # show current account + workspace
 huly whoami --json                  # machine-readable
 ```
@@ -445,13 +450,18 @@ huly workspace delete --yes         # delete current (requires --yes)
 huly workspace delete --yes --force # delete active workspace
 huly workspace info                 # show uuid, region, mode
 huly workspace members              # list members (OWNER role required)
-huly workspace member <uuid> --role MAINTAINER   # change role
+huly workspace member add <account> --role MAINTAINER   # add / change role (requires OWNER)
 huly workspace rename <new-name>    # rename current
 huly workspace guests --read-only true           # toggle guest read-only
 huly workspace guests --sign-up true             # toggle guest sign-up
 huly workspace access-link --role GUEST          # create invite link
 huly workspace regions              # list available regions
 ```
+
+The pair sides (`workspace member remove`, `workspace member list`) are
+intentionally not exposed as subcommands. List via `workspace members`
+(filter with `--role Owner` / `--role Guest`); remove via the account-server
+UI or the `accountClient` SDK call directly.
 
 **Destructive:** `delete` requires `--yes`. Deleting the active workspace
 additionally requires `--force`.
@@ -563,18 +573,11 @@ the kanban-style status filters.
 **Priorities:** `Urgent | High | Normal | Low | None`. Server-side enum;
 the CLI auto-matches case-insensitively.
 
-**Body format:** Markdown. Stored as raw string (the SDK's
-`MarkupContent` upload is bypassed because the collaborator's
-`createMarkup` RPC throws on this selfhost).
+**Body format:** Markdown. Stored as raw string.
 
 **`--markdown` on get:** returns raw body string. For CLI-created
 documents (which store raw strings), this works correctly. For web-UI-created
 documents with markup refs to y-docs, the ref string is returned instead.
-
-**Known issue:** Issue create requires the project to have at least one
-IssueStatus. On workspaces where the tracker migration didn't seed statuses,
-issue create fails with "no IssueStatus in workspace". Workaround: create
-a status manually via the web UI first.
 
 **Best practices & side effects:** assigning an issue or changing its status
 may auto-create, auto-close, or auto-rollback attached `ProjectToDo`s and
@@ -595,11 +598,6 @@ huly component update <ref> --label "New Name"
 huly component delete <ref...> [--yes]
 ```
 
-**Known issue:** `component list` returns 0 results after a successful
-`create` on this selfhost. The create succeeds (returns an `_id`) but the
-list doesn't find it. Tracked as C2 in `docs/open-issues.md`. Same issue
-affects milestone, issue-template, and time-entry lists.
-
 **Best practices & side effects:** `delete` cascades — every issue that has
 this component gets `component: null` set automatically (orphans are detached,
 not deleted). See
@@ -612,8 +610,8 @@ not deleted). See
 ```bash
 huly milestone list --project TSK
 huly milestone get <ref>
-huly milestone create --project TSK --label "v1.0" [--due 2026-08-01]
-huly milestone update <ref> --label "v1.0 Final" --due 2026-08-15
+huly milestone create --project TSK --label "v1.0" [--target-date 2026-08-01] [--description <text>]
+huly milestone update <ref> [--label <name>] [--description <text>] [--target-date 2026-08-15] [--status <s>]
 huly milestone delete <ref...> [--yes]
 ```
 
@@ -660,10 +658,11 @@ emits an inbox notification per collaborator. Delete cascades — any
 ```bash
 huly channel list [--archived]
 huly channel get <ref>
-huly channel create --name "engineering" [--topic "..."] [--private]
-huly channel update <ref> --topic "..."
+huly channel create --name "engineering" [--description] [--topic "..."] [--private] [--auto-join] [--members <email...>]
+huly channel update <ref> [--name] [--topic "..."] [--description] [--private true|false] [--auto-join true|false]
 huly channel delete <ref...> [--yes]
 huly channel archive <ref> [--value false]   # value=false to unarchive
+huly channel unarchive <ref>
 huly channel members <ref>
 huly channel join <ref>                       # join self
 huly channel join <ref> --member alice@...   # join specific user
@@ -672,10 +671,19 @@ huly channel add-member <ref> alice@...      # one or more members
 huly channel remove-member <ref> alice@...
 
 huly channel message list <channelRef>
-huly channel message get <channelRef> <messageRef> [--markdown]
-huly channel message create <channelRef> --body "hello" [--body-file <path>]
-huly channel message update <channelRef> <messageRef> --body "edited"
+huly channel message send <channelRef> --body "hello" [--body-file <path>]
+huly channel message update <channelRef> <messageRef> --body "edited" [--body-file <path>]
 huly channel message delete <channelRef> <messageRef...> [--yes]
+```
+
+Note: unlike `huly dm`, channel commands don't expose flat-form aliases
+(`huly channel message create` and `huly channel message get` are intentionally
+not provided). Use `huly channel message send` / `huly channel message list`
+respectively. To fetch a specific message by `_id`:
+
+```bash
+huly channel message list engineering --json \
+  | jq '.[] | select(._id == "chunter:class:ChatMessage:<id>")'
 ```
 
 **Best practices & side effects:**
@@ -698,11 +706,15 @@ See [Platform behaviors & best practices](#platform-behaviors--best-practices).
 Direct messages.
 
 ```bash
-huly dm list                                  # list DM spaces
-huly dm create --person alice@example.com    # create 1:1 DM
+huly dm list                                          # list DM spaces
+huly dm create --person alice@example.com            # create 1:1 DM
+huly dm create --members a@... --members b@...        # group DM
+huly dm message list <dmRef>
+huly dm message send <dmRef> --body "hi"
+huly dm message send <dmRef> --person alice@... --body "hi"   # auto-creates DM
+# aliases:
 huly dm messages <dmRef>
 huly dm send <dmRef> --body "hi"
-huly dm send --person alice@example.com --body "hi"     # auto-creates DM
 ```
 
 **Best practices & side effects:** sending a DM message parses `@mentions`
@@ -721,7 +733,7 @@ Replies to chat messages (channel messages or DM messages).
 ```bash
 huly thread list <targetRef>      # target = channel + message _id, or just message _id
 huly thread add <targetRef> --body "reply" [--body-file <path>]
-huly thread update <replyRef> --body "edited"
+huly thread update <replyRef> --body "edited" [--body-file <path>]
 huly thread delete <replyRef...> [--yes]
 ```
 
@@ -734,8 +746,6 @@ thread reply.
 
 ---
 
----
-
 ### card
 
 Card module (separate from tracker issues).
@@ -743,8 +753,10 @@ Card module (separate from tracker issues).
 ```bash
 huly card list
 huly card get <ref> [--markdown]
-huly card create --master-tag <name|id> --title "..." [--body <md>] [--body-file <path>]
-huly card update <ref> [--title] [--description] [--body] [--body-file]
+huly card create --master-tag <name|ref> --title "..." \\
+                  [--card-space <ref>] [--parent <ref>] \\
+                  [--description <text>] [--body <md>] [--body-file <path>]
+huly card update <ref> [--title] [--description] [--body] [--body-file] [--replace-content]
 huly card delete <ref...> [--yes]
 ```
 
@@ -777,11 +789,15 @@ huly master-tag list              # read-only on CLI
 ### action (Planner tasks / ToDos)
 
 ```bash
-huly action list [--completed all|open|done] [--priority High] [--owner email@...]
+huly action list [--owner email@...] [--issue <ref>] [--title <q>]
+                 [--priority High|Medium|Low|NoPriority|Urgent]
+                 [--visibility public|busy|private]
+                 [--due-from <iso>] [--due-to <iso>]
+                 [--completed true|false|all] [--limit N] [--offset N]
 huly action get <ref>
-huly action create --title "..." [--description] [--body] [--body-file]
-                  [--due 2026-07-01T14:00:00Z] [--priority High]
-                  [--owner email@...] [--attached-to <ref>] [--attached-to-class <classId>]
+huly action create --title "..." [--description] [--body] [--body-file] \\
+                  [--due <iso>] [--priority <p>] \\
+                  [--owner email@...] [--attached-to <ref>] [--attached-to-class <class>]
 huly action update <ref> [--title] [--description] [--body] [--body-file]
 huly action complete <ref>       # sets doneOn=now
 huly action reopen <ref>         # clears doneOn
@@ -790,11 +806,11 @@ huly action unschedule <ref>     # removes WorkSlots for the task
 huly action delete <ref...> [--yes]
 ```
 
-**`--completed` filter:** `all` (default) shows all, `open` excludes done,
-`done` shows only done.
+**`--completed` filter:** `true|false|all` (default `all`). `true` / `false`
+match the value of `doneOn`; `all` returns both.
 
-**Priority:** accepts any of `Urgent | High | Normal | Low | None`. Match
-is case-insensitive. Unknown priorities throw NotFound.
+**Priority:** accepts any of `Urgent | High | Medium | Low | NoPriority`.
+Match is case-insensitive. Unknown priorities throw NotFound.
 
 **Best practices & side effects:**
 - `--attached-to <ref>` + `--attached-to-class tracker:class:Issue` attaches
@@ -815,13 +831,13 @@ See [Platform behaviors & best practices](#platform-behaviors--best-practices).
 
 ```bash
 huly document list
-huly document create --title "..." [--body <md>] [--body-file <path>]
-                      [--teamspace <name>] [--parent <ref>] [--description] [--archived]
-huly document update <ref> [--title] [--body] [--body-file] [--old-text] [--new-text]
-                         [--replace-all]
+huly document create --title "..." [--body <md>] [--body-file <path>] \\
+                      [--teamspace <name|id>] [--parent <ref|title>]
+huly document update <ref> [--title] [--body] [--body-file]
+                         [--old-text] [--new-text] [--replace-all] [--archived]
 huly document delete <ref...> [--yes]
 huly document snapshots <ref>    # list version snapshots
-huly document snapshot <ref>     # get a specific snapshot (by ID)
+huly document snapshot <ref>     # get a specific snapshot (by --snapshot-id)
 huly document inline-comments <ref>
 ```
 
@@ -834,8 +850,7 @@ Full body replace with `--body`; targeted substitution with `--old-text`
 teamspaces, the CLI auto-creates a default `General` teamspace.
 
 **Best practices & side effects:**
-- Body is stored as raw Markdown (the SDK's `MarkupContent` upload is
-  bypassed on this selfhost because the `createMarkup` RPC throws).
+- Body is stored as raw Markdown.
 - Any `@mention` in the body creates a backlink and an inbox notification for
   the mentioned user (subject to their notification prefs).
 - Documents created from `huly document create` are nested under a teamspace;
@@ -854,7 +869,8 @@ Document teamspaces.
 ```bash
 huly teamspace list
 huly teamspace get <ref>
-huly teamspace create --name "Engineering" [--description] [--private]
+huly teamspace create --name "Engineering" [--description] [--type public|private] [--private]
+huly teamspace update <ref> [--name] [--description]
 huly teamspace delete <ref...> [--yes]
 ```
 
@@ -901,9 +917,9 @@ Calendar schedules (owner availability).
 
 ```bash
 huly schedule list
-huly schedule create --owner <userUuid> [--time-zone UTC] [--description]
-                     [--duration 30] [--interval 30]
-huly schedule update <ref> [...]
+huly schedule create --title <t> --owner <userUuid> --time-zone <tz> \\
+                     [--description <text>] [--duration 30] [--interval 15]
+huly schedule update <ref> [--title] [--description] [--time-zone] [--duration] [--interval]
 huly schedule delete <ref...> [--yes]
 ```
 
@@ -917,16 +933,209 @@ current user). Resolve via `huly user get --json | jq -r '._id'`.
 Time tracking on issues.
 
 ```bash
+huly time list [--issue <ref>] [--start <iso>] [--end <iso>] [--limit N] [--offset N]
 huly time log --issue TSK-1 --minutes 30 --description "did thing"
 huly time log --issue TSK-1 --hours 2 --description "pair programming"
-huly time report --from 2026-06-01 --to 2026-06-30 [--user email@...] [--project TSK]
+huly time report <issueRef>                 # per-issue summary
 huly time delete <entryRef...> [--yes]
 ```
+
+> **Note:** `time report` takes a single positional issue ref. Earlier
+> revisions of this README mistakenly documented `--from` / `--to` /
+> `--user` / `--project` flags here, but the CLI never accepted them —
+> the underlying SDK method is single-issue only. For workspace-wide or
+> date-range aggregations, use `huly time list --json` and filter
+> client-side, e.g.:
+>
+> ```bash
+> huly time list --json | jq '[.[] | select(.date >= "2026-06-01")]'
+> ```
 
 **Best practices & side effects:** logging time on an issue updates that
 issue's `reportedTime` and recomputes `remainingTime`. If the issue has a
 parent, the change walks up the parent chain automatically (`OnIssueUpdate`).
 There is no opt-out — script accordingly.
+
+---
+
+### space
+
+Core Space containers (typed buckets that hold issues, channels, projects,
+etc.). Most workspaces expose this via tracker projects, calendar
+calendars, and chunter channels — these commands target the raw `space`
+documents.
+
+```bash
+huly space list [--type <id>] [--archived <bool>] [--private <bool>]
+huly space get <ref>
+huly space update <ref> [--name <n>] [--description <text>] [--private <bool>] [--archived <bool>]
+huly space permissions <ref>
+# `space members` is the management surface — the trio below take the
+# required `--members <email...>` option:
+huly space add-member    <ref> --members <email...>
+huly space remove-member <ref> --members <email...>
+huly space set-owners    <ref> --members <email...>
+```
+
+---
+
+### space-type
+
+```bash
+huly space-type list
+huly space-type get <ref>
+```
+
+---
+
+### association
+
+Bi-directional associations between any two docs (A↔B). Underlying
+primitive for relations of kind `N:N`.
+
+```bash
+huly association list [--a <ref>] [--b <ref>] [--a-class <id>] [--b-class <id>]
+huly association create --a <ref> --b <ref> [--a-class <id>] [--b-class <id>]
+huly association delete <ref...> [--yes]
+```
+
+---
+
+### relation
+
+Asymmetric relations (A→B with a parent side) — the underlying primitive
+for `tracker:class:IssueRelation`. Prefer `huly issue relation` for the
+high-level ergonomic interface.
+
+```bash
+huly relation list [--source <ref>] [--source-class <id>] [--target <ref>]
+huly relation create --source <ref> --target <ref> \
+                     [--source-class <id>] [--target-class <id>] [--name <n>]
+huly relation delete <ref...> [--yes]
+```
+
+---
+
+### project-type
+
+Tracker project types (Classic, Recruit, Lead, …).
+
+```bash
+huly project-type list
+huly project-type get <ref>
+```
+
+---
+
+### task-type
+
+Task types used by projects (e.g. `Issue`, `Pull request`).
+
+```bash
+huly task-type list [--project-type <ref>]
+huly task-type create --project-type <ref> --label <name> [--description <text>]
+```
+
+`--project-type` and `--label` are required.
+
+---
+
+### issue-status
+
+Tracker issue statuses (the names appear in `huly issue status` filters
+and `huly project statuses`).
+
+```bash
+huly issue-status create \
+  --project-type <ref> \
+  --name "Blocked" \
+  --category Active \
+  [--task-type <ref>] \
+  [--description <text>] \
+  [--rank <r>]
+# alias: huly issue-statuses create ...
+```
+
+`--project-type`, `--name`, and `--category` are required.
+`--category` accepts: `UnStarted | ToDo | Active | Won | Lost`.
+`--task-type` defaults to the project type's default task type when omitted.
+
+---
+
+### activity
+
+Activity messages (`ActivityMessage`), reactions, replies, saved messages,
+and `@mention` lookups.
+
+```bash
+huly activity list [--target <ref>] [--target-class <id>] [--pinned] [--limit N]
+huly activity get <ref>
+huly activity pin <ref> [--unpin]
+huly activity react --target <ref> --emoji 👍 [--add|--remove|--list]
+huly activity reply list <targetRef>
+huly activity reply add <targetRef> --body "..."
+huly activity reply update <replyRef> --body "..."
+huly activity reply delete <replyRef...> [--yes]
+huly activity saved list
+huly activity saved save --target <ref>
+huly activity saved unsave --target <ref>
+huly activity mentions
+```
+
+---
+
+### notification
+
+Inbox notifications, contexts, providers, types, and per-target subscribe
+state.
+
+```bash
+huly notification list [--read|--unread] [--archived <bool>] [--limit N]
+huly notification get <ref>
+huly notification mark-read <ref...>
+huly notification mark-unread <ref...>
+huly notification mark-all-read
+huly notification archive <ref...>
+huly notification unarchive <ref...>
+huly notification archive-all
+huly notification delete <ref...> [--yes]
+huly notification unread-count
+huly notification providers
+huly notification types
+huly notification contexts list
+huly notification contexts get <ref>
+huly notification contexts pin <ref> [--unpin]
+huly notification contexts hide <ref> [--unhide]
+huly notification subscribe --target <ref> [--target-class <id>]
+huly notification unsubscribe --target <ref> [--target-class <id>]
+huly notification settings list [--provider <ref>]
+huly notification settings update --provider <ref> --type <ref> --enabled true|false
+```
+
+---
+
+### approval
+
+Approval requests attached to any target doc.
+
+```bash
+huly approval list [--status Active|Completed|Rejected|Cancelled] [--attached-to <ref>]
+huly approval get <ref>
+# Create an approval request (one or more approvers)
+huly approval request \
+  --attached-to <ref> \
+  --requested <emails...> \
+  [--attached-to-class <id>] [--required-count <n>] [--tx <json>]
+huly approval comment <ref> --body "..." [--decision approve|reject|comment]
+# `--decision` is OPTIONAL. When omitted, the comment is a plain comment
+# with no vote (same effect as `--decision comment`). The CLI accepts
+# `--decision comment` to mirror the upstream enum verbatim, but the
+# preferred form is to omit the flag entirely.
+huly approval approve <ref> [--comment "..."]
+huly approval reject <ref> --comment "..." [--rejected-tx <json>]
+huly approval cancel <ref>           # requester only
+huly approval delete <ref...> [--yes]
+```
 
 ---
 
@@ -944,7 +1153,7 @@ huly component create --project Q3I --label "API"
 huly component create --project Q3I --label "Web"
 
 # Add milestones
-huly milestone create --project Q3I --label "v1.0" --due 2026-09-30
+huly milestone create --project Q3I --label "v1.0" --target-date 2026-09-30
 
 # Create the first issue
 huly issue create --project Q3I --title "Set up CI pipeline" --priority High \
@@ -962,24 +1171,47 @@ huly issue list --status-category Won --limit 1000 --json \
 ### Daily activity report
 
 ```bash
-# Issues created today
-huly issue list --limit 100 --json | \
-  jq -r '.[] | select(.createdOn > (now - 86400) * 1000) | "\(.identifier): \(.title)"'
+# Issues created today (issue list has no --since filter; use jq)
+TODAY_MS=$(date -u -d 'today 00:00:00' +%s)000
+huly issue list --limit 1000 --json | \
+  jq -r --argjson t "$TODAY_MS" \
+    '.[] | select(.createdOn >= $t) | "\(.identifier): \(.title)"'
 
-# Time logged today
-huly time report --from $(date -u +%Y-%m-%d) --to $(date -u +%Y-%m-%d)
+# Time logged today (time list has --start/--end date filters)
+huly time list --start "$(date -u +%Y-%m-%dT00:00:00Z)" --json --limit 1000
 ```
 
-### Migration: move issues between projects
+> **Tip:** `huly time report <issueRef>` is per-issue only — see the
+> [time section](#time) for the rationale.
+
+### Migration: copy issues between projects
+
+The Huly platform does not let you change an issue's `space` (project) after
+creation — the SDK has no method for it. The CLI exposes
+`huly issue move <ref> --parent <ref|null>` for re-parenting inside the same
+project only. To "move" issues between projects, copy them and delete the
+originals:
 
 ```bash
-# Get all issue IDs in old project
-IDS=$(huly issue list --project OLD --json | jq -r '.[]._id')
-
-# Move each to new project (cannot bulk — CLI moves one at a time)
+set -e
+SOURCE=OLD
+DEST=NEW
+IDS=$(huly issue list --project "$SOURCE" --json | jq -r '.[]._id')
 for id in $IDS; do
-  huly issue move "$id" --project NEW --yes 2>&1 | head -1
+  issue=$(huly issue get "$id" --json)
+  title=$(echo "$issue"   | jq -r .title)
+  desc=$(echo "$issue"    | jq -r .description)
+  prio=$(echo "$issue"    | jq -r .priority)
+  asg=$(echo "$issue"     | jq -r '.assignee // empty')
+  huly issue create --project "$DEST" --title "$title" \
+                     --description "$desc" \
+                     --priority "$prio" \
+                     ${asg:+--assignee "$asg"} \
+                     --yes
+  echo "copied: $id"
 done
+# Then delete the originals in a second pass (after you verify the copies):
+# for id in $IDS; do huly issue delete "$id" --yes; done
 ```
 
 ### Find and fix orphan docs
@@ -1052,9 +1284,9 @@ unexpected result.
 
 | User action | Side effect |
 |---|---|
-| `huly channel send` / `huly dm send` / `huly thread send` | Auto-creates `ChatMessage`; sender + every `@`-mentioned person (parsed from the markup via `extractReferences`) are auto-added as `core.class.Collaborator` on the attached doc. On channel sends, the sender is auto-joined to the channel. Each collaborator and mention gets an inbox notification. |
+| `huly channel message send` / `huly dm send` (alias for `dm message send`) / `huly thread add` | Auto-creates `ChatMessage`; sender + every `@`-mentioned person (parsed from the markup via `extractReferences`) are auto-added as `core.class.Collaborator` on the attached doc. On channel sends, the sender is auto-joined to the channel. Each collaborator and mention gets an inbox notification. |
 | `huly comment add <issueRef> ...` | Issue comments are `ChatMessage`s stored in the issue's `comments` collection; same auto-collaborator + auto-notification rules apply. |
-| `huly dm send --message "@alice ..."` | `@mention` resolves from workspace members by display name and creates a backlink; the recipient gets an inbox notification (subject to their notification prefs). |
+| `huly dm send --body "@alice ..."` | `@mention` resolves from workspace members by display name and creates a backlink; the recipient gets an inbox notification (subject to their notification prefs). |
 | New workspace | `#general` and `#random` channels are auto-created; archiving them requires Spaces Admin. |
 | `huly channel archive` | Allowed only for the owner/creator of the channel; for the auto-created system channels (`#general`/`#random`), Spaces Admin or Workspace Owner is required. |
 | `huly channel update --private true` | Private channels still appear in the sidebar — users must request access. Use a group DM (not a channel) for hidden conversations. |
@@ -1065,7 +1297,7 @@ unexpected result.
 
 | User action | Side effect |
 |---|---|
-| `huly document create` | Body is stored as raw Markdown string (the SDK's `MarkupContent` upload is bypassed because the collaborator's `createMarkup` RPC throws on this selfhost). |
+| `huly document create` | Body is stored as raw Markdown string. |
 | `huly document update --state effective` (ControlledDocument → `Effective`) | All older `Effective` versions of the same template are auto-archived; `DocumentMeta.title` is rewritten to `"<code> <title>"`; if the document has `documents.mixin.DocumentTraining` enabled, `training.class.TrainingRequest` is auto-created per trainee. |
 | Edit a ControlledDocument after review | The document must be re-reviewed before it can be approved (`OnDocTitleChanged`/`OnDocHasBecomeEffective`). Inline comments must be resolved before approval. |
 | Author / Reviewer / Approver e-signatures | Order is enforced: **Author must sign before Reviewer/Approver** can sign. |
@@ -1179,30 +1411,6 @@ unexpected result.
 | `WS_OPERATION` env var (server-side) | `all` (default) covers `pending-creation` + `pending-upgrade`; `all+backup` adds `pending-deletion`, archiving, migration, restoring. For selfhost single-pod, set `all+backup` on the workspace pod. |
 | Read-only guest data | The CLI's resolver cache is **client-scoped via a `WeakMap<PlatformClient, …>`**, so each connected workspace gets its own cache automatically and entries die with the connection. No cross-workspace data leakage. |
 
-### Markup handling (the CLI bypasses the SDK)
-
-| Behavior | Notes |
-|---|---|
-| Why raw strings? | The SDK's `processMarkup` uploads any `MarkupContent` to the collaborator service via `createMarkup` RPC. On selfhost, that RPC hangs (no hocuspocus session). The CLI deliberately passes body content as a raw string, which the SDK's else-branch forwards unchanged. |
-| Where it applies | `document create`, `comment add`, `channel message send`, `dm message send`, `thread add`, `card create`, `component create`, `milestone create`, `issue-template create`, `todo create`. |
-| `--markdown` on read | Wraps `client.fetchMarkup` in a 5-second timeout. On timeout or error, falls back to `String(doc.content)`. CLI-created docs return body verbatim; web-UI-created docs return the markup-ref string instead. |
-| Markup on legacy docs | This selfhost has no web-UI-created docs; `--markdown` works correctly. On a multi-user cloud instance, `--markdown` may print ref strings for docs that were created via the web UI. |
-| What this means | The CLI's body content is treated as **plain text or raw Markdown**; rich-text features (mentions, formatting nodes, embeds) won't round-trip. Sufficient for scripting; not for content-authoring workflows. |
-
-### Integrations
-
-| Integration | Behavior |
-|---|---|
-| GitHub linked repo | Issues/comments/PRs sync bidirectionally. PRs appear as a separate task type `Pull request` in Settings → Task Types (auto-created on connect). Per-issue `Create issue without GitHub` override stops sync. |
-| Gmail | On first connect, historical emails with each contact back-fill on the contact page (not into a centralized inbox — that's a roadmap item). Mail icon under contact name lets you send. |
-| Google Calendar | Two-way event sync with visibility mapping (`Public` ↔ `Visible to everyone`, `Private` ↔ `Only visible to you`). Pre-sync Huly events do NOT retro-push to Google. Disconnect preserves already-synced events. Sync is per-calendar toggle. |
-| Telegram | `hulyio_bot` bridge. `Sync all channels` / `Sync starred channels` menu commands. Multi-workspace requires `/sync_all_channels`. Reply in Telegram becomes a thread reply in Huly. Per-event-type notification toggles. |
-| GitHub link in issue Activity | After creating an issue in a synced repo, a direct URL to the GitHub issue appears in the issue's Activity section. |
-| Recordings | Meeting recordings auto-save to Drive (visible to anyone with Drive access). |
-| Live transcription (Hulia) | Workspace-wide visibility by default; privacy hardening planned. |
-| `PublicLink` | `url: ''` → server auto-fills with a signed JWT token. |
-| Self-host → cloud migration | No GUI; contact Huly team. Cloud → self-host: owner can use desktop `Backup` menu and restore. |
-
 ### Cards & knowledge management (deep)
 
 | Behavior | Notes |
@@ -1263,16 +1471,10 @@ will do when you don't.
 | `huly issue create` | `--task-type` | `tracker:issue:default` |
 | `huly issue create` | `parent` | `null` (top-level), unless `--minimal` |
 | `huly issue create` | `space` | `project._id` (unless `--minimal`) |
-| `huly calendar create` | `--type` | `public` |
-| `huly calendar create` | `--private` | `false` |
-| `huly calendar create` | `--time-zone` (recurring) | `UTC` |
+| `huly calendar create-calendar` | `--access` | `public` (one of `owner` / `team` / `public`) |
+| `huly calendar create-calendar` | `--private` | `false` |
 | `huly schedule create` | `--duration` | `30` (minutes) |
 | `huly schedule create` | `--interval` | `15` (minutes) |
-| `huly event create` | `--calendar` | User's `PrimaryCalendar`, else first non-hidden calendar |
-| `huly event create` | `--attached-to` | Current user (`contact:class:Person`) |
-| `huly event create` | `--access` | `owner` |
-| `huly event create` | `--visibility` | `public` |
-| `huly event create` | `--block-time` | `false` |
 | `huly action create` | `--priority` | `NoPriority` |
 | `huly action create` | `--visibility` | `public` |
 | `huly action create` | `--owner` | Current user |
@@ -1337,23 +1539,6 @@ Reserved keys (silently stripped): `set`, `unset`, `json`, `ci`, `markdown`, `dr
 > `PlatformClient` instance (WeakMap), switching workspaces — even within
 > the same process — gives you a fresh cache automatically. No risk of
 > stale entries bleeding across workspaces.
-
-### Markup handling (the SDK bypass)
-
-The CLI deliberately bypasses the SDK's markup-upload path because the
-collaborator service hangs on selfhost. The body for `document create`,
-`comment add`, `channel message send`, `dm message send`, `thread add`,
-`card create`, `component create`, `milestone create`, `issue-template
-create`, and `todo create` is sent as a **raw string**, not a
-`MarkupContent` instance.
-
-Practical consequences:
-- **Round-trip works for plain Markdown** — create with `--body "hello"`, get back `"hello"` on `--markdown`.
-- **Rich-text features don't survive** — mentions, formatted nodes, embeds are stripped.
-- **Web-UI-created docs return ref strings** on `--markdown`. This selfhost has no such docs; on a cloud instance you may see ref strings instead of body text.
-- **No y-doc upload** — collaborative editing on CLI-created docs is disabled.
-
-If you need rich-text features, use the raw escape hatch: `huly ws tx '{"method":"createDoc", ...}'`.
 
 ### Timeouts
 
@@ -1444,7 +1629,7 @@ These are CLI-user-facing, not server-admin-facing.
 
 | Var | Default | Purpose |
 |---|---|---|
-| `HULY_URL` | `https://huly.aaravlabs.com` | Server URL |
+| `HULY_URL` | — | Server URL (**required** — CLI exits with `HULY_URL is required` if unset) |
 | `HULY_EMAIL` | — | Login email (used by `--headless` login) |
 | `HULY_PASSWORD` | — | Login password (used by `--headless` login) |
 | `HULY_TOKEN` | — | Pre-issued account JWT (bypasses login + caching) |
@@ -1469,36 +1654,6 @@ Precedence for global flags: **flag > env > cached file**. The cached
 - `HULY_TOKEN` bypasses all caching (account-level pre-issued JWT).
 - The CLI will NOT re-login if a cached account token exists for the given email — this avoids clobbering workspace tokens.
 - Workspace-scoped tokens are re-fetched via `selectWorkspace` on every `connectPlatform` call.
-
-### Known selfhost quirks (CLI workarounds)
-
-| Symptom | Cause | Workaround |
-|---|---|---|
-| `huly component create` returns success but `huly component list` returns 0 | Server-side model-load issue on fresh workspaces | Run `huly issue list` first to nudge the model; on stubborn cases use `huly ws findAll tracker:class:Component` to confirm. |
-| `huly document get --markdown` hangs | Collaborator's `getContent` hangs without a y-doc | Wrapped in 5s timeout in this CLI; returns `'(body fetch timed out)'` on fallback. |
-| `huly user find <email>` returns `Forbidden` | Server's `findPersonBySocialKey` permission gate | Falls back to workspace-local `Person` scan (name match). |
-| `huly issue create` fails with `no IssueStatus in workspace` | Workspace hasn't seeded any `IssueStatus` | CLI auto-seeds 5 defaults on first issue create; re-run the create after the seed. |
-| `huly issue create` fails with `cannot be used for objects inherited from AttachedDoc` | Local model thinks the issue class inherits from `AttachedDoc` (false positive) | CLI catches the error and retries with `priority` field omitted. |
-| `huly project create` allows duplicate identifiers | Selfhost server doesn't enforce identifier uniqueness | CLI pre-checks via `findAll({identifier})`; will throw if you pass `--yes` on a duplicate. |
-| `huly workspace delete` silently leaves the workspace | Server sets `pending-deletion`; worker drops it | Wait for the worker (~30s) or use `WS_OPERATION=all+backup` on the workspace pod. |
-| Markup appears as `{content: {}}` in JSON | The body is a `MarkupBlob` ref | Use `huly <resource> get <ref> --markdown` (5s timeout, fallback to string). |
-| `huly issue get <ref>` shows `(blob, use get --markdown)` for body | Body is a `MarkupContent` ref, not raw | Use `--markdown` to fetch with timeout + fallback. |
-
-### Inspect the live server (for debugging)
-
-```bash
-# Account-level data:
-docker exec -e PGPASSWORD=<CR_USER_PASSWORD> \
-  huly_v7-cockroach-1 /cockroach/cockroach sql --insecure -d defaultdb -u selfhost \
-  -e "SELECT uuid, name, mode, processing_attempts, is_disabled FROM global_account.workspace_status;"
-
-# Per-workspace data (use the workspace's dataId):
-# The workspace DB name is global_account.workspace.dataId.
-# Connect to cockroach as selfhost; tables live in public.* schema.
-
-# Recent txes on a doc:
-huly ws findAll core.class.Tx '{"objectId":"<doc-id>"}' --json | jq '.[0:5]'
-```
 
 ### Reset the CLI
 
@@ -1757,177 +1912,16 @@ docs/
 ### Markup handling
 
 The SDK's `processMarkup` calls the collaborator's `uploadMarkup` RPC
-on every `MarkupContent` instance. This throws on this selfhost because
-the collaborator's `createMarkup` has a hocuspocus hang.
-
-**Workaround:** the CLI passes body content as raw strings instead of
-`new MarkupContent(body, 'markdown')`. The SDK's else branch passes
-strings through unchanged. The read path (`get --markdown`) falls back
-to returning the raw body string when markup resolution fails.
+on every `MarkupContent` instance. The CLI passes body content as raw
+strings instead of `new MarkupContent(body, 'markdown')`; the SDK's else
+branch forwards strings through unchanged. The read path
+(`get --markdown`) wraps `client.fetchMarkup` in a 5-second timeout and
+falls back to returning the raw body string when markup resolution fails.
 
 This means `get --markdown` returns the raw body for CLI-created docs
-(always correct) and the ref string for web-UI-created docs (rare on
-this selfhost, since only CLI creates docs).
-
----
-
-## Environment variables reference
-
-| Variable | Default | Description |
-|---|---|---|
-| `HULY_URL` | (none) | Base URL of your Huly server |
-| `HULY_EMAIL` | (none) | Account email for password login |
-| `HULY_PASSWORD` | (none) | Account password for password login |
-| `HULY_TOKEN` | (none) | Pre-issued account JWT (skips login) |
-| `HULY_WORKSPACE` | (none) | Default workspace (URL name or UUID) |
-| `HULY_PROJECT` | (none) | Default project for bare-number issue refs |
-| `HULY_TEAMSPACE` | (none) | Default teamspace for document creation |
-| `HULY_NONINTERACTIVE` | 0 | Set to 1 to disable all prompts |
-| `HULY_LOG` | (none) | Log level: `debug | info | warn | error` |
-| `HULY_LOCALSTORAGE` | (none) | Path for SDK's localStorage shim (rarely needed) |
-| `NO_COLOR` | (none) | Set to 1 to disable colored output |
-
----
-
-## Troubleshooting
-
-### "permission denied to create schema" on account pod startup
-
-The cockroach `selfhost` user lacks the `CREATE` privilege on `defaultdb`.
-This happens after `docker compose down -v` (which wipes the volume and
-recreates the user without privileges).
-
-**Fix:**
-```bash
-docker exec -e PGPASSWORD=... huly_v7-cockroach-1 \
-  /cockroach/cockroach sql --insecure -d defaultdb -u root \
-  -e "GRANT CREATE ON DATABASE defaultdb TO selfhost"
-```
-
-The password is `CR_USER_PASSWORD` from `~/huly-selfhost/.env`.
-
-### "Forbidden" on workspace delete / members / region operations
-
-The deployed `account:local-fix` image uses MongoDB code paths even
-though the selfhost runs Postgres. This is a build-artifact mismatch —
-the deployed bundle has the wrong collection implementation.
-
-**Fix:** rebuild `account` from the `fix/server-issues-2026-06` branch:
-```bash
-cd ~/platform
-PATH=/tmp/node22/bin:$PATH ./scripts/docker.sh --tool rush build --to-version-only account
-docker build -t hardcoreeng/account:local-fix -f docker/images/account/Dockerfile .
-docker compose -f ~/huly-selfhost/compose.yml up -d --force-recreate account
-```
-
-### "no IssueStatus in workspace" on issue create
-
-The workspace's tracker migration didn't seed IssueStatuses. The CLI
-cannot auto-seed on workspaces with incomplete local model state.
-
-**Fix:** create statuses via the web UI once, or run the tracker
-migration manually:
-```bash
-# Manual SQL seed (use with caution)
-docker exec -u root huly_v7-cockroach-1 /cockroach/cockroach sql \
-  --url 'postgresql://root@127.0.0.1:26257/defaultdb?sslcert=...' \
-  -e "INSERT INTO global_tracker.class_xxx ..."
-```
-
-Or recreate the workspace (the seed runs on workspace creation).
-
-### "no document found, failed to apply model transaction" warnings
-
-These appear in transactor logs on every CLI command. They are the
-workspace pod's model-upgrade loop retrying update txes whose target
-class doesn't exist yet. Cosmetic only — does not affect functionality.
-
-**Tracking:** Fix #3 (model-upgrade retry) helps but doesn't fully clear
-the warnings. A deeper fix requires N-pass retries or tx re-ordering.
-
-### Component/milestone create succeeds but list returns 0
-
-Sub-resource create→list roundtrip is broken on this selfhost.
-Tracked as C2 in `docs/open-issues.md`.
-
-**Workaround:** the doc was created (CLI returned an _id). Just don't
-rely on the list query. Future CLI versions will track created IDs
-in a local index instead of relying on server-side findAll.
-
-### "Error: connect ECONNREFUSED" on first call after server restart
-
-The CLI caches connections. After the server restarts, the next call
-will fail with a connection error. Run any command again — the CLI
-reconnects transparently.
-
-### Token expired errors
-
-JWTs expire after a server-configured TTL (default ~7 days). When
-expired, you get `Unauthorized`:
-
-```bash
-rm ~/.config/huly/credentials.json
-huly login --headless
-```
-
-### "Cannot add option '--non-interactive' to command 'huly'"
-
-This error occurs if you have a custom CLI script that re-attaches
-global options without skipping `--non-interactive`. The fix: pass
-`{ skipNonInteractive: true }` when attaching to the program command.
-
----
-
-## Performance & limits
-
-### Connection pooling
-
-The CLI opens one WebSocket per invocation. There's no keepalive across
-invocations. Each `huly <cmd>` is a fresh process, so model reload happens
-every time.
-
-For long-running scripts that make many CLI calls, prefer inlining via
-the SDK directly:
-
-```js
-import { connect } from '@hcengineering/api-client'
-const client = await connect(url, { workspace, token })
-// ... reuse client
-await client.close()
-```
-
-### Query limits
-
-Default `--limit` is unlimited (server caps at chunked response size).
-For predictable response sizes:
-```bash
-huly issue list --limit 100
-```
-
-### Timeouts
-
-| Operation | Timeout |
-|---|---|
-| Login | 30s |
-| Connection | 30s |
-| findAll | 60s (then chunked) |
-| Markup fetch (read) | 5s (with fallback) |
-| Ping/pong | 30s |
-
-The CLI never silently hangs. If an operation times out, you get an
-explicit error.
-
-### Bulk operations
-
-For >1000 docs, prefer chunked scripts:
-
-```bash
-huly issue list --limit 1000 --offset 0   # batch 1
-huly issue list --limit 1000 --offset 1000  # batch 2
-```
-
-The SDK supports `{limit, total: true}` for accurate counts but the
-CLI's --limit/--offset doesn't expose it.
+(always correct) and the ref string for web-UI-created docs. If you need
+rich-text round-trip features, use the raw escape hatch:
+`huly ws tx '{"method":"createDoc", ...}'`.
 
 ---
 
@@ -1970,59 +1964,21 @@ If any of these don't hold, the CLI's threat model is violated.
 
 ---
 
-## Compatibility matrix
-
-### Server versions tested
-
-| Huly version | Status | Notes |
-|---|---|---|
-| 0.7.423 (local-fix images) | ✅ Fully tested | All 13 implemented smoke phases pass |
-| 0.7.422 | ⚠️ Mostly works | MODEL_VERSION mismatch on workspace pod |
-| 0.7.421 and earlier | ❌ Not tested | API may have changed |
-
-### Node versions tested
+## Node compatibility
 
 | Node | Status |
 |---|---|
 | 22.11 | ✅ Recommended |
 | 24.x | ✅ Works |
-| 26.x | ❌ Fails rush build check |
-| 20.x | ❌ Missing crypto features |
+| 26.x | ⚠️ May need `RUSH_ALLOW_UNSUPPORTED_NODEJS=1` for rush-based builds downstream |
+| 20.x | ❌ Missing crypto features used by SDK |
 
-### OS tested
-
-- Linux (Ubuntu 22.04, Debian 12) — primary development platform
-- macOS (14.x Apple Silicon) — secondary; works
-- Windows (10, 11 with WSL2) — works via WSL
-- Native Windows — untested; use WSL
+The CLI is a TypeScript source project — it requires Node 22.11+ to run
+the dev tooling. The bundled `dist/index.js` runs on any Node ≥ 22.11.
 
 ---
 
 ## Development
-
-### Setup
-
-```bash
-git clone https://github.com/iamcoder18/huly-cli.git
-cd huly-cli
-npm install
-npm run build       # compile TS → dist/
-npm run dev         # watch mode (tsc --watch)
-node dist/index.js  # run CLI
-```
-
-### Run the smoke test
-
-```bash
-# All phases
-bash scripts/smoke.sh all
-
-# One phase
-bash scripts/smoke.sh 6
-
-# With debug output
-DEBUG=1 bash scripts/smoke.sh 0
-```
 
 ### Project conventions
 
@@ -2030,7 +1986,6 @@ DEBUG=1 bash scripts/smoke.sh 0
 - camelCase functions, PascalCase classes, SCREAMING_SNAKE constants
 - One resource per file in `src/resources/`
 - New class IDs go in `src/transport/identifiers.ts`
-- Each new command must have a corresponding smoke test
 - Help text MUST describe each flag, even if obvious
 - Errors throw `CliError(ExitCode.X, msg, hint?)` — never raw `Error`
 
@@ -2039,39 +1994,9 @@ DEBUG=1 bash scripts/smoke.sh 0
 1. Add the resource function in `src/resources/<surface>.ts`
 2. Add the class ID to `src/transport/identifiers.ts`
 3. Wire the command in `src/cli.ts` (find the relevant `program.command(...)`)
-4. Add a smoke test case in `scripts/smoke.sh`
-5. Update `README.md` with the new command
-6. Run `npm run build && bash scripts/smoke.sh all`
+4. Update `README.md` with the new command
+5. Run `pnpm --filter @iamcoder18/huly-cli build`
 
-### Adding a new resource (e.g. Phase 11's `space`)
-
-1. Create `src/resources/space.ts`
-2. Add class IDs to `src/transport/identifiers.ts`
-3. Wire 10+ subcommands in `src/cli.ts`
-4. Add a phase to `scripts/smoke.sh` (increment the phase number)
-5. Update `README.md` with the new resource section
-6. Run `bash scripts/smoke.sh all`
-
----
-
-## Cross-references
-
-- `docs/HANDOVER.md` — what to read first when resuming work
-- `docs/learnings.md` — detailed server architecture and gotchas
-- `docs/issues.md` — historical bug inventory (2026-06-27)
-- `docs/open-issues.md` — current open issues (excludes verified fixes)
-
----
-
-## License
-
-Eclipse Public License 2.0 (matching the upstream platform).
-
-```
-This program and the accompanying materials are made available under the
-terms of the Eclipse Public License 2.0 which is available at
-https://www.eclipse.org/legal/epl-2.0/
-```
 ---
 
 ## Server architecture (deep dive)
@@ -2088,7 +2013,6 @@ The selfhost has ~16 services. The CLI talks to four of them:
 | `account` (port 3000) | Login, workspace ops, account token management |
 | `transactor` (port 3333) | WebSocket RPC: findAll, findOne, createDoc, updateDoc, tx, loadModel |
 | `collaborator` (port 3078) | Read path only: fetchMarkup, getContent. The CLI's read timeout (5s) covers this. |
-| `nginx` (port 80, behind caddy on 443) | Reverse proxies the above. TLS terminator is caddy on the host. |
 
 The CLI never talks to `workspace`, `kvs`, `minio`, `redpanda`, `elastic`,
 `cockroach`, or `front` directly. Those are server-internal.
@@ -2146,11 +2070,6 @@ Each class has a domain (storage bucket):
 The model's `findAll` behavior depends on the class's domain:
 - DOMAIN_MODEL classes: query the local `ModelDb` (in-memory index)
 - All other domains: query the server (via WebSocket)
-
-**The CLI's local model is incomplete** (3-key stub). This means queries
-against DOMAIN_MODEL classes (TypeIssuePriority, etc.) often return
-empty even though the data exists on the server. See the `conn.findAll`
-bypass in `src/resources/issue.ts`.
 
 ### Workspace lifecycle
 
@@ -2227,25 +2146,16 @@ Rejected txs surface as PlatformError. The CLI surfaces these as CliError.
 ### Markup and y-docs
 
 For content-bearing fields (description, body, content), the platform uses
-a markup reference indirection:
+a markup reference indirection: the SDK's `processMarkup` uploads the
+body to the collaborator, which produces a y-doc, and the doc field
+stores a `MarkupRef` pointing to it instead of the inline text. On
+read, `client.fetchMarkup(...)` retrieves and renders the y-doc.
 
-1. CLI sends `MarkupContent { content: 'markdown text', kind: 'markdown' }`
-2. SDK's `processMarkup` calls `client.uploadMarkup(class, id, attr, text, kind)`
-3. Collaborator creates a y-doc with the markdown text
-4. The doc's data field stores a `MarkupRef { content: 'blobId' }` instead of the text
-5. On read, `client.fetchMarkup(...)` retrieves and renders the y-doc
-
-**Failure mode on this selfhost:** the collaborator's `createMarkup` RPC
-hangs (hocuspocus connection timeout). Fix #2 wraps `getContent` in a
-3s timeout; the corresponding `createMarkup` fix is **not yet deployed**.
-The CLI works around by passing raw strings instead of `MarkupContent`.
-
-This means:
-- Write path: body stored as plain string (not a ref) ✓
-- Read path: returns raw string for CLI-created docs ✓
-- Read path: returns ref string (not rendered text) for web-UI-created docs ⚠
-
-For this selfhost, only CLI creates docs, so the read path is consistent.
+The CLI passes body content as raw strings instead of
+`new MarkupContent(...)`; the SDK's else-branch forwards strings
+through unchanged, and the read path falls back to the raw body string
+when markup resolution fails or times out. See
+[Markup handling](#markup-handling) for the rationale.
 
 ### Account-server permission model
 
@@ -2278,20 +2188,6 @@ current version, the workspace pod applies model-upgrade txs:
 The model-upgrade txs are auto-generated from the platform's `@Model(...)`
 decorators in `~/platform/models/<m>/src/`. Each plugin contributes a
 batch of class-creation txs.
-
-**Known issue:** if the model-upgrade tx batch has internal dependencies
-(e.g. an update tx that references a class created by a later tx), the
-server applies them in the wrong order and skips update txs whose target
-class doesn't exist yet. Fix #3 (1-pass retry) helps but doesn't fully
-resolve the issue.
-
-**Symptom:** transactor logs show:
-```
-no document found, failed to apply model transaction, skipping _class="core:class:TxUpdateDoc"
-```
-
-This is cosmetic — doesn't affect runtime behavior. The skipped txs are
-typically for older class versions that no longer matter.
 
 ### The `dataId` quirk
 
@@ -2500,7 +2396,7 @@ CLOSED=$(huly issue list --json | \
   '.[] | select(.modifiedOn > ($date | strptime("%Y-%m-%d") | mktime * 1000)) | select(.status == "Done") | "- #\(.identifier) \(.title)"')
 
 # Post to channel
-huly channel message create "standup" --body "Yesterday I closed:
+huly channel message send "standup" --body "Yesterday I closed:
 $CLOSED
 "
 ```
@@ -2538,13 +2434,17 @@ done
 # weekly-digest.sh
 set -e
 
-WEEK_AGO=$(date -u -d '7 days ago' +%Y-%m-%d)
+WEEK_AGO_MS=$(date -u -d '7 days ago' +%s)000
 
-# Issues created this week
-NEW=$(huly issue list --since "$WEEK_AGO" --json | jq -r '.[] | "- #\(.identifier) \(.title) (\(.assignee // "unassigned"))"')
+# Issues created this week (issue list has no --since; jq filters on createdOn)
+NEW=$(huly issue list --limit 1000 --json | \
+  jq -r --argjson t "$WEEK_AGO_MS" \
+    '.[] | select(.createdOn >= $t) | "- #\(.identifier) \(.title) (\(.assignee // "unassigned"))"')
 
-# Issues closed this week
-CLOSED=$(huly issue list --status Done --since "$WEEK_AGO" --json | jq -r '.[] | "- #\(.identifier) \(.title)"')
+# Issues closed this week (status filter + jq on modifiedOn)
+CLOSED=$(huly issue list --status Done --limit 1000 --json | \
+  jq -r --argjson t "$WEEK_AGO_MS" \
+    '.[] | select(.modifiedOn >= $t) | "- #\(.identifier) \(.title)"')
 
 # Send via your mailer (here we use sendmail)
 {
@@ -2590,670 +2490,10 @@ cat <<EOF
 Weekly Status Report — $(date +%Y-%m-%d)
 
 Open issues: $(huly issue list --status-category Active --json | jq length)
-Closed this week: $(huly issue list --status Done --since "$(date -u -d '7 days ago' +%Y-%m-%d)" --json | jq length)
 
-Top contributors:
-$(huly issue list --since "$(date -u -d '7 days ago' +%Y-%m-%d)" --json | \
-  jq -r '.[].assignee' | sort | uniq -c | sort -rn | head -5)
-
----
-
-## Migration guides
-
-### Migrating from `huly-mcp` (the MCP server)
-
-If you're using the MCP server (`huly-mcp`) and want to switch to `huly-cli`:
-
-**Same operations, different invocation:**
-```bash
-# MCP: list_issues
-# CLI:
-huly issue list --json
-
-# MCP: create_issue
-# CLI:
-huly issue create --project TSK --title "..." --json
-
-# MCP: get_issue
-# CLI:
-huly issue get TSK-1 --json
-```
-
-**Output format:** both produce JSON arrays. The MCP server wraps
-responses in `{ result: [...] }`; the CLI returns raw `[...]`. Strip the
-wrapper if you're reusing MCP client code.
-
-**Auth:** both use the same `account-token` JWT. You can reuse the
-MCP server's credentials cache by symlinking it:
-```bash
-ln -s ~/.config/huly-mcp/credentials.json ~/.config/huly/credentials.json
-```
-
-**Tool naming:** MCP uses `snake_case` (e.g. `list_issues`); CLI uses
-`kebab-case` (e.g. `issue list`). The MCP names map to CLI as:
-- `list_<resources>` becomes `<resource> list`
-- `get_<resource>` becomes `<resource> get`
-- `create_<resource>` becomes `<resource> create`
-- `update_<resource>` becomes `<resource> update`
-- `delete_<resource>` becomes `<resource> delete`
-- `<verb>_<resource>` (e.g. `add_comment`) becomes `<resource> <verb>`
-
-### Migrating from the web UI
-
-If you're used to clicking around in the web UI:
-
-| Web UI action | CLI command |
-|---|---|
-| Click project in sidebar | `huly workspace use <name>` then `huly project list` |
-| Open issue TSK-1 | `huly issue get TSK-1 --markdown` |
-| Create new issue | `huly issue create --project TSK --title "..."` |
-| Move issue to "Done" | `huly issue update TSK-1 --status Done` |
-| Add label "bug" | `huly issue label TSK-1 add bug` |
-| Comment on issue | `huly comment add --issue TSK-1 --body "..."` |
-| Send DM | `huly dm send --person alice@... --body "..."` |
-| Create channel | `huly channel create --name engineering` |
-| Create calendar event | `huly calendar create --title "Standup" --start ... --end ...` |
-| Log time | `huly time log --issue TSK-1 --minutes 30` |
-| Switch workspace | `huly workspace use <name>` |
-
-### Migrating from the Huly SDK (TypeScript)
-
-If you have scripts using the SDK directly:
-
-```ts
-// SDK
-import { connect } from '@hcengineering/api-client'
-const client = await connect(url, { workspace, token })
-const issues = await client.findAll('tracker:class:Issue', { space: project._id })
-```
-
-```bash
-# CLI equivalent (in shell)
-huly --workspace $WORKSPACE issue list --project $PROJECT --json
-```
-
-The CLI wraps the SDK and handles auth, caching, model loading, and
-error formatting. Prefer the CLI for one-off scripts; prefer the SDK
-for long-running services.
-
-### Migrating from the REST API
-
-If you're using `curl` against the Huly REST API:
-
-```bash
-# REST (raw)
-curl -X GET "$HULY_URL/api/v1/version"
-
-# CLI
-huly api GET /api/v1/version
-```
-
-The CLI's `api` command passes through to the REST API but handles auth
-headers automatically. Use it for ad-hoc endpoints the CLI doesn't cover.
-
-### Migrating from the GraphQL API
-
-Huly doesn't ship a GraphQL API. The CLI is the closest equivalent — it
-wraps the platform's RPCs into REST-like commands. If you need GraphQL,
-you're out of luck.
-
----
-
-## Recipes
-
-### Recipe: CI integration
-
-```yaml
-# .github/workflows/huly-sync.yml
-name: Sync CI status to Huly
-on: [push]
-jobs:
-  sync:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: npm install -g @iamcoder18/huly-cli
-      - name: Sync status to Huly
-        env:
-          HULY_URL: ${{ secrets.HULY_URL }}
-          HULY_TOKEN: ${{ secrets.HULY_TOKEN }}
-          HULY_WORKSPACE: ${{ vars.HULY_WORKSPACE }}
-        run: |
-          COMMIT_MSG=$(git log -1 --pretty=%B)
-          BRANCH=$(git rev-parse --abbrev-ref HEAD)
-          huly issue create --project CI --title "$BRANCH: $COMMIT_MSG" \
-                            --label auto --label ci --yes
-```
-
-### Recipe: Daily standup bot
-
-```bash
-#!/bin/bash
-# standup.sh - runs daily, posts to #standup channel
-set -e
-
-# Get yesterday's issues you closed
-CLOSED=$(huly issue list --json | \
-  jq -r --arg date "$(date -u -d 'yesterday' +%Y-%m-%d)" \
-  '.[] | select(.modifiedOn > ($date | strptime("%Y-%m-%d") | mktime * 1000)) | select(.status == "Done") | "- #\(.identifier) \(.title)"')
-
-# Post to channel
-huly channel message create "standup" --body "Yesterday I closed:
-$CLOSED
-"
-```
-
-### Recipe: Bulk-migrate issues
-
-```bash
-#!/bin/bash
-# migrate-issues.sh - copy issues from one project to another
-set -e
-
-SOURCE=$1
-DEST=$2
-STATUS="open"
-
-IDS=$(huly issue list --project "$SOURCE" --status-category "$STATUS" --json | jq -r '.[]._id')
-
-for id in $IDS; do
-  # Get full issue
-  issue=$(huly issue get "$id" --json)
-  title=$(echo "$issue" | jq -r .title)
-  desc=$(echo "$issue" | jq -r .description)
-
-  # Create in dest
-  huly issue create --project "$DEST" --title "$title" --description "$desc" --yes
-
-  echo "migrated: $id ($title)"
-done
-```
-
-### Recipe: Weekly digest email
-
-```bash
-#!/bin/bash
-# weekly-digest.sh
-set -e
-
-WEEK_AGO=$(date -u -d '7 days ago' +%Y-%m-%d)
-
-# Issues created this week
-NEW=$(huly issue list --since "$WEEK_AGO" --json | \
-  jq -r '.[] | "- #\(.identifier) \(.title) (\(.assignee // "unassigned"))"')
-
-# Issues closed this week
-CLOSED=$(huly issue list --status Done --since "$WEEK_AGO" --json | \
-  jq -r '.[] | "- #\(.identifier) \(.title)"')
-
-# Render the email body
-{
-  echo "Subject: Huly Weekly Digest"
-  echo ""
-  echo "This week:"
-  echo "$NEW"
-  echo ""
-  echo "Closed:"
-  echo "$CLOSED"
-}
-```
-
-### Recipe: Audit orphan documents
-
-```bash
-# Find documents with no teamspace
-huly document list --json | \
-  jq -r '.[] | select(.space == null) | ._id' | \
-  xargs -I{} echo "orphan doc: {}"
-
-# Find documents with no author
-huly document list --json | \
-  jq -r '.[] | select(.createdBy == null) | ._id' | \
-  xargs -I{} echo "no-author doc: {}"
-```
-
-### Recipe: Backup health check
-
-```bash
-#!/bin/bash
-# backup-health.sh - verify Huly is reachable and authenticated
-set -e
-
-if ! huly user get > /dev/null 2>&1; then
-  echo "ALERT: huly not reachable or auth failed"
-  exit 1
-fi
-
-if ! huly workspace list > /dev/null 2>&1; then
-  echo "ALERT: workspace list failed"
-  exit 1
-fi
-
-echo "OK at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-```
-
-### Recipe: Cross-workspace issue link
-
-```bash
-# Get an issue ID from workspace A and reference it in workspace B's issue
-WS_A_ISSUE=$(huly --workspace prod issue get TSK-1 --json | jq -r '._id')
-huly --workspace staging issue create \
-  --project TST \
-  --title "Mirrored from prod: $WS_A_ISSUE" \
-  --description "Track this issue across workspaces"
-```
-
-### Recipe: Cleanup on workspace delete
-
-```bash
-# Delete all docs in a teamspace before deleting the teamspace
-TS_REF="document:teamspace:Engineering"
-huly document list --json | \
-  jq -r --arg ts "$TS_REF" '.[] | select(.space == $ts) | ._id' | \
-  xargs -I{} huly document delete {} --yes
-
-huly teamspace delete "$TS_REF" --yes
-```
-
-### Recipe: Self-test (no auth needed)
-
-```bash
-# Verify CLI is installed and version
-huly --version
-
-# Verify command list
-huly --help | head -20
-
-# Run smoke test (requires auth)
-bash scripts/smoke.sh 0
-```
-
-### Recipe: Monitor model-upgrade progress
-
-```bash
-# Tail transactor logs for upgrade completion
-docker logs -f huly_v7-transactor-1 2>&1 | grep -E "upgrade|Processing upgrade"
-```
-
-### Recipe: Generate report for management
-
-```bash
-#!/bin/bash
-# management-report.sh
-set -e
-
-cat <<EOF
-Weekly Status Report - $(date +%Y-%m-%d)
-
-Open issues: $(huly issue list --status-category Active --json | jq length)
-Closed this week: $(huly issue list --status Done --since "$(date -u -d '7 days ago' +%Y-%m-%d)" --json | jq length)
-
-Top contributors:
-$(huly issue list --since "$(date -u -d '7 days ago' +%Y-%m-%d)" --json | \
-  jq -r '.[].assignee' | sort | uniq -c | sort -rn | head -5)
+Top contributors (issues created this week):
+$(huly issue list --limit 1000 --json | \
+  jq -r --argjson t "$(date -u -d '7 days ago' +%s)000" \
+    '[.[] | select(.createdOn >= $t) | .assignee // "(unassigned)"] | group_by(.) | map({k:.[0], n:length}) | sort_by(-.n) | .[0:5] | .[] | "  \(.n)\t\(.k)")')
 EOF
-```
 
-### Recipe: Backup script
-
-```bash
-#!/bin/bash
-# backup-workspace.sh - export all data to JSON
-set -e
-
-WORKSPACE="${1:?usage: $0 <workspace>}"
-OUT="/tmp/huly-backup-$WORKSPACE-$(date +%Y%m%d-%H%M%S).json"
-
-{
-  echo "{"
-  echo "\"workspace\": $(huly --workspace $WORKSPACE workspace info --json),"
-  echo "\"projects\": $(huly --workspace $WORKSPACE project list --json),"
-  echo "\"issues\": $(huly --workspace $WORKSPACE issue list --limit 10000 --json),"
-  echo "\"channels\": $(huly --workspace $WORKSPACE channel list --json),"
-  echo "\"teamspaces\": $(huly --workspace $WORKSPACE teamspace list --json)"
-  echo "}"
-} > "$OUT"
-
-echo "backed up to $OUT ($(du -h $OUT | cut -f1))"
-```
-
-### Recipe: Diff two workspaces
-
-```bash
-# Compare issues between staging and prod
-diff <(huly --workspace staging issue list --json | jq -S 'sort_by(._id)') \
-     <(huly --workspace prod issue list --json | jq -S 'sort_by(._id)')
-```
-
-### Recipe: Interactive REPL
-
-```bash
-# Use rlwrap for a huly REPL
-rlwrap -a -S 'huly> ' -- node -e "
-const { connect } = require('@hcengineering/api-client');
-const client = await connect(process.env.HULY_URL, {
-  workspace: process.env.HULY_WORKSPACE,
-  token: process.env.HULY_TOKEN
-});
-const issues = await client.findAll('tracker:class:Issue', {});
-console.log(issues);
-"
-```
-
-### Recipe: Generate CLI reference card
-
-```bash
-# One-page cheat sheet
-huly --help | head -30 > /tmp/cli-cheatsheet.txt
-for cmd in workspace user project issue channel dm document calendar time; do
-  echo "=== $cmd ===" >> /tmp/cli-cheatsheet.txt
-  huly $cmd --help | head -20 >> /tmp/cli-cheatsheet.txt
-done
-cat /tmp/cli-cheatsheet.txt
-```
-
----
-
-## Performance tuning
-
-### Connection reuse across commands
-
-The CLI opens a new WebSocket per process. For scripts with many calls:
-
-```bash
-# Slow (N connections)
-for id in $(seq 1 100); do
-  huly issue get "TSK-$id"
-done
-
-# Fast (1 connection, N commands)
-node -e "
-const { connect } = require('@hcengineering/api-client');
-const c = await connect(url, { workspace, token });
-for (let i = 1; i <= 100; i++) {
-  await c.findOne('tracker:class:Issue', { identifier: 'TSK-' + i });
-}
-await c.close();
-"
-```
-
-### Pagination for large workspaces
-
-```bash
-# First 1000
-huly issue list --limit 1000 --json > /tmp/issues-1k.json
-
-# Next 1000 (offset)
-huly issue list --limit 1000 --offset 1000 --json > /tmp/issues-2k.json
-```
-
-Combine with `jq` for memory-efficient streaming:
-```bash
-huly issue list --limit 10000 --json | jq -c '.[]' | head -100
-```
-
-### Parallel execution
-
-```bash
-# Run multiple reads in parallel (CLI doesn't share state, so each is safe)
-huly issue get TSK-1 &
-huly issue get TSK-2 &
-huly issue get TSK-3 &
-wait
-```
-
-### Avoid full-model loads
-
-The CLI loads the full model on every connection. For high-frequency
-scripts, consider whether you really need model-aware operations:
-
-- `findAll` always loads the model
-- `api GET /...` (REST) doesn't
-- `ws` escape hatch doesn't load the client-side model (only the connection)
-
-### Bulk-write batching
-
-The CLI writes one tx per command. For bulk inserts:
-
-```bash
-# Slow (N round-trips)
-for title in $(seq 1 100); do
-  huly issue create --project TSK --title "Issue $title" --yes
-done
-
-# Fast (1 round-trip, N txs in one TxApplyIf)
-node -e "
-const { connect } = require('@hcengineering/api-client');
-const c = await connect(url, { workspace, token });
-const ops = c.apply();
-for (let i = 0; i < 100; i++) {
-  ops.createDoc('tracker:class:Issue', projectSpace, { title: 'Issue ' + i, ... });
-}
-await ops.commit();
-"
-```
-
----
-
-## CLI reference card
-
-Quick lookup of all flags and their purposes.
-
-### Workspace
-```
-list                                list accessible workspaces
-current                             show current workspace
-use <name>                          set active workspace
-create --name X --yes               create workspace
-delete --yes                        delete current
-delete --yes --force                delete active workspace
-info                                show uuid, region, mode
-members                             list workspace members
-member <uuid> --role MAINTAINER     change member role
-rename <new-name>                   rename current
-guests --read-only true|false       toggle guest read-only
-guests --sign-up true|false         toggle guest sign-up
-access-link --role GUEST            create invite link
-regions                             list available regions
-```
-
-### Project
-```
-list [--limit N] [--offset N]
-get <ref>                           by identifier, name, or _id
-create --name X --identifier BACKEND [--description] [--private]
-update <ref> --set key=value        update fields (null to clear)
-delete <ref...> [--yes]
-statuses --project TSK              list issue statuses
-target-preferences --project TSK    list target preferences
-target-preference upsert ...        upsert a target preference
-```
-
-### Issue
-```
-list [--project TSK] [--status <name>] [--status-category Active]
-     [--assignee <email>] [--label bug] [--parent <ref>|null]
-     [--description-search <q>] [--limit N] [--offset N]
-get <ref> [--markdown]
-create --project TSK --title "..." [--description] [--body]
-      [--body-file <path>] [--status <name>] [--priority <p>]
-      [--assignee <email>] [--label bug --label auth] [--due ISO]
-      [--parent <ref>] [--task-type <name>]
-update <ref> --title "..."           update fields
-delete <ref...> [--yes]
-preview-delete <ref...>             show impact of delete
-label <ref> add <name>              add a label
-label <ref> remove <name>           remove a label
-relation <ref> add <type> <target>  add a relation
-relation <ref> remove <type> <target>   remove
-relation <ref> list                 list relations
-link-document <issueRef> <docRef>   link a document
-unlink-document <issueRef> <docRef> unlink
-move <ref> --parent <ref|null>      set/clear parent
-related-targets --project TSK       list related targets
-related-target set --project ...    create a related target
-```
-
-### Document
-```
-list
-create --title "..." [--body <md>] [--body-file <path>]
-        [--teamspace <name>] [--parent <ref>] [--description] [--archived]
-update <ref> [--title] [--body] [--body-file]
-       [--old-text] [--new-text] [--replace-all]
-delete <ref...> [--yes]
-snapshots <ref>                     list version snapshots
-snapshot <ref>                      get a specific snapshot
-inline-comments <ref>               list inline comments
-```
-
-### Teamspace
-```
-list
-get <ref>
-create --name "Engineering" [--description] [--private]
-delete <ref...> [--yes]
-```
-
-### Channel
-```
-list [--archived]
-get <ref>
-create --name "engineering" [--topic "..."] [--private]
-update <ref> --topic "..."
-delete <ref...> [--yes]
-archive <ref> [--value false]
-members <ref>
-join <ref> [--member <email>]
-leave <ref>
-add-member <ref> <email...>
-remove-member <ref> <email...>
-message list <channelRef>
-message get <channelRef> <messageRef> [--markdown]
-message create <channelRef> --body "..."
-message update <channelRef> <messageRef> --body "..."
-message delete <channelRef> <messageRef...> [--yes]
-```
-
-### DM
-```
-list
-create --person <email>
-messages <dmRef>
-send <dmRef> --body "..."
-send --person <email> --body "..."   auto-creates DM
-```
-
-### Thread
-```
-list <targetRef>
-add <targetRef> --body "..."
-update <replyRef> --body "..."
-delete <replyRef...> [--yes]
-```
-
-### Card
-```
-list
-get <ref> [--markdown]
-create --master-tag <name|id> --title "..." [--body] [--body-file]
-update <ref> [--title] [--description] [--body] [--body-file]
-delete <ref...> [--yes]
-```
-
-### Card-space
-```
-list
-get <ref>
-create --name "Engineering" [--description] [--private]
-delete <ref...> [--yes]
-```
-
-### Master-tag
-```
-list
-```
-
-### Action (Planner)
-```
-list [--completed all|open|done] [--priority High] [--owner <email>]
-get <ref>
-create --title "..." [--description] [--body] [--body-file]
-      [--due ISO] [--priority High] [--owner <email>]
-      [--attached-to <ref>] [--attached-to-class <classId>]
-update <ref> [--title] [--description] [--body] [--body-file]
-complete <ref>                       sets doneOn=now
-reopen <ref>                         clears doneOn
-schedule <ref>                       creates WorkSlot
-unschedule <ref>                     removes WorkSlots
-delete <ref...> [--yes]
-```
-
-### Calendar
-```
-calendars                            list calendars (not events)
-create-calendar --name "Work" [--description] [--private] [--access ...]
-delete-calendar <ref>
-list                                 list events
-get <eventRef> [--markdown]
-create --title "..." [--start ISO] [--end ISO] [--attendee <email>]
-        [--location] [--all-day] [--description] [--body]
-        [--calendar-id <ref>] [--rrule "FREQ=DAILY;COUNT=3"]
-update <eventRef> [--title] [--start] [--end] [--attendee]
-delete <eventRef...> [--yes]
-recurring                            list recurring event definitions
-recurring-instances <recRef>         list materialized instances
-```
-
-### Schedule
-```
-list
-create --owner <userUuid> [--time-zone UTC] [--description]
-       [--duration 30] [--interval 30]
-update <ref> [...]
-delete <ref...> [--yes]
-```
-
-### Time
-```
-log --issue TSK-1 --minutes 30 --description "..."
-log --issue TSK-1 --hours 2 --description "..."
-report --from 2026-06-01 --to 2026-06-30 [--user <email>] [--project TSK]
-delete <entryRef...> [--yes]
-```
-
-### Component / Milestone / Issue-template
-```
-list --project TSK
-get <ref>
-create --project TSK --label "..."
-update <ref> --label "..."
-delete <ref...> [--yes]
-```
-
-(Issue-template additionally has `add-child` and `remove-child`.)
-
-### Comment
-```
-list --issue TSK-1
-add --issue TSK-1 --body "..."
-add --issue TSK-1 --body-file <path>
-update <commentRef> --body "..."
-delete <ref...> [--yes]
-```
-
-### User
-```
-get [--ref <uuid>]
-update --city "Berlin"
-find <email>                         account-level or workspace-local lookup
-```
-
-### API / WS escape hatches
-```
-api <METHOD> <path> [--body json] [--query k=v] [--header k=v]
-ws <method> [params-json]
-```
-
-EOF
-wc -l README.md

@@ -1,4 +1,4 @@
-import { readEnv } from '../auth/env.js'
+import { readEnv, requireUrl } from '../auth/env.js'
 import { resolveToken } from '../auth/client.js'
 import { ExitCode, handleError, CliError } from '../output/errors.js'
 
@@ -29,7 +29,7 @@ function appendQuery(url: string, query: Record<string, string>): string {
 
 export async function apiCommand(method: string, path: string, opts: ApiOpts = {}): Promise<void> {
   const env = readEnv()
-  const url = (opts.url ?? env.url).replace(/\/$/, '')
+  const url = requireUrl(opts.url ?? env.url).replace(/\/$/, '')
   const trimmedPath = path.startsWith('/') ? path : '/' + path
   let target = `${url}${trimmedPath}`
   try {

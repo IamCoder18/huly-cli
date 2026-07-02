@@ -7,7 +7,7 @@ import { shouldJson, json, table, kv } from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
 import { accountClient, resolveToken } from '../auth/client.js'
-import { readEnv } from '../auth/env.js'
+import { readEnv, requireUrl } from '../auth/env.js'
 import type { GlobalOpts } from '../cli.js'
 
 type Person = Doc & {
@@ -127,9 +127,9 @@ export async function findUser(email: string, opts: GlobalOpts = {}): Promise<vo
   // Try account-level findPersonBySocialKey first (works after Fix #1).
   // Fall back to workspace-local Person scan on Forbidden / error.
   const env = readEnv()
-  const url = opts.url ?? env.url
+  const url = requireUrl(opts.url ?? env.url)
   try {
-    const token = await resolveToken({ email: env.email, url: opts.url })
+    const token = await resolveToken({ email: env.email, url })
     const acc = await accountClient(url!, token)
     const result = await withSpinner(
       `Looking up ${email} (account)…`,

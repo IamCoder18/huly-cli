@@ -3,7 +3,7 @@ import accountPkg from '@hcengineering/account-client'
 import type { PlatformClient, ConnectOptions } from '@hcengineering/api-client'
 import type { AccountClient } from '@hcengineering/account-client'
 import { createRequire } from 'node:module'
-import { readEnv, insecureTLS } from './env.js'
+import { readEnv, insecureTLS, requireUrl } from './env.js'
 import { getCachedCreds, setCachedCreds, setCachedWorkspaceToken, findAnyCachedToken, findAnyCachedCreds, readActiveAccount, writeActiveAccount } from './cache.js'
 
 const require = createRequire(import.meta.url)
@@ -214,7 +214,7 @@ export interface ConnectArgs {
 
 export async function connectPlatform(opts: ConnectArgs): Promise<PlatformClient> {
   const env = readEnv()
-  const url = opts.url ?? env.url
+  const url = requireUrl(opts.url ?? env.url)
   const workspace = opts.workspace ?? env.workspace
   const email = opts.email ?? env.email
   const password = opts.password ?? env.password
@@ -275,9 +275,9 @@ export async function connectPlatform(opts: ConnectArgs): Promise<PlatformClient
 
 export async function resolveToken(opts: { url?: string; token?: string; email?: string; password?: string }): Promise<string> {
   const env = readEnv()
-  const url = opts.url ?? env.url
   const token = opts.token ?? env.token
   if (token) return token
+  const url = requireUrl(opts.url ?? env.url)
   const email = opts.email ?? env.email
   const password = opts.password ?? env.password
   // Prefer cached credentials over re-authenticating. Re-login would clobber
