@@ -345,7 +345,7 @@ export async function listMentions(opts: { workspace?: string; url?: string; jso
     if (account.person === undefined) {
       const byUuid = (await client.findAll(MENTION_CLASS, { user: account.uuid as unknown as Ref<Doc> })) as UserMentionInfo[]
       if (shouldJson({ json: opts.json, ci: opts.ci })) { json(byUuid); return }
-      if (byUuid.length === 0) { console.log(C.muted('(no mentions — current account has no Person profile yet)')) }
+      if (byUuid.length === 0) { console.log(C.muted('(no mentions — current account has no Person profile yet)')); return }
       renderMentions(byUuid)
       return
     }

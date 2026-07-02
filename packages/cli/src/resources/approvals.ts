@@ -332,6 +332,6 @@ export async function deleteApprovals(refs: string[], opts: { workspace?: string
       return
     }
     if (errors.length > 0) for (const e of errors) console.error(`  ${e.id}: ${e.message}`)
-    bulkRemoved(removed.length, errors.length === removed.length ? errors.length : errors.length, 'approvals')
+    bulkRemoved(removed.length, errors.length, 'approvals')
   } finally { await client.close() }
 }
