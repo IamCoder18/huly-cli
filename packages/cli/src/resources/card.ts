@@ -221,6 +221,7 @@ export async function createCard(opts: {
   body?: string
   bodyFile?: string
   description?: string
+  parent?: string
   json?: boolean
   ci?: boolean
   dryRun?: boolean
@@ -251,14 +252,48 @@ export async function createCard(opts: {
       body = opts.body
     }
 
+    // Mirror card-resources/src/utils.ts:createChildCard — when a card has a
+    // parent, parentInfo is the parent's parentInfo + the parent's own
+    // ref/class/title. Without this, ancestor chain breaks and the
+    // server-side rank/parent updates can't compute hierarchy.
+    let parent: CardDoc | undefined = undefined
+    let parentInfo: Array<{ _id: Ref<Doc>; _class: Ref<Class<Doc>>; title: string }> = []
+    if (opts.parent) {
+      const parentId = await resolveRef(opts.parent, {
+        client,
+        classId: CLASS.Card as Ref<Class<Doc>>,
+      })
+      parent = (await client.findOne(CLASS.Card as Ref<Class<CardDoc>>, { _id: parentId as Ref<CardDoc> })) as CardDoc | undefined
+      if (parent === undefined || parent === null) {
+        throw new CliError(ExitCode.NotFound, `parent card ${opts.parent} not found`)
+      }
+      // Validate parent's parentInfo entries — they come from older/migrated
+      // cards and may be malformed. Drop any entry missing _id/_class/title
+      // so the resulting parentInfo is well-formed.
+      const safeParentInfo = ((parent.parentInfo ?? []) as unknown[]).flatMap((entry) => {
+        if (entry === null || typeof entry !== 'object') return []
+        const e = entry as Record<string, unknown>
+        const id = e._id
+        const cls = e._class
+        const title = e.title
+        if (typeof id !== 'string' || typeof cls !== 'string' || typeof title !== 'string') return []
+        return [{ _id: id as Ref<Doc>, _class: cls as Ref<Class<Doc>>, title }]
+      })
+      parentInfo = [
+        ...safeParentInfo,
+        { _id: parent._id, _class: parent._class as Ref<Class<Doc>>, title: parent.title }
+      ]
+    }
+
     const data: Record<string, unknown> = {
       title: opts.title,
       content: body ? body : '',
-      parentInfo: [],
+      parentInfo,
       rank: '0|aaaaa:',
       blobs: {},
       _class: tagId
     }
+    if (parent !== undefined && parent !== null) data.parent = parent._id as Ref<Doc>
     if (opts.dryRun) {
       console.log('would create card:')
       console.log(JSON.stringify({ _class: tagId, space, data }, null, 2))

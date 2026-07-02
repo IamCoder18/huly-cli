@@ -125,6 +125,75 @@ export async function loginAndCache(
   return result
 }
 
+export async function signUpAndCache(
+  url: string,
+  email: string,
+  password: string,
+  firstName: string,
+  lastName: string
+): Promise<{ token: string; account: string }> {
+  const c = await accountClient(url)
+  // signUp returns a usable session token in the same call (selfhost), so
+  // we can cache immediately. The original code discarded it and
+  // re-logged in, which races against eventual consistency on the
+  // accounts service (AccountNotFound even though signup succeeded).
+  const signUpResult = await c.signUp(email, password, firstName, lastName)
+  let token: string | undefined = (signUpResult as { token?: string }).token
+  if (token === undefined || token === '') {
+    // Selfhost's contracts vary — if signUp didn't return a token, fall
+    // through to login with a small retry to absorb propagation lag.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const info = await c.login(email, password)
+        token = info.token
+        if (token !== undefined && token !== '') break
+      } catch (err) {
+        if (attempt === 2) throw err
+        await new Promise((res) => setTimeout(res, 250 * (attempt + 1)))
+      }
+    }
+  }
+  if (token === undefined || token === '') throw new Error('signUp succeeded but no session token was returned')
+  await setCachedCreds(url, email, {
+    accountToken: token,
+    workspaces: {}
+  })
+  await writeActiveAccount(url, email)
+  return { token, account: email }
+}
+
+export interface CreateWorkspaceResult {
+  workspaceUrl: string
+  workspaceId: string
+  role: string
+  endpoint: string
+  token: string
+}
+
+export async function createWorkspace(
+  url: string,
+  token: string,
+  email: string,
+  workspaceName: string
+): Promise<CreateWorkspaceResult> {
+  const c = await accountClient(url, token)
+  const result = await c.createWorkspace(workspaceName)
+  if (!result.token) throw new Error('createWorkspace succeeded but no token returned')
+  await setCachedWorkspaceToken(url, email, workspaceName, {
+    token: result.token,
+    workspaceId: result.workspace ?? '',
+    role: String(result.role ?? 'OWNER'),
+    endpoint: result.endpoint
+  })
+  return {
+    workspaceUrl: workspaceName,
+    workspaceId: result.workspace ?? '',
+    role: String(result.role ?? 'OWNER'),
+    endpoint: result.endpoint,
+    token: result.token
+  }
+}
+
 export async function listWorkspaces(url: string, token: string) {
   const c = await accountClient(url, token)
   return await c.getUserWorkspaces()

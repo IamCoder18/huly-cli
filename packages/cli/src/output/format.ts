@@ -346,6 +346,24 @@ export function fail(msg: string): void { console.log(C.fail(msg)) }
 export function warn(msg: string): void { console.log(C.warn(msg)) }
 export function info(msg: string): void { console.log(C.info(msg)) }
 
+/**
+ * Normalize a Ref<Doc> (or anything that might be a Ref) into a plain
+ * string suitable for console output and JSON serialization. Replaces
+ * ~25 `as unknown as string` casts scattered across the resources.
+ */
+export function refString(ref: unknown): string {
+  return String(ref ?? '')
+}
+
+/**
+ * Normalize an array of Refs to strings. Empty / null entries become
+ * empty strings so .includes checks behave predictably.
+ */
+export function refStrings(refs: ReadonlyArray<unknown> | null | undefined): string[] {
+  if (refs === null || refs === undefined) return []
+  return refs.map((r) => String(r ?? ''))
+}
+
 export function shouldJson(opts: { json?: boolean; ci?: boolean }): boolean {
   return Boolean(opts.json || opts.ci || process.env.CI)
 }
