@@ -18,12 +18,13 @@ the rationale behind design decisions.
 
 1. [Why huly-cli](#why-huly-cli)
 2. [Installation](#installation)
-3. [Configuration](#configuration)
-4. [Authentication](#authentication)
-5. [Global flags](#global-flags)
-6. [Output modes](#output-modes)
-7. [Ref resolution](#ref-resolution)
-8. [Command reference](#command-reference)
+3. [Agent Skill (LLM agents / OpenClaw)](#agent-skill-llm-agents--openclaw)
+4. [Configuration](#configuration)
+5. [Authentication](#authentication)
+6. [Global flags](#global-flags)
+7. [Output modes](#output-modes)
+8. [Ref resolution](#ref-resolution)
+9. [Command reference](#command-reference)
    - [login / signup / whoami](#login--signup--whoami)
    - [workspace](#workspace)
    - [user](#user)
@@ -51,19 +52,19 @@ the rationale behind design decisions.
    - [activity](#activity)
    - [notification](#notification)
    - [approval](#approval)
-9. [Common workflows](#common-workflows)
-10. [Platform behaviors & best practices](#platform-behaviors--best-practices)
-11. [CLI behaviors and smart defaults](#cli-behaviors-and-smart-defaults)
-12. [Operational tips](#operational-tips)
-13. [Output mode reference](#output-mode-reference)
-14. [Class ID reference](#class-id-reference)
-15. [Plugin / model surface map](#plugin--model-surface-map)
-16. [Escape hatches](#escape-hatches)
-17. [Internal architecture](#internal-architecture)
-18. [Environment variables reference](#environment-variables-reference)
-19. [Security model](#security-model)
-20. [Node compatibility](#node-compatibility)
-21. [Development](#development)
+10. [Common workflows](#common-workflows)
+11. [Platform behaviors & best practices](#platform-behaviors--best-practices)
+12. [CLI behaviors and smart defaults](#cli-behaviors-and-smart-defaults)
+13. [Operational tips](#operational-tips)
+14. [Output mode reference](#output-mode-reference)
+15. [Class ID reference](#class-id-reference)
+16. [Plugin / model surface map](#plugin--model-surface-map)
+17. [Escape hatches](#escape-hatches)
+18. [Internal architecture](#internal-architecture)
+19. [Environment variables reference](#environment-variables-reference)
+20. [Security model](#security-model)
+21. [Node compatibility](#node-compatibility)
+22. [Development](#development)
 
 ---
 
@@ -140,6 +141,42 @@ export RUSH_ALLOW_UNSUPPORTED_NODEJS=1
 - `npm` >= 9
 - A Huly server reachable from where you run the CLI
 - Credentials for at least one Huly account
+
+---
+
+## Agent Skill (LLM agents / OpenClaw)
+
+In addition to being a CLI, `huly-cli` ships a drop-in **Agent Skill** — a curated `SKILL.md` plus a `references/` bundle that teaches an LLM coding agent (or OpenClaw) how to drive your Huly workspace end-to-end without a browser. The skill encodes the surface map, the cascade side effects (Issue ↔ Action state machine, WorkSlot mirrors, parent-chain `reportedTime` recompute), the ref-resolution order, and the right command for each user intent — so the agent doesn't have to rediscover them.
+
+### Install the skill
+
+For AI coding agents (Kilo Code, Cursor, Claude Code, etc. — anything that consumes the open [`skills`](https://github.com/vercel-labs/skills) package format):
+
+```bash
+npx skills add IamCoder18/huly-cli
+```
+
+For [OpenClaw](https://openclaw.ai):
+
+```bash
+openclaw skills install @iamcoder18/huly
+```
+
+The install gives the agent the skill's `SKILL.md` and `references/*.md` so it can pick the correct surface on the first try. The skill assumes the `huly` CLI itself is already installed and authenticated — see [Installation](#installation) above and [Configuration](#configuration) / [Authentication](#authentication) below.
+
+### Verify it works from the agent's shell
+
+Once installed, ask your agent to run:
+
+```bash
+huly whoami --json
+```
+
+A JSON object with `email` and `workspace` confirms the skill's preconditions are met. If it errors, the agent will (per the skill's `Setup` section) install the CLI and prompt you to configure credentials — see [Configuration](#configuration) and [Authentication](#authentication).
+
+### Skill source
+
+The canonical source for the skill lives in this repo at [`packages/huly-skill/SKILL.md`](packages/huly-skill/SKILL.md), with per-surface deep dives under [`packages/huly-skill/references/`](packages/huly-skill/references). It is published in lockstep with the CLI.
 
 ---
 

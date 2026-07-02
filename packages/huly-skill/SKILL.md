@@ -9,6 +9,65 @@ This skill teaches you how to drive a self-hosted Huly workspace through the `hu
 
 ---
 
+## Setup (one-time)
+
+**Default assumption: the `huly` CLI is already installed on this machine and already configured with valid credentials.** Most users set this up once, then forget it. Don't re-run setup commands unless the verification step fails.
+
+### Quick check (do this first, every new session)
+
+```bash
+huly whoami --json
+```
+
+- **If it prints a JSON object with `email` and `workspace`** → setup is fine, proceed.
+- **If it errors with "command not found"** → the CLI is not installed. Install it, then ask the user to configure it (see below).
+- **If it errors with auth/network/credentials issues** → the CLI is installed but misconfigured. Ask the user to configure it; do not invent credentials.
+
+### Install the CLI (only if `huly whoami` says "command not found")
+
+```bash
+# preferred
+npm i -g @iamcoder18/huly-cli
+
+# alternatives
+pnpm add -g @iamcoder18/huly-cli
+yarn global add @iamcoder18/huly-cli
+bun add -g @iamcoder18/huly-cli
+```
+
+Then **stop and ask the user to configure it** — the agent must not write credentials on the user's behalf.
+
+### Have the user configure auth (pick one)
+
+**Option A — interactive login (the user runs this themselves):**
+
+```bash
+huly login
+# prompts for password if HULY_PASSWORD is unset
+```
+
+**Option B — `.env` file (CI / headless / service accounts).** Ask the user to create `~/.config/huly/.env` (mode 0600):
+
+```bash
+# minimal — password login
+export HULY_URL=https://huly.example.com
+export HULY_EMAIL=you@example.com
+export HULY_PASSWORD=your-password
+
+# strict — pre-issued JWT (preferred for agents / service accounts)
+export HULY_URL=https://huly.example.com
+export HULY_TOKEN=eyJ0eXAiOiJKV1Q...
+export HULY_WORKSPACE=production
+export HULY_PROJECT=BACKEND            # for bare-number issue refs
+export HULY_NONINTERACTIVE=1
+```
+
+After the user finishes either option, re-run `huly whoami --json` to confirm. Cached tokens land in `~/.config/huly/credentials.json` (mode 0600). There is **no `huly logout`** — clearing credentials is a manual file delete (see `references/auth-and-setup.md`).
+
+Full env-var cheat sheet, the auth-state machine, and precedence rules live in `references/auth-and-setup.md` and the project README's §Configuration / §Authentication sections.
+
+---
+
 ## The 7 rules. Read these first.
 
 1. **Verify before you mutate.** Run `huly whoami` to confirm the workspace, and `huly <surface> list --json | jq` to discover refs when they aren't given to you explicitly. NEVER guess a ref, person, or status name.
