@@ -84,7 +84,13 @@ export async function listApprovals(opts: ListApprovalsOpts = {}): Promise<void>
   try {
     const q: Record<string, unknown> = {}
     if (opts.status) q.status = opts.status
-    if (opts.attachedTo) q.attachedTo = await resolveRef(opts.attachedTo, { client, classId: CLASS.Issue as Ref<Class<Doc>> })
+    if (opts.attachedTo) {
+      // Caller may pin the target class via --attached-to-class; default to Issue.
+      // Without the right class ref, resolveRef throws "not found" for valid
+      // requests attached to other doc types (documents, commits, etc.).
+      const aClass = ((opts as { attachedToClass?: string }).attachedToClass ?? CLASS.Issue) as Ref<Class<Doc>>
+      q.attachedTo = await resolveRef(opts.attachedTo, { client, classId: aClass })
+    }
     const docs = (await withSpinner('Loading approvals…', () => client.findAll(REQUEST_CLASS, q as any), opts)) as RequestDoc[]
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json(docs); return }
     if (docs.length === 0) { console.log(C.muted('(no approval requests)')); return }
@@ -154,7 +160,17 @@ export async function createApproval(opts: CreateApprovalOpts): Promise<void> {
     const target = await client.findOne(aClass, { _id: aId as Ref<Doc> })
     if (!target) throw new CliError(ExitCode.NotFound, `attached-to ${opts.attachedTo} not found`)
     const personIds = await resolvePersonIds(client, opts.requested)
-    const tx: Tx = opts.txJson ? JSON.parse(opts.txJson) : { _id: '' as any, _class: 'core:class:Tx' as any, space: '' as any, modifiedBy: '' as any, modifiedOn: Date.now(), createOn: Date.now() }
+    // The `tx` field of a Request describes the change to apply on approval.
+    // It is required: the server validates tx shape on create. Pass a JSON
+    // descriptor via --tx-json (see `huly approval request --help`).
+    if (!opts.txJson) {
+      throw new CliError(
+        ExitCode.Validation,
+        'missing --tx-json',
+        'a tx descriptor is required to create an approval request (try: huly approval request --help)'
+      )
+    }
+    const tx: Tx = JSON.parse(opts.txJson)
     const data: Record<string, unknown> = {
       requested: personIds,
       approved: [],
@@ -211,12 +227,17 @@ export async function approveRequest(opts: ApproveOpts): Promise<void> {
     const { id, doc } = await fetchRequest(client, opts.ref!)
     if (doc.status !== 'Active') throw new CliError(ExitCode.Validation, `request is ${doc.status}, not Active`)
     const account = await client.getAccount()
-    const me = await client.findOne(PERSON_CLASS, { _id: account.person as unknown as Ref<Doc> })
+    // Resolve the current user's Person id when present; the requested/approved
+    // arrays store Person refs. Without an account.person, fall back to
+    // account.uuid so empty-filter serialization doesn't accidentally match
+    // some other account's Person.
+    const me = account.person !== undefined
+      ? await client.findOne(PERSON_CLASS, { _id: account.person as unknown as Ref<Doc> })
+      : null
     const approverId = (me?._id ?? account.uuid) as Ref<Doc>
-    // Build ops with $push approved (the trigger auto-completes when count is
-    // reached). The Approve is a TxUpdateDoc on the underlying request.
+    // The trigger auto-completes when requiredApprovesCount is reached.
     const ops: Record<string, unknown> = { $push: { approved: approverId } }
-    await withSpinner('Approving…', () => client.updateCollection(REQUEST_CLASS, doc.space as unknown as Ref<Space>, id as Ref<Doc>, doc.attachedTo, doc.attachedToClass, doc.collection ?? 'requests', ops as any), opts)
+    await withSpinner('Approving…', () => client.updateCollection(REQUEST_CLASS, doc.space as unknown as Ref<Space>, id as Ref<Doc>, doc.attachedTo, doc.attachedToClass, 'requests', ops as any), opts)
     if (opts.comment) {
       await client.addCollection('chunter:class:ChatMessage' as Ref<Class<Doc>>, doc.space as Ref<Doc>, id, REQUEST_CLASS, 'comments', { message: opts.comment, decision: 'approve' } as any)
     }
@@ -241,14 +262,16 @@ export async function rejectRequest(opts: RejectOpts): Promise<void> {
     const { id, doc } = await fetchRequest(client, opts.ref!)
     if (doc.status !== 'Active') throw new CliError(ExitCode.Validation, `request is ${doc.status}, not Active`)
     const account = await client.getAccount()
-    const me = await client.findOne(PERSON_CLASS, { _id: account.person as unknown as Ref<Doc> })
+    const me = account.person !== undefined
+      ? await client.findOne(PERSON_CLASS, { _id: account.person as unknown as Ref<Doc> })
+      : null
     const rejecterId = (me?._id ?? account.uuid) as Ref<Doc>
     const ops: Record<string, unknown> = {
       status: 'Rejected',
       rejected: rejecterId
     }
     if (opts.rejectedTxJson) ops.rejectedTx = JSON.parse(opts.rejectedTxJson)
-    await withSpinner('Rejecting…', () => client.updateCollection(REQUEST_CLASS, doc.space as unknown as Ref<Space>, id as Ref<Doc>, doc.attachedTo, doc.attachedToClass, doc.collection ?? 'requests', ops as any), opts)
+    await withSpinner('Rejecting…', () => client.updateCollection(REQUEST_CLASS, doc.space as unknown as Ref<Space>, id as Ref<Doc>, doc.attachedTo, doc.attachedToClass, 'requests', ops as any), opts)
     await client.addCollection('chunter:class:ChatMessage' as Ref<Class<Doc>>, doc.space as Ref<Doc>, id, REQUEST_CLASS, 'comments', { message: opts.comment, decision: 'reject' } as any)
     updated('rejected', id as unknown as string)
   } finally { await client.close() }
@@ -260,12 +283,15 @@ export async function cancelRequest(opts: { ref?: string; workspace?: string; ur
     const { id, doc } = await fetchRequest(client, opts.ref!)
     if (doc.status !== 'Active') throw new CliError(ExitCode.Validation, `request is ${doc.status}, not Active`)
     const account = await client.getAccount()
-    // Cancel allowed only by the requester
-    if (!doc.requested?.map(String).includes(String(account.uuid)) && !doc.requested?.map(String).includes(String(account.person))) {
-      throw new CliError((ExitCode as any).Forbidden, 'only requesters can cancel')
+    // Cancel allowed only by the requester. Filter once to avoid the
+    // `[undefined].includes(...)` TypeError when doc.requested is empty.
+    const requesterIds = (doc.requested ?? []).map(String)
+    const isRequester = requesterIds.includes(String(account.person ?? '')) || requesterIds.includes(String(account.uuid))
+    if (!isRequester) {
+      throw new CliError(ExitCode.Auth, 'only requesters can cancel')
     }
     const ops: Record<string, unknown> = { status: 'Cancelled' }
-    await withSpinner('Cancelling…', () => client.updateCollection(REQUEST_CLASS, doc.space as unknown as Ref<Space>, id as Ref<Doc>, doc.attachedTo, doc.attachedToClass, doc.collection ?? 'requests', ops as any), opts)
+    await withSpinner('Cancelling…', () => client.updateCollection(REQUEST_CLASS, doc.space as unknown as Ref<Space>, id as Ref<Doc>, doc.attachedTo, doc.attachedToClass, 'requests', ops as any), opts)
     updated('cancelled', id as unknown as string)
   } finally { await client.close() }
 }
@@ -280,9 +306,15 @@ export async function deleteApprovals(refs: string[], opts: { workspace?: string
       const doc = (await client.findOne(REQUEST_CLASS, { _id: id as Ref<RequestDoc> })) as RequestDoc | undefined
       if (!doc) { skipped++; continue }
       try {
-        await client.removeCollection(REQUEST_CLASS, doc.space as Ref<Doc>, id as Ref<Doc>, doc.attachedTo, doc.attachedToClass, doc.collection ?? 'requests')
+        // Request is an AttachedDoc — delete via removeCollection against
+        // the 'requests' collection tuple on the attachedTo doc.
+        await client.removeCollection(REQUEST_CLASS, doc.space as Ref<Doc>, id as Ref<Doc>, doc.attachedTo, doc.attachedToClass, 'requests')
         deleted++
-      } catch { skipped++ }
+      } catch (err) {
+        // Surface non-silent failures to make debugging possible.
+        console.error('  approval delete error:', (err as Error).message)
+        skipped++
+      }
     }
     bulkRemoved(deleted, skipped, 'approvals')
   } finally { await client.close() }

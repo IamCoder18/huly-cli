@@ -206,7 +206,7 @@ export async function run(argv: string[] = process.argv): Promise<void> {
     .option('--password <pwd>')
     .option('--first <name>')
     .option('--last <name>')
-    .option('--create-workspace <name>', 'also create a workspace with this name and set it as active (optional: pass a name or use --yes)')
+    .option('--create-workspace <name>', 'also create a workspace with this name and set it as active')
     .addHelpText('after', `
 Examples:
   $ huly signup --email alice@example.com --password '***' --first Alice --last Doe
@@ -1650,7 +1650,9 @@ by OnIssueUpdate).`)
     .option('--unpin')
     .action(async (ref, opts, cmd) => { try { await pinActivity(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) } })
   activity.command('react').description('Add/remove/list reactions on an activity message')
-    .requiredOption('--target <ref>').requiredOption('--emoji <e>')
+    .requiredOption('--target <ref>')
+    .option('--emoji <e>', 'emoji to react with (required for --add / --remove, ignored for --list)')
+    .option('--add', 'add the reaction (default if neither --add nor --remove)')
     .option('--remove')
     .option('--list')
     .action(async (opts, cmd) => {

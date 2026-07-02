@@ -1,4 +1,5 @@
-import type { Doc, Ref, Class, Space } from '@hcengineering/core'
+import { type Doc, type Ref, type Class, type Space } from '@hcengineering/core'
+import { SPACE } from '../transport/identifiers.js'
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, invalidateIndex } from '../transport/ref-resolver.js'
@@ -115,7 +116,10 @@ export async function pinActivity(ref: string, opts: { unpin?: boolean; workspac
     const id = await resolveRef(ref, { client, classId: ACTIVITY_CLASS as Ref<Class<Doc>> })
     const doc = await client.findOne(ACTIVITY_CLASS, { _id: id as Ref<ActivityMessage> })
     if (!doc) throw new CliError(ExitCode.NotFound, `activity ${ref} not found`)
-    await client.updateCollection(ACTIVITY_CLASS, doc.space as unknown as Ref<Space>, id as Ref<Doc>, doc.attachedTo as Ref<Doc>, doc.attachedToClass ?? 'core:class:Doc' as Ref<Class<Doc>>, doc.collection ?? 'activity', { isPinned: !opts.unpin } as any)
+    // isPinned is a property of the ActivityMessage doc itself — updateDoc,
+    // NOT updateCollection. The latter would mutate a non-existent
+    // 'activity' collection tuple on the attached-to doc.
+    await client.updateDoc(ACTIVITY_CLASS, doc.space as unknown as Ref<Space>, id as Ref<Doc>, { isPinned: !opts.unpin } as any)
     success(opts.unpin ? 'unpinned' : 'pinned', '', id as unknown as string)
   } finally { await client.close() }
 }
@@ -230,7 +234,11 @@ export async function updateReply(ref: string, opts: { body?: string; workspace?
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const { id, doc } = await fetchActivity(client, ref)
-    await client.updateCollection(ACTIVITY_CLASS, doc.space as unknown as Ref<Space>, id as Ref<Doc>, doc.attachedTo as Ref<Doc>, doc.attachedToClass ?? 'core:class:Doc' as Ref<Class<Doc>>, doc.collection ?? 'replies', { message: opts.body, modifiedOn: Date.now() } as any)
+    // Replies are themselves ActivityMessage docs (with their own
+    // attachedTo pointing at the parent). `message` lives on the reply
+    // doc itself — updateDoc, NOT updateCollection against the parent's
+    // 'replies' tuple (which doesn't exist).
+    await client.updateDoc(ACTIVITY_CLASS, doc.space as unknown as Ref<Space>, id as Ref<Doc>, { message: opts.body, modifiedOn: Date.now() } as any)
     updated('updated reply', id as unknown as string)
   } finally { await client.close() }
 }
@@ -266,12 +274,13 @@ export interface SavedOpts {
 export async function listSaved(opts: SavedOpts = {}): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    // List ALL saved messages (filtering by modifiedBy doesn't match because
-    // the createDoc sets modifiedBy to the session's account, but the
-    // local SDK can return a slightly different uuid shape). We let the
-    // server filter by class only and rely on the workspace permission to
-    // show only the current user's saves.
-    const docs = (await client.findAll(SAVED_CLASS, {})) as SavedMessage[]
+    // SavedMessage extends Preference (NOT AttachedDoc). Per-user filtering
+    // relies on workspace-scoped security filters — match the reference
+    // front-end (`activity-resources/src/activity.ts:38`): filter by
+    // space = SPACE.Workspace so the server's per-user security
+    // middleware can scope to the current account.
+    const account = await client.getAccount()
+    const docs = (await client.findAll(SAVED_CLASS, { space: SPACE.Workspace as Ref<Doc>, modifiedBy: account.uuid as unknown as string })) as SavedMessage[]
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json(docs); return }
     if (docs.length === 0) { console.log(C.muted('(no saved messages)')); return }
     table(docs as unknown as Record<string, unknown>[], [
@@ -285,11 +294,13 @@ export async function saveMessage(opts: SavedOpts): Promise<void> {
   if (!opts.target) throw new CliError(ExitCode.Validation, 'missing --target')
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const { id, doc } = await fetchActivity(client, opts.target)
-    // SavedMessage is a Preference (not an AttachedDoc), so we use createDoc
-    // with the activity's space as the doc space.
+    const { id } = await fetchActivity(client, opts.target)
+    // SavedMessage extends Preference (NOT AttachedDoc) — see reference
+    // front-end `activity-resources/src/utils.ts:91` for the canonical
+    // shape. Use SPACE.Workspace, the activity's space is the wrong
+    // scope for a per-user preference.
     const data: Record<string, unknown> = { attachedTo: id }
-    const sid = await withSpinner('Saving…', () => client.createDoc(SAVED_CLASS, doc.space as Ref<Doc>, data as any), opts)
+    const sid = await withSpinner('Saving…', () => client.createDoc(SAVED_CLASS, SPACE.Workspace as Ref<Space>, data as any), opts)
     success('saved', '', sid as unknown as string)
   } finally { await client.close() }
 }
@@ -298,8 +309,11 @@ export async function unsaveMessage(opts: SavedOpts): Promise<void> {
   if (!opts.target) throw new CliError(ExitCode.Validation, 'missing --target')
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const { id, doc } = await fetchActivity(client, opts.target)
-    const all = (await client.findAll(SAVED_CLASS, { attachedTo: id })) as SavedMessage[]
+    const { id } = await fetchActivity(client, opts.target)
+    // Per-user filter via modifiedBy; without this, unsave would wipe
+    // every other user's bookmark of the message.
+    const account = await client.getAccount()
+    const all = (await client.findAll(SAVED_CLASS, { space: SPACE.Workspace as Ref<Doc>, attachedTo: id, modifiedBy: account.uuid as unknown as string })) as SavedMessage[]
     for (const s of all) {
       await client.removeDoc(SAVED_CLASS, (s as Doc).space as Ref<Doc>, s._id as Ref<Doc>)
     }
@@ -313,21 +327,18 @@ export async function listMentions(opts: { workspace?: string; url?: string; jso
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const account = await client.getAccount()
-    // UserMentionInfo is attached to a Person (the mentioned user). We look
-    // for entries pointing at the current user's Person ref.
-    const me = await client.findOne('contact:class:Person' as Ref<Class<Doc>>, { _id: account.person as unknown as Ref<Doc> })
-    if (!me) {
-      const all = (await client.findAll(MENTION_CLASS, { user: account.person as unknown as Ref<Doc> })) as UserMentionInfo[]
-      if (shouldJson({ json: opts.json, ci: opts.ci })) { json(all); return }
-      if (all.length === 0) { console.log(C.muted('(no mentions)')); return }
-      table(all as unknown as Record<string, unknown>[], [
-        { key: 'content', header: 'CONTEXT', format: (r) => String((r as UserMentionInfo).content ?? '').slice(0, 60) },
-        { key: 'attachedTo', header: 'MESSAGE', format: (r) => C.id(String((r as UserMentionInfo).attachedTo ?? '').slice(-12)) },
-        { key: '_id', header: '_ID', format: (r) => C.id(String((r as UserMentionInfo)._id).slice(-12)) }
-      ], { count: true, title: 'mentions' })
+    // A newly-created account may have no Person doc yet. Without this
+    // guard, findOne({ _id: undefined }) would have its undefined key
+    // stripped by the query serializer and match every Person in the
+    // workspace — leaking everyone's mentions.
+    if (account.person === undefined) {
+      if (shouldJson({ json: opts.json, ci: opts.ci })) { json([]); return }
+      console.log(C.muted('(no mentions — current account has no Person profile yet)'))
       return
     }
-    const all = (await client.findAll(MENTION_CLASS, { user: me._id as Ref<Doc> })) as UserMentionInfo[]
+    const me = await client.findOne('contact:class:Person' as Ref<Class<Doc>>, { _id: account.person as unknown as Ref<Doc> })
+    const userRef = (me?._id ?? account.person) as Ref<Doc>
+    const all = (await client.findAll(MENTION_CLASS, { user: userRef })) as UserMentionInfo[]
     if (shouldJson({ json: opts.json, ci: opts.ci })) { json(all); return }
     if (all.length === 0) { console.log(C.muted('(no mentions)')); return }
     table(all as unknown as Record<string, unknown>[], [

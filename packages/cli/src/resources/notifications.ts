@@ -190,26 +190,26 @@ export async function markAllRead(opts: { workspace?: string; url?: string; json
   } finally { await client.close() }
 }
 
-export async function archive(refs: string[], opts: { workspace?: string; url?: string; yes?: boolean } = {}): Promise<void> {
+export async function archive(refs: string[], opts: { workspace?: string; url?: string; yes?: boolean; json?: boolean; ci?: boolean } = {}): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     if (!opts.yes && refs.length > 1) throw new CliError(ExitCode.Validation, `destructive: archiving ${refs.length} notifications requires --yes`)
     let count = 0
     for (const r of refs) {
-      await updateInbox(client, r, { archived: true }, 'Archiving…', {})
+      await updateInbox(client, r, { archived: true }, 'Archiving…', opts)
       count++
     }
     success('archived', `${count} notifications`)
   } finally { await client.close() }
 }
 
-export async function unarchive(refs: string[], opts: { workspace?: string; url?: string; yes?: boolean } = {}): Promise<void> {
+export async function unarchive(refs: string[], opts: { workspace?: string; url?: string; yes?: boolean; json?: boolean; ci?: boolean } = {}): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     if (!opts.yes && refs.length > 1) throw new CliError(ExitCode.Validation, `destructive: unarchiving ${refs.length} notifications requires --yes`)
     let count = 0
     for (const r of refs) {
-      await updateInbox(client, r, { archived: false }, 'Unarchiving…', {})
+      await updateInbox(client, r, { archived: false }, 'Unarchiving…', opts)
       count++
     }
     success('unarchived', `${count} notifications`)
@@ -421,6 +421,17 @@ export async function updateSetting(opts: UpdateSettingOpts): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const account = await client.getAccount()
+    // NotificationTypeSetting extends SpacePreference (parented under
+    // the user's PersonSpace), so the space argument must be the
+    // current user's Person ref. Right after signup no Person may exist
+    // yet — refuse rather than crash on addCollection(_class, undefined, ...).
+    if (account.person === undefined) {
+      throw new CliError(
+        ExitCode.Validation,
+        'cannot update notification settings without an associated person profile',
+        're-login once the Person profile has propagated'
+      )
+    }
     const existing = (await client.findAll(TYPE_SETTING_CLASS, { attachedTo: opts.provider as Ref<Doc>, type: opts.type as Ref<Doc>, modifiedBy: account.uuid as unknown as string })) as NotificationTypeSetting[]
     if (existing.length > 0) {
       await client.updateDoc(TYPE_SETTING_CLASS, existing[0].space as Ref<Doc>, existing[0]._id as Ref<Doc>, { enabled: opts.enabled } as any)

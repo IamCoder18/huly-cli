@@ -133,17 +133,33 @@ export async function signUpAndCache(
   lastName: string
 ): Promise<{ token: string; account: string }> {
   const c = await accountClient(url)
-  // The server's signUp also returns a session token in the same call on
-  // selfhost, so we can cache immediately.
-  await c.signUp(email, password, firstName, lastName)
-  const info = await c.login(email, password)
-  if (!info.token) throw new Error('signUp succeeded but login returned no token')
+  // signUp returns a usable session token in the same call (selfhost), so
+  // we can cache immediately. The original code discarded it and
+  // re-logged in, which races against eventual consistency on the
+  // accounts service (AccountNotFound even though signup succeeded).
+  const signUpResult = await c.signUp(email, password, firstName, lastName)
+  let token: string | undefined = (signUpResult as { token?: string }).token
+  if (token === undefined || token === '') {
+    // Selfhost's contracts vary — if signUp didn't return a token, fall
+    // through to login with a small retry to absorb propagation lag.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const info = await c.login(email, password)
+        token = info.token
+        if (token !== undefined && token !== '') break
+      } catch (err) {
+        if (attempt === 2) throw err
+        await new Promise((res) => setTimeout(res, 250 * (attempt + 1)))
+      }
+    }
+  }
+  if (token === undefined || token === '') throw new Error('signUp succeeded but no session token was returned')
   await setCachedCreds(url, email, {
-    accountToken: info.token,
+    accountToken: token,
     workspaces: {}
   })
   await writeActiveAccount(url, email)
-  return { token: info.token, account: info.account }
+  return { token, account: email }
 }
 
 export interface CreateWorkspaceResult {

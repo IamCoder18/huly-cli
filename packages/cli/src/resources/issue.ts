@@ -395,16 +395,32 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
     // front-end does it in CreateIssue.svelte: $inc the project's sequence,
     // read the new value, build `${project.identifier}-${number}`. The CLI must
     // do the same or every issue ends up with `identifier: '?'` and no number.
-    const incResult = await withSpinner('Reserving issue number…', () =>
-      client.updateDoc(
-        CLASS.Project as Ref<Class<Doc>>,
-        'core:space:Space' as Ref<Space>,
-        project._id as Ref<Space>,
-        { $inc: { sequence: 1 } },
-        true
-      )
-    )
-    const number = (incResult as unknown as { object: { sequence: number } }).object.sequence
+    //
+    // The SDK returns `{ object: Doc }` when retrieve: true (memdb impl:
+    // `memdb.ts:505`), so we read the new sequence from there. We rely on
+    // `retrieve: true` to avoid a second round-trip; on SDKs that return
+    // only `{ objectId }`, `findOne` is the fallback.
+    let number: number
+    try {
+      const incResult = await withSpinner('Reserving issue number…', () =>
+        client.updateDoc(
+          CLASS.Project as Ref<Class<Doc>>,
+          'core:space:Space' as Ref<Space>,
+          project._id as Ref<Space>,
+          { $inc: { sequence: 1 } },
+          true
+        )
+      ) as unknown as { object?: { sequence?: number } } | { sequence?: number } | undefined
+      const seq = (incResult as any)?.object?.sequence ?? (incResult as any)?.sequence
+      if (typeof seq === 'number') {
+        number = seq
+      } else {
+        const reloaded = await client.findOne(CLASS.Project as Ref<Class<Doc>>, { _id: project._id as Ref<Doc> }) as unknown as { sequence?: number } | undefined
+        number = reloaded?.sequence ?? 0
+      }
+    } catch (err) {
+      throw new CliError(ExitCode.Server, `failed to reserve issue number: ${(err as Error).message}`)
+    }
     const identifier = `${project.identifier}-${number}`
 
     const status = await resolveStatus(client, project, opts.status)
@@ -448,8 +464,8 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
       // parent's own ancestors. Without this, child issues have no
       // ancestor chain and `OnIssueUpdate.updateIssueParentEstimations`
       // can't compute rollups up the hierarchy.
-      const parentIssue = (await client.findOne(CLASS.Issue as Ref<Class<Issue>>, { _id: parentId as Ref<Issue> })) as (Issue & { parents?: Array<{ parentId: string; identifier?: string; parentTitle?: string; space: string }> }) | null
-      if (parentIssue === null) {
+      const parentIssue = (await client.findOne(CLASS.Issue as Ref<Class<Issue>>, { _id: parentId as Ref<Issue> })) as (Issue & { parents?: Array<{ parentId: string; identifier?: string; parentTitle?: string; space: string }> }) | undefined
+      if (parentIssue === undefined || parentIssue === null) {
         throw new CliError(ExitCode.NotFound, `parent issue ${opts.parent} not found`)
       }
       data.parents = [
@@ -512,22 +528,42 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
           }
         }).client?.txFactory
         if (conn !== undefined && txFactory !== undefined) {
-          id = await withSpinner('Creating issue (bypass AttachedDoc check)…', async () => {
-            const tx = txFactory.createTxCreateDoc(
-              CLASS.Issue as Ref<Class<Doc>>,
-              project._id as unknown as Ref<Space>,
-              data,
-              undefined
-            )
-            await conn.tx(tx)
-            return tx.objectId as Ref<Doc>
-          }) as Ref<Doc>
+          try {
+            id = await withSpinner('Creating issue (bypass AttachedDoc check)…', async () => {
+              const tx = txFactory.createTxCreateDoc(
+                CLASS.Issue as Ref<Class<Doc>>,
+                project._id as unknown as Ref<Space>,
+                data,
+                undefined
+              )
+              await conn.tx(tx)
+              return tx.objectId as Ref<Doc>
+            }) as Ref<Doc>
+          } catch (bypassErr) {
+            // Create failed after we already $inc'd the project's sequence;
+            // decrement so the next issue gets the correct number. Best-effort;
+            // log but don't mask the original error.
+            await client
+              .updateDoc(
+                CLASS.Project as Ref<Class<Doc>>,
+                'core:space:Space' as Ref<Space>,
+                project._id as Ref<Space>,
+                { $inc: { sequence: -1 } }
+              )
+              .catch((rollbackErr) => {
+                console.error(`warning: $inc rollback failed: ${(rollbackErr as Error).message}`)
+              })
+            throw bypassErr
+          }
           if (id === undefined) throw err
         } else {
           throw err
         }
       } else if (/duplicate|exists|already/i.test(msg)) {
         // Idempotency: if an issue with the same title already exists in this project, return it.
+        // NOTE: the sequence is already $inc'd above; we deliberately do NOT
+        // decrement it here so the consumed number is reserved for retried
+        // titles (which must be considered distinct, future issues).
         const existing = (await client.findAll(CLASS.Issue as Ref<Class<Issue>>, {
           space: project._id,
           title
@@ -543,6 +579,18 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
         }
         throw err
       } else {
+        // Unexpected create error: roll back the $inc so the next issue
+        // gets this number instead of skipping it.
+        await client
+          .updateDoc(
+            CLASS.Project as Ref<Class<Doc>>,
+            'core:space:Space' as Ref<Space>,
+            project._id as Ref<Space>,
+            { $inc: { sequence: -1 } }
+          )
+          .catch((rollbackErr) => {
+            console.error(`warning: $inc rollback failed: ${(rollbackErr as Error).message}`)
+          })
         throw err
       }
     }

@@ -107,10 +107,13 @@ export async function createProject(opts: {
     members: currentAccountUuid !== '' ? [currentAccountUuid] : [],
     sequence: 0,
     // The tracker Project interface requires these fields. The reference
-    // front-end (CreateProject.svelte) sets `PreviousWorkDay` on create
-    // and leaves defaultIssueStatus as an empty ref on fresh projects.
+    // front-end (CreateProject.svelte) sets `PreviousWorkDay` on create.
+    // `defaultIssueStatus` is intentionally omitted: an empty-string Ref is
+    // not a valid Ref<Doc> and any code that dereferences it (status
+    // pickers, OnProjectUpdate triggers) will crash. Without the field,
+    // the tracker plugin's `OnProjectCreate` trigger (or its model
+    // defaults) picks a real IssueStatus on first use.
     defaultTimeReportDay: 0, // 0 = TimeReportDayType.PreviousWorkDay
-    defaultIssueStatus: '' as Ref<Doc>,
     defaultAssignee: null
   }
   if (opts.minimal) {

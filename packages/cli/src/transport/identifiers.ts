@@ -68,6 +68,7 @@ export const CLASS = {
 } as const
 
 export const SPACE = {
+  Workspace: 'core:space:Workspace' as const,
   Tx: 'core:space:Tx' as const,
   PersonalTaskList: 'task:space:MyTasks' as const,
   DocumentRoot: 'document:space:Document' as const,

@@ -12,11 +12,16 @@ export async function whoamiCommand(opts: { url?: string; workspace?: string; js
 
   const token = await resolveToken({ url })
   const cached = await findAnyCachedCreds(url)
-  // Prefer the env-specified email: `resolveToken` will have logged in with it
-  // (or used its cached cred). Only fall back to the first cached account
-  // when no env email is set — otherwise whoami reports the wrong account on
-  // machines that have multiple cached accounts for the same server.
-  const email = env.email ?? cached?.email
+  // Prefer the env-specified email: `resolveToken` will have logged in with
+  // it (or used its cached cred). Only fall back to the first cached
+  // account when no env email is set — otherwise whoami could report the
+  // wrong account on machines with multiple cached accounts for the same
+  // server (resolveToken may silently return a token for an unrelated
+  // account when env.email doesn't match any cache).
+  let email = env.email
+  if (email === undefined && cached !== undefined) {
+    email = cached.email
+  }
 
   const ac = await withSpinner('Loading account…', () => accountClient(url, token))
   const socialIds = await ac.getSocialIds(false)

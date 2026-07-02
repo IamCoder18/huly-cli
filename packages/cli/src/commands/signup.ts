@@ -13,7 +13,6 @@ interface SignupOpts {
   firstName?: string
   lastName?: string
   workspace?: string
-  createWorkspace?: boolean
   nonInteractive?: boolean
   headless?: boolean
   ci?: boolean
@@ -68,14 +67,12 @@ export async function signupCommand(opts: SignupOpts = {}): Promise<void> {
     { ci: opts.headless }
   )
 
-  // After signup, the new account has zero workspaces. Offer to create one
-  // interactively; in non-interactive/headless mode, only do it if --workspace
-  // was passed (or --create-workspace was set).
+  // After signup, the new account has zero workspaces. In headless mode
+  // create a workspace only if --workspace was passed; otherwise, prompt
+  // the user interactively.
   let workspaceName: string | undefined
   if (opts.workspace) {
     workspaceName = opts.workspace
-  } else if (opts.createWorkspace) {
-    workspaceName = slugify(`${firstName}-ws`)
   } else if (!opts.headless && !opts.nonInteractive && !isNonInteractive()) {
     const want = await promptConfirm('Create a new workspace now?', { forceInteractive, default: true })
     if (want) {

@@ -134,7 +134,10 @@ export async function updateSpace(ref: string, opts: {
       console.log(JSON.stringify(ops, null, 2))
       return
     }
-    await withSpinner('Updating space…', () => client.updateDoc(CLASS.Space as Ref<Class<SpaceDoc>>, doc._id as unknown as Ref<Space>, id as Ref<Doc>, ops as any), opts)
+    // A Space doc lives in the Workspace data space (not in itself). Passing
+    // doc._id as the space causes the SDK to look up a space with that _id,
+    // which fails server-side. Use the standard parent space ref.
+    await withSpinner('Updating space…', () => client.updateDoc(CLASS.Space as Ref<Class<SpaceDoc>>, 'core:space:Space' as Ref<Space>, id as Ref<Doc>, ops as any), opts)
     updated('updated space', id as unknown as string)
   } finally { await client.close() }
 }
@@ -229,7 +232,7 @@ export async function addSpaceMembers(ref: string, members: string[], opts: { js
     const existing = new Set((doc.members ?? []).map((m: any) => String(m)))
     const added = ids.filter((i) => !existing.has(String(i)))
     if (added.length === 0) { console.log(C.muted('(no new members)')); return }
-    await withSpinner('Adding members…', () => client.updateDoc(CLASS.Space as Ref<Class<SpaceDoc>>, doc._id as unknown as Ref<Space>, id as Ref<Doc>, { $push: { members: { $each: added } } } as any), opts)
+    await withSpinner('Adding members…', () => client.updateDoc(CLASS.Space as Ref<Class<SpaceDoc>>, 'core:space:Space' as Ref<Space>, id as Ref<Doc>, { $push: { members: { $each: added } } } as any), opts)
     invalidateIndex(client, CLASS.Space)
     success('added members', `${added.length} to ${doc.name}`, id as unknown as string)
   } finally { await client.close() }
@@ -244,7 +247,7 @@ export async function removeSpaceMembers(ref: string, members: string[], opts: {
     const ids = await resolvePersonIds(client, members)
     const toRemove = new Set(ids.map((i) => String(i)))
     const next = (doc.members ?? []).filter((m: any) => !toRemove.has(String(m)))
-    await withSpinner('Removing members…', () => client.updateDoc(CLASS.Space as Ref<Class<SpaceDoc>>, doc._id as unknown as Ref<Space>, id as Ref<Doc>, { members: next } as any), opts)
+    await withSpinner('Removing members…', () => client.updateDoc(CLASS.Space as Ref<Class<SpaceDoc>>, 'core:space:Space' as Ref<Space>, id as Ref<Doc>, { members: next } as any), opts)
     success('removed members', `${toRemove.size} from ${doc.name}`, id as unknown as string)
   } finally { await client.close() }
 }
@@ -256,7 +259,7 @@ export async function setSpaceOwners(ref: string, members: string[], opts: { jso
     const doc = await client.findOne(CLASS.Space as Ref<Class<SpaceDoc>>, { _id: id as Ref<SpaceDoc> })
     if (!doc) throw new CliError(ExitCode.NotFound, `space ${ref} not found`)
     const ids = await resolvePersonIds(client, members)
-    await withSpinner('Setting owners…', () => client.updateDoc(CLASS.Space as Ref<Class<SpaceDoc>>, doc._id as unknown as Ref<Space>, id as Ref<Doc>, { owners: ids } as any), opts)
+    await withSpinner('Setting owners…', () => client.updateDoc(CLASS.Space as Ref<Class<SpaceDoc>>, 'core:space:Space' as Ref<Space>, id as Ref<Doc>, { owners: ids } as any), opts)
     success('set owners', `${ids.length} on ${doc.name}`, id as unknown as string)
   } finally { await client.close() }
 }
@@ -590,8 +593,10 @@ export async function createIssueStatus(opts: CreateIssueStatusOpts): Promise<vo
     if (opts.taskType) {
       taskTypeId = (await resolveRef(opts.taskType, { client, classId: CLASS.TaskType as Ref<Class<Doc>> })) as Ref<Doc>
     } else {
-      // Default: first task type for the project type
-      const tts = (await client.findAll(CLASS.TaskType as Ref<Class<TaskType>>, { projectType: ptId })) as TaskType[]
+      // Default: first task type for the project type. TaskTypes are
+      // parented under their ProjectType via the `parent` field (mirrors
+      // IssueStatus.projectType in the platform model), NOT via `projectType`.
+      const tts = (await client.findAll(CLASS.TaskType as Ref<Class<TaskType>>, { parent: ptId })) as TaskType[]
       if (tts.length === 0) throw new CliError(ExitCode.NotFound, `no task types for project-type ${opts.projectType}; pass --task-type`)
       taskTypeId = tts[0]._id as Ref<Doc>
     }

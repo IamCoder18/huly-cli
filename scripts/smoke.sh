@@ -90,7 +90,12 @@ step() {
 cleanup_count() {
   local label="$1" pattern="$2" cmd="$3"
   local count
-  count="$(eval "$cmd" 2>/dev/null | filter_huly_noise | jq --arg p "$pattern" '[.[] | select((.title // .name // "") | test($p))] | length')"
+  count="$(eval "$cmd" 2>/dev/null | filter_huly_noise | jq --arg p "$pattern" \
+    '[.[] | select(
+      (((.title // .name // "") | tostring) | test($p)) or
+      (((.tx._id // "") | tostring) | test($p)) or
+      (((.body // "") | tostring) | test($p))
+    )] | length')"
   if [[ "$count" != "0" ]]; then
     echo "  CLEANUP FAIL ($label): $count leftover items matching $pattern" >&2
     exit 1
@@ -223,7 +228,7 @@ case "$PHASE" in
     # at least one Calendar doc attached to a space. The example template
     # doesn't seed one, so we create it via the CLI.
     CAL_COUNT=$(HULY calendar calendars --json 2>/dev/null | filter_huly_noise \
-      | awk '/^\[/,0' | jq 'length')
+      | awk '/^\[/,0' | jq 'length' 2>/dev/null || echo 0)
     if [[ "${CAL_COUNT:-0}" == "0" ]]; then
       HULY calendar create-calendar --name "smoke-cal" >/dev/null 2>&1 || true
     fi
@@ -494,7 +499,10 @@ case "$PHASE" in
 
   11)
     step "space list" HULY space list
-    step "space get" HULY space get "tracker:project:DefaultProject"
+    # Use HULY_PROJECT (set in earlier phases) instead of a hard-coded
+    # default-project id; not every workspace has the same _id for the
+    # bootstrap DefaultProject.
+    step "space get" HULY space get "$HULY_PROJECT"
     step "space-type list" HULY space-type list
     step "project-type list" HULY project-type list
     step "task-type list" HULY task-type list
@@ -612,7 +620,7 @@ case "$PHASE" in
         echo "  ✓ approval lifecycle complete"
       fi
     fi
-    cleanup_count "approvals" "smoke-p16" "HULY approval list --json 2>/dev/null | filter_huly_noise | awk '/^\[/,0'"
+    cleanup_count "approvals" "smoke-p16" "HULY approval list --json 2>/dev/null"
     ;;
 
   17|18)
