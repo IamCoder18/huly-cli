@@ -209,7 +209,7 @@ huly teamspace list --json | jq -r '.[].name'
 ROOT=$(huly document create \
   --title "Engineering handbook" \
   --teamspace "Engineering" \
-  --body "# Welcome\nThis handbook covers…")
+  --body $'# Welcome\nThis handbook covers…')
 echo "$ROOT"
 
 # 3. Create child (use --parent by title or by _id from $ROOT)
@@ -217,7 +217,7 @@ huly document create \
   --title "Onboarding" \
   --teamspace "Engineering" \
   --parent "$ROOT" \
-  --body "## Day 1\n…\n\n## Week 1\n…"
+  --body $'## Day 1\n…\n\n## Week 1\n…'
 ```
 
 ### Targeted edit on a doc body
