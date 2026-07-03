@@ -1,7 +1,27 @@
 {
   "name": "@iamcoder18/huly-cli",
   "version": "0.1.4",
-  "description": "AI-agent-first CLI for self-hosted Huly",
+  "description": "CLI and AI-agent skill for self-hosted Huly — manage issues, projects, channels, documents, calendar, time tracking, and more from the terminal or CI/CD",
+  "keywords": [
+    "huly",
+    "huly-cli",
+    "cli",
+    "project-management",
+    "issue-tracker",
+    "self-hosted",
+    "ai-agent",
+    "devops",
+    "ci-cd",
+    "automation",
+    "task-management",
+    "time-tracking",
+    "document-management",
+    "channel",
+    "calendar",
+    "terminal",
+    "command-line",
+    "sdk"
+  ],
   "type": "module",
   "bin": {
     "huly": "./bin/huly"
