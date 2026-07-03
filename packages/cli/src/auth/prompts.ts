@@ -69,7 +69,7 @@ export async function pickWorkspace(
   }
   const { workspace } = await inquirer.prompt<{ workspace: WorkspaceInfoWithStatus }>([
     {
-      type: 'list',
+      type: 'select',
       name: 'workspace',
       message: 'Workspace:',
       choices: workspaces.map((w) => ({
@@ -98,7 +98,7 @@ export async function pickProject<T extends { _id: string; name?: string; identi
   }
   const { project } = await inquirer.prompt<{ project: T }>([
     {
-      type: 'list',
+      type: 'select',
       name: 'project',
       message,
       choices: projects.map((p) => ({
