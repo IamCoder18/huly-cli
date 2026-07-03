@@ -12,7 +12,7 @@
     "smoke": "bash scripts/smoke.sh all"
   },
   "engines": {
-    "node": ">=22.11"
+    "node": ">=22.13"
   },
   "packageManager": "pnpm@11.9.0"
 }
