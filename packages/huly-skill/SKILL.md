@@ -11,19 +11,11 @@ This skill teaches you how to drive a self-hosted Huly workspace through the `hu
 
 ## Setup (one-time)
 
-**Default assumption: the `huly` CLI is already installed on this machine and already configured with valid credentials.** Most users set this up once, then forget it. Don't re-run setup commands unless the verification step fails.
+**Default assumption: the `huly` CLI is already installed on this machine and already configured with valid credentials.** Most users set this up once, then forget it. Do not run setup commands proactively — just execute the user's request normally. If a `huly` command fails because the CLI is missing or credentials are bad, **then** run the setup steps below.
 
-### Quick check (do this first, every new session)
+### If you get `command not found`
 
-```bash
-huly whoami --json
-```
-
-- **If it prints a JSON object with `email` and `workspace`** → setup is fine, proceed.
-- **If it errors with "command not found"** → the CLI is not installed. Install it, then ask the user to configure it (see below).
-- **If it errors with auth/network/credentials issues** → the CLI is installed but misconfigured. Ask the user to configure it; do not invent credentials.
-
-### Install the CLI (only if `huly whoami` says "command not found")
+Install the CLI, then **stop and ask the user to configure credentials** — the agent must not write credentials on the user's behalf.
 
 ```bash
 # preferred
@@ -31,13 +23,16 @@ npm i -g @iamcoder18/huly-cli
 
 # alternatives
 pnpm add -g @iamcoder18/huly-cli
+# yarn classic
 yarn global add @iamcoder18/huly-cli
+# yarn berry / modern
+yarn dlx @iamcoder18/huly-cli --version  # or use corepack
 bun add -g @iamcoder18/huly-cli
 ```
 
-Then **stop and ask the user to configure it** — the agent must not write credentials on the user's behalf.
+### If you get auth/network/credentials errors
 
-### Have the user configure auth (pick one)
+The CLI is installed but misconfigured. Ask the user to configure it; do not invent credentials.
 
 **Option A — interactive login (the user runs this themselves):**
 
@@ -62,7 +57,7 @@ export HULY_PROJECT=BACKEND            # for bare-number issue refs
 export HULY_NONINTERACTIVE=1
 ```
 
-After the user finishes either option, re-run `huly whoami --json` to confirm. Cached tokens land in `~/.config/huly/credentials.json` (mode 0600). There is **no `huly logout`** — clearing credentials is a manual file delete (see `references/auth-and-setup.md`).
+After the user finishes either option, re-run the original command to confirm. Cached tokens land in `~/.config/huly/credentials.json` (mode 0600). There is **no `huly logout`** — clearing credentials is a manual file delete (see `references/auth-and-setup.md`).
 
 Full env-var cheat sheet, the auth-state machine, and precedence rules live in `references/auth-and-setup.md` and the project README's §Configuration / §Authentication sections.
 

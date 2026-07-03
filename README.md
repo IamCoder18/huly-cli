@@ -164,19 +164,13 @@ openclaw skills install @iamcoder18/huly
 
 The install gives the agent the skill's `SKILL.md` and `references/*.md` so it can pick the correct surface on the first try. The skill assumes the `huly` CLI itself is already installed and authenticated — see [Installation](#installation) above and [Configuration](#configuration) / [Authentication](#authentication) below.
 
-### Verify it works from the agent's shell
+### Verify it works
 
-Once installed, ask your agent to run:
-
-```bash
-huly whoami --json
-```
-
-A JSON object with `email` and `workspace` confirms the skill's preconditions are met. If it errors, the agent will (per the skill's `Setup` section) install the CLI and prompt you to configure credentials — see [Configuration](#configuration) and [Authentication](#authentication).
+No proactive check is needed — the skill instructs the agent to proceed with your request normally and only run setup if a `huly` command fails. If the CLI is missing or credentials are invalid, the agent will install the CLI and prompt you to configure credentials — see [Configuration](#configuration) and [Authentication](#authentication).
 
 ### Skill source
 
-The canonical source for the skill lives in this repo at [`packages/huly-skill/SKILL.md`](packages/huly-skill/SKILL.md), with per-surface deep dives under [`packages/huly-skill/references/`](packages/huly-skill/references). It is published in lockstep with the CLI.
+The canonical source for the skill lives in this repo at [`packages/huly-skill/SKILL.md`](https://github.com/IamCoder18/huly-cli/blob/main/packages/huly-skill/SKILL.md), with per-surface deep dives under [`packages/huly-skill/references/`](https://github.com/IamCoder18/huly-cli/blob/main/packages/huly-skill/references). It is published in lockstep with the CLI.
 
 ---
 
