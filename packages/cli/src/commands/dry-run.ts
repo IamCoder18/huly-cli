@@ -1,5 +1,6 @@
 import type { PlatformClient } from '@hcengineering/api-client'
 import type { Doc, Ref, Space, Class, Data, WithLookup } from '@hcengineering/core'
+import type { PlatformClientWithMarkup } from '../types/markup-operations.js'
 import { shouldJson, json } from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 
@@ -73,9 +74,7 @@ export async function deleteDoc<T extends Doc>(
   for (const attr of markupAttrs) {
     try {
       const collabId = { objectClass: classId as Ref<Class<Doc>>, objectId: objectId as Ref<Doc>, objectAttr: attr }
-      const ops = (client as unknown as {
-        markup: { collaborator: { updateMarkup: (id: typeof collabId, markup: string) => Promise<void> } }
-      }).markup
+      const ops = (client as unknown as PlatformClientWithMarkup).markup
       if (ops?.collaborator?.updateMarkup !== undefined) {
         await ops.collaborator.updateMarkup(collabId, '{"type":"doc","content":[{"type":"paragraph"}]}')
       }

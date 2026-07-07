@@ -5,6 +5,13 @@
 // the needed functions rather than named imports — named imports would
 // fail at runtime with "SyntaxError: Named export '...' not found".
 
+// NOTE: This file must stay a "script" `.d.ts` (no top-level imports or
+// exports). Once a top-level import/export is added, TypeScript treats the
+// file as a module and the `declare module 'foo' { ... }` blocks below
+// stop registering new modules for `@hcengineering/*` packages that ship
+// no .d.ts. Named types meant to be imported by code live in
+// `markup-operations.ts` instead.
+
 declare module '@hcengineering/core' {
   const core: {
     generateId: <T extends { _id: string } = { _id: string }>(join?: string) => string

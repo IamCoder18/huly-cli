@@ -4,6 +4,7 @@ import type { PlatformClient } from '@hcengineering/api-client'
 import textPkg from '@hcengineering/text'
 import textCorePkg from '@hcengineering/text-core'
 import textMarkdownPkg from '@hcengineering/text-markdown'
+import type { PlatformClientWithMarkup } from '../types/markup-operations.js'
 
 const { htmlToJSON, htmlToMarkup: textHtmlToMarkup } = textPkg
 const { jsonToMarkup } = textCorePkg
@@ -107,9 +108,7 @@ export async function uploadMarkup (
   if (converted.length === 0) return ''
   // The PlatformClient interface doesn't expose `markup`, but PlatformClientImpl
   // does (set in its constructor). Cast for the runtime access.
-  const ops = (client as unknown as {
-    markup: { uploadMarkup: (cls: Ref<Class<Doc>>, id: Ref<Doc>, attr: string, value: string, format: string) => Promise<string> }
-  }).markup
+  const ops = (client as unknown as PlatformClientWithMarkup).markup
   return await ops.uploadMarkup(objectClass, objectId, objectAttr, converted, 'markup')
 }
 
@@ -132,18 +131,8 @@ export async function updateMarkup (
 ): Promise<void> {
   const converted = convertMarkup(body, kind)
   if (converted.length === 0) return
-  const ops = (client as unknown as {
-    markup: {
-      collaborator: {
-        updateMarkup: (
-          collabId: { objectClass: Ref<Class<Doc>>, objectId: Ref<Doc>, objectAttr: string },
-          markup: string
-        ) => Promise<void>
-      }
-    }
-  }).markup
-  const collabId = { objectClass, objectId, objectAttr }
-  await ops.collaborator.updateMarkup(collabId, converted)
+  const ops = (client as unknown as PlatformClientWithMarkup).markup
+  await ops.collaborator.updateMarkup({ objectClass, objectId, objectAttr }, converted)
 }
 
 const DELETE_GAP_MS = 100
@@ -155,18 +144,15 @@ const DELETE_GAP_MS = 100
  *
  * The prosemirror JSON form always starts with `{"type":"doc"` (the JSON
  * object literal begins with `{`, `"type":"doc"` follows on the same or
- * next line). Markdown output never begins with `{` for normal Huly
+ * next line, with arbitrary whitespace between them depending on the
+ * pretty-printer). Markdown output never begins with `{` for normal Huly
  * content. Empty strings are not raw markup (treated as "no body").
  */
+const RAW_MARKUP_PREFIX = /^\{\s*"type"\s*:\s*"doc"/
+
 export function looksLikeRawMarkup (s: string | null | undefined): boolean {
   if (s === null || s === undefined || s.length === 0) return false
-  const trimmed = s.trimStart()
-  // Match {"type":"doc" (most common) and indented variants produced by
-  // some pretty-printers; require the literal JSON opener to avoid
-  // accidentally matching prose that starts with curly quotes.
-  return trimmed.startsWith('{"type":"doc"') ||
-    trimmed.startsWith('{\n  "type": "doc"') ||
-    trimmed.startsWith('{\n\t"type": "doc"')
+  return RAW_MARKUP_PREFIX.test(s.trimStart())
 }
 
 /**
