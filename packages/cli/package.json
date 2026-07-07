@@ -47,6 +47,10 @@
   "dependencies": {
     "@hcengineering/account-client": "^0.7.423",
     "@hcengineering/api-client": "^0.7.423",
+    "@hcengineering/core": "^0.7.423",
+    "@hcengineering/text": "^0.7.423",
+    "@hcengineering/text-core": "^0.7.423",
+    "@hcengineering/text-markdown": "^0.7.423",
     "chalk": "^5.3.0",
     "commander": "^15.0.0",
     "inquirer": "^14.0.2",

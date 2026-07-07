@@ -1,7 +1,17 @@
 import type { Doc, Ref, Space, Class, Data } from '@hcengineering/core'
+import corePkg from '@hcengineering/core'
 import type { PlatformClient } from '@hcengineering/api-client'
-import pkg from '@hcengineering/api-client'
-const { MarkupContent } = pkg
+import textPkg from '@hcengineering/text'
+import textCorePkg from '@hcengineering/text-core'
+import textMarkdownPkg from '@hcengineering/text-markdown'
+
+const { htmlToJSON, htmlToMarkup: textHtmlToMarkup } = textPkg
+const { jsonToMarkup } = textCorePkg
+const { markdownToMarkup } = textMarkdownPkg
+
+const platformGenerateId: () => Ref<Doc> =
+  (corePkg as unknown as { generateId: (join?: string) => string }).generateId
+
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, buildIndex } from '../transport/ref-resolver.js'
 import { shouldJson, json, table, type TableColumn, success, bulkRemoved } from "../output/format.js"
@@ -9,12 +19,173 @@ import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
 import { deleteDoc } from '../commands/dry-run.js'
 
+/**
+ * Sanitize HTML input before converting to prosemirror markup. The
+ * prosemirror HTML parser uses `preserveWhitespace: 'full'`, so any literal
+ * newline in the input becomes a phantom empty paragraph in the doc tree.
+ */
+export function normalizeMarkupInput (html: string): string {
+  // Strip newlines entirely. The prosemirror HTML parser uses
+  // `preserveWhitespace: 'full'`, so any literal newline between tags
+  // becomes a phantom empty paragraph (or a paragraph with just `" "`
+  // text when we replaced newlines with spaces). Removing the newline
+  // also removes the adjacent whitespace, so `<h1>x</h1>\n<p>y</p>`
+  // becomes `<h1>x</h1><p>y</p>` with no phantom nodes between.
+  return html
+    .replace(/\r\n?/g, '\n')
+    .replace(/\s*\n\s*/g, '')
+}
+
+/**
+ * Convert raw HTML markup (what users pass to `--body`) to the prosemirror-JSON
+ * markup format the collaborator actually expects. Without this conversion,
+ * `markupToJSON` on the read side falls back to wrapping the raw HTML in a
+ * single text node inside one paragraph — every `<h1>`, `<strong>`, etc.
+ * shows up as visible text, not a rendered element.
+ */
+export function htmlToMarkup (html: string): string {
+  const json = htmlToJSON(normalizeMarkupInput(html))
+  return jsonToMarkup(json)
+}
+
+/**
+ * Convert markdown text to the prosemirror-JSON markup format.
+ */
+export function mdToMarkup (md: string): string {
+  return markdownToMarkup(md)
+}
+
+/**
+ * Convert HTML to markup using the `@hcengineering/text` package's
+ * `htmlToMarkup` (single-call alternative to htmlToJSON + jsonToMarkup).
+ */
+export function rawHtmlToMarkup (html: string): string {
+  return textHtmlToMarkup(normalizeMarkupInput(html))
+}
+
+export function generateId (): Ref<Doc> {
+  return platformGenerateId() as Ref<Doc>
+}
+
+/**
+ * Convert user-provided body text to the prosemirror-JSON markup format the
+ * collaborator expects. Pass-through dispatch by `kind`:
+ *
+ *   - 'markup'   (default) : input is HTML; goes through htmlToJSON → jsonToMarkup.
+ *   - 'html'             : same path, kept as alias for clarity at call sites.
+ *   - 'markdown'         : input is GitHub-flavored Markdown; goes through
+ *                         text-markdown's markdownToMarkup.
+ *
+ * Empty / undefined body short-circuits to '' — uploading an empty blob
+ * wastes MinIO storage and the prosemirror conversion would otherwise
+ * produce an empty doc that the server round-trips as a phantom paragraph.
+ */
+function convertMarkup (body: string | undefined, kind: 'markup' | 'markdown' | 'html'): string {
+  if (body === undefined || body.length === 0) return ''
+  if (kind === 'markdown') return mdToMarkup(body)
+  if (kind === 'html') return rawHtmlToMarkup(body)
+  return htmlToMarkup(body)
+}
+
+/**
+ * Upload body content via the SDK's `MarkupOperations.uploadMarkup` and
+ * return the resulting MarkupBlobRef. The body is converted to
+ * prosemirror-JSON before being sent.
+ */
+export async function uploadMarkup (
+  client: PlatformClient,
+  objectClass: Ref<Class<Doc>>,
+  objectId: Ref<Doc>,
+  objectAttr: string,
+  body: string | undefined,
+  kind: 'markup' | 'markdown' | 'html' = 'markup'
+): Promise<string> {
+  const converted = convertMarkup(body, kind)
+  // Skip the round-trip entirely when there's no body. The ydoc gets
+  // created lazily on first read or update; without a blob there is
+  // nothing to upload and no ref to record.
+  if (converted.length === 0) return ''
+  // The PlatformClient interface doesn't expose `markup`, but PlatformClientImpl
+  // does (set in its constructor). Cast for the runtime access.
+  const ops = (client as unknown as {
+    markup: { uploadMarkup: (cls: Ref<Class<Doc>>, id: Ref<Doc>, attr: string, value: string, format: string) => Promise<string> }
+  }).markup
+  return await ops.uploadMarkup(objectClass, objectId, objectAttr, converted, 'markup')
+}
+
+/**
+ * Update the ydoc binary for a collaborative field via the SDK's
+ * underlying `CollaboratorClient.updateMarkup` (which calls `updateContent`
+ * RPC). The ydoc is the source of truth for collaborative content once
+ * it exists.
+ *
+ * On the first call (no ydoc exists yet) the collaborator auto-creates the
+ * ydoc from the supplied markup.
+ */
+export async function updateMarkup (
+  client: PlatformClient,
+  objectClass: Ref<Class<Doc>>,
+  objectId: Ref<Doc>,
+  objectAttr: string,
+  body: string | undefined,
+  kind: 'markup' | 'markdown' | 'html' = 'markup'
+): Promise<void> {
+  const converted = convertMarkup(body, kind)
+  if (converted.length === 0) return
+  const ops = (client as unknown as {
+    markup: {
+      collaborator: {
+        updateMarkup: (
+          collabId: { objectClass: Ref<Class<Doc>>, objectId: Ref<Doc>, objectAttr: string },
+          markup: string
+        ) => Promise<void>
+      }
+    }
+  }).markup
+  const collabId = { objectClass, objectId, objectAttr }
+  await ops.collaborator.updateMarkup(collabId, converted)
+}
+
 const DELETE_GAP_MS = 100
+
+/**
+ * Heuristic for detecting that the server returned raw prosemirror-JSON
+ * markup instead of converted Markdown. Used to warn the user when the
+ * `markupToMarkdown` step fails silently (fix for #19).
+ *
+ * The prosemirror JSON form always starts with `{"type":"doc"` (the JSON
+ * object literal begins with `{`, `"type":"doc"` follows on the same or
+ * next line). Markdown output never begins with `{` for normal Huly
+ * content. Empty strings are not raw markup (treated as "no body").
+ */
+export function looksLikeRawMarkup (s: string | null | undefined): boolean {
+  if (s === null || s === undefined || s.length === 0) return false
+  const trimmed = s.trimStart()
+  // Match {"type":"doc" (most common) and indented variants produced by
+  // some pretty-printers; require the literal JSON opener to avoid
+  // accidentally matching prose that starts with curly quotes.
+  return trimmed.startsWith('{"type":"doc"') ||
+    trimmed.startsWith('{\n  "type": "doc"') ||
+    trimmed.startsWith('{\n\t"type": "doc"')
+}
+
+/**
+ * Surface a markdown-conversion fallback to the user. Prints a warning to
+ * stderr and exits non-zero if `HULY_MARKDOWN_FALLBACK_FAIL=1` is set.
+ * Centralized here so the wording stays consistent across every
+ * `* get --markdown` path.
+ */
+export function warnMarkdownFallback (): void {
+  console.error('warning: markdown conversion unavailable — server returned raw prosemirror markup')
+  console.error('hint: pass --raw-markup to see the stored markup, or retry once the converter is restored')
+  if (process.env.HULY_MARKDOWN_FALLBACK_FAIL === '1') process.exit(ExitCode.Server)
+}
 
 export interface GlobalRunOpts {
   json?: boolean
   ci?: boolean
   markdown?: boolean
+  rawMarkup?: boolean
   dryRun?: boolean
   minimal?: boolean
   yes?: boolean
@@ -80,7 +251,7 @@ export function makeGet<T extends Doc>(opts: GetOpts<T>) {
       const doc = (await client.findOne(opts.classId, { _id: id as Ref<T> })) as T | undefined
       if (!doc) throw new CliError(ExitCode.NotFound, `${opts.label ?? 'record'} ${ref} not found`)
 
-      if (runOpts.markdown && opts.markdownAttr) {
+      if ((runOpts.markdown || runOpts.rawMarkup) && opts.markdownAttr) {
         const raw = (doc as Record<string, unknown>)[opts.markdownAttr as string]
         if (raw) {
           try {
@@ -89,9 +260,13 @@ export function makeGet<T extends Doc>(opts: GetOpts<T>) {
               doc._id,
               opts.markdownAttr as string,
               raw as any,
-              'markdown'
+              runOpts.rawMarkup ? 'markup' : 'markdown'
             )
-            console.log(body)
+            const bodyStr = String(body ?? '')
+            if (runOpts.markdown && looksLikeRawMarkup(bodyStr)) {
+              warnMarkdownFallback()
+            }
+            console.log(bodyStr)
             return
           } catch {
             console.log(String(raw))
@@ -203,7 +378,7 @@ export function makeUpdate<T extends Doc>(opts: UpdateOpts<T>) {
       }
       for (const k of updateOpts.unset ?? []) ops[k] = null
       for (const [k, v] of Object.entries(updateOpts)) {
-        if (['set', 'unset', 'json', 'ci', 'markdown', 'dryRun', 'minimal', 'yes', 'workspace', 'url', 'defaultProjectIdentifier'].includes(k)) continue
+        if (['set', 'unset', 'json', 'ci', 'markdown', 'rawMarkup', 'dryRun', 'minimal', 'yes', 'workspace', 'url', 'defaultProjectIdentifier'].includes(k)) continue
         if (v === undefined) continue
         ops[k] = v
       }
@@ -283,11 +458,6 @@ export async function readBodyText(opts: { body?: string; bodyFile?: string }): 
     return (await fs.readFile(opts.bodyFile, 'utf8')).trim()
   }
   return opts.body
-}
-
-export function wrapBody(body: string | undefined): string | undefined {
-  if (!body) return undefined
-  return body
 }
 
 /**

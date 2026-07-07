@@ -44,7 +44,8 @@ huly card list --card-space "Engineering" --json
 huly card list --master-tag "Bug" --json
 huly card list --card-space "Engineering" --master-tag "Bug" --json
 huly card get <ref> --json
-huly card get <ref> --markdown        # body as raw markdown
+huly card get <ref> --markdown        # body rendered as Markdown
+huly card get <ref> --raw-markup      # body as raw prosemirror-JSON
 ```
 
 ### Create
@@ -91,6 +92,10 @@ So:
 - Replace the rich body: `--body "…"` OR `--body-file <path>`.
 - Replace the short summary: `--description "…"` (this changes a summary field — the `description` attribute — NOT the body).
 - Force `--description` to mean "new body content": `--replace-content`.
+
+**Update is single-write:** updateMarkup writes the ydoc binary directly (the source
+of truth for collaborative reads). It does NOT also upload a new JSON blob for
+each edit. Storage grows by one snapshot per edit, but no longer two.
 
 ### Reparent and move
 
@@ -240,6 +245,10 @@ $FREEFORM"
 - **No `card-space update`.** Rename, change description, change `private` via web UI.
 - **No card relations on the CLI.** Web UI only.
 - **Bulk delete cascade-deletes child cards.** Run `huly card list --card-space <space> --json | jq length` first to see what's at risk.
+- **Newlines in `--body` are auto-stripped.** The CLI's `normalizeMarkupInput` strips newlines (and adjacent whitespace) before the prosemirror parser runs, so `<h1>Title</h1>\n<p>Body</p>` round-trips cleanly into one heading and one paragraph with no phantom empty paragraphs. (Earlier versions warned against embedded `\n`; that restriction is now lifted.)
+- **Nested HTML must be properly nested, not flat.** A nested list needs `<li>...<ul><li>...</li></ul></li>`, not `<li>...</li><ul><li>...</li></ul>`. Same for blockquotes inside lists, code blocks inside table cells, etc. — the prosemirror parser validates structure and silently drops malformed siblings.
+- **`--raw-markup` is read-only.** Use `--raw-markup` only on `card get` (and `issue get` / `document get`) to dump raw prosemirror-JSON. Using it on `card create` / `update` returns `unknown option`.
+- **`--markdown` may fall back to raw markup.** If the server's markdown converter is unavailable, `--markdown` returns the raw prosemirror-JSON string and prints a warning to stderr. Set `HULY_MARKDOWN_FALLBACK_FAIL=1` to make this exit non-zero so CI scripts can detect it.
 
 ---
 

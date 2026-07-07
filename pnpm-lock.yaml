@@ -16,6 +16,18 @@ importers:
       '@hcengineering/api-client':
         specifier: ^0.7.423
         version: 0.7.423(prosemirror-inputrules@1.5.1)(prosemirror-model@1.25.9)(prosemirror-state@1.4.4)(prosemirror-view@1.41.9)
+      '@hcengineering/core':
+        specifier: ^0.7.423
+        version: 0.7.423
+      '@hcengineering/text':
+        specifier: ^0.7.423
+        version: 0.7.423(prosemirror-inputrules@1.5.1)(prosemirror-model@1.25.9)(prosemirror-state@1.4.4)(prosemirror-view@1.41.9)
+      '@hcengineering/text-core':
+        specifier: ^0.7.423
+        version: 0.7.423
+      '@hcengineering/text-markdown':
+        specifier: ^0.7.423
+        version: 0.7.423
       chalk:
         specifier: ^5.3.0
         version: 5.6.2

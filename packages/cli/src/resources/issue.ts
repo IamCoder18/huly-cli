@@ -1,12 +1,11 @@
 import type { Doc, Ref, Space, Class, DocumentQuery, FindResult } from '@hcengineering/core'
 import type { PlatformClient } from '@hcengineering/api-client'
 import pkg from '@hcengineering/api-client'
-const { MarkupContent } = pkg
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, buildIndex, invalidateIndex } from '../transport/ref-resolver.js'
 import { shouldJson, json, table, kv, header, withTimeout, COLUMNS, C, colorizeStatus, colorizePriority, statusGlyph, priorityGlyph, relTime, isoDate, isoDay, success, updated, bulkRemoved } from "../output/format.js"
-import { resolveAssignee } from "./_helpers.js"
+import { resolveAssignee, generateId, uploadMarkup, updateMarkup, looksLikeRawMarkup, warnMarkdownFallback } from "./_helpers.js"
 import { withSpinner } from '../output/progress.js'
 import { deleteDoc } from '../commands/dry-run.js'
 import { CliError, ExitCode } from '../output/errors.js'
@@ -38,12 +37,14 @@ interface IssueCreateOpts {
   body?: string
   bodyFile?: string
   status?: string
+  statusCategory?: string
   priority?: string
   assignee?: string
   label?: string[]
   due?: string
   parent?: string
   taskType?: string
+  kind?: string
   minimal?: boolean
   dryRun?: boolean
   json?: boolean
@@ -147,8 +148,48 @@ async function resolveStatus(client: PlatformClient, project: Project, name?: st
   const ofAttribute = 'tracker:attribute:IssueStatus' as Ref<Doc>
   const all = (await client.findAll(CLASS.IssueStatus as Ref<Class<Doc>>, { ofAttribute })) as Array<Doc & { label?: string; name?: string }>
   const hit = all.find((s) => s.label?.toLowerCase() === name.toLowerCase() || s.name?.toLowerCase() === name.toLowerCase())
-  if (!hit) throw new CliError(ExitCode.NotFound, `status ${name} not found in workspace; available: ${all.map((s) => s.label ?? s.name).join(', ')}`)
+  // Issue #14: explicit --status with no matching status must throw rather
+  // than silently fall back to the default. Show what's available.
+  if (!hit) {
+    const available = all.map((s) => s.label ?? s.name ?? '').filter(Boolean)
+    throw new CliError(
+      ExitCode.NotFound,
+      `status "${name}" not found in this workspace`,
+      `available statuses: ${available.length > 0 ? available.join(', ') : '(none — workspace may not have tracker migration applied)'}`
+    )
+  }
   return hit._id
+}
+
+/**
+ * Resolve a status category (UnStarted | ToDo | Active | Won | Lost) to a
+ * status ref by picking the lowest-ranked status in that category for the
+ * given project. Used by `issue create --status-category` (issue #17).
+ */
+async function resolveStatusByCategory(client: PlatformClient, project: Project, category: string): Promise<Ref<Doc>> {
+  const valid = ['UnStarted', 'ToDo', 'Active', 'Won', 'Lost']
+  if (!valid.includes(category)) {
+    throw new CliError(ExitCode.Validation, `invalid --status-category: ${category}`, `expected one of ${valid.join(' | ')}`)
+  }
+  // IssueStatus records live in `core:space:Model` (workspace-global). Filter
+  // by `ofAttribute` so we don't depend on project-scoped copies.
+  const ofAttribute = 'tracker:attribute:IssueStatus' as Ref<Doc>
+  const statuses = (await client.findAll(
+    CLASS.IssueStatus as Ref<Class<Doc>>,
+    { ofAttribute } as any
+  )) as Array<Doc & { category?: string; rank?: string }>
+  const stripPrefix = (cat: string): string => cat.replace(/^task:statusCategory:/, '')
+  const matching = statuses
+    .filter((s) => stripPrefix(String(s.category ?? '')) === category)
+    .sort((a, b) => String(a.rank ?? '').localeCompare(String(b.rank ?? '')))
+  if (matching.length === 0) {
+    throw new CliError(
+      ExitCode.NotFound,
+      `no statuses in category "${category}" for project ${project.identifier}`,
+      `available categories in this project: ${[...new Set(statuses.map((s) => stripPrefix(String(s.category ?? ''))))].filter(Boolean).join(', ') || '(none)'}`
+    )
+  }
+  return matching[0]._id
 }
 
 async function resolvePriority(client: PlatformClient, name?: string): Promise<Ref<Doc> | undefined> {
@@ -190,7 +231,10 @@ async function resolvePriority(client: PlatformClient, name?: string): Promise<R
 }
 
 async function resolveTaskType(client: PlatformClient, name: string, project: Project): Promise<Ref<Doc>> {
-  const taskTypes = (await client.findAll(CLASS.TaskType as Ref<Class<Doc>>, { space: project._id })) as Array<Doc & { label?: string; name?: string }>
+  // TaskTypes live in `core:space:Model` (workspace-global for tracker). The
+  // space filter previously rejected all tracker TaskTypes because the
+  // tracker plugin doesn't create per-project copies — issues #7/#18.
+  const taskTypes = (await client.findAll(CLASS.TaskType as Ref<Class<Doc>>, {})) as Array<Doc & { label?: string; name?: string }>
   const hit = taskTypes.find((t) =>
     (t.label?.toLowerCase() === name.toLowerCase()) ||
     (t.name?.toLowerCase() === name.toLowerCase()) ||
@@ -198,10 +242,26 @@ async function resolveTaskType(client: PlatformClient, name: string, project: Pr
   )
   if (!hit) {
     throw new CliError(ExitCode.NotFound,
-      `task type ${name} not found in project ${project.identifier}`,
+      `task type ${name} not found in workspace`,
       `available: ${taskTypes.map((t) => t.label ?? t.name ?? t._id).join(', ') || '(none)'}`)
   }
   return hit._id
+}
+
+/**
+ * Resolve a `--kind <ref>` argument (issue #18) by validating the
+ * provided _id exists in the project's TaskType list. If the user passed
+ * a non-ref string, treat it as a name (delegates to resolveTaskType).
+ */
+async function resolveKindByRef(client: PlatformClient, ref: string, project: Project): Promise<Ref<Doc>> {
+  if (/^[a-z0-9]+:[a-z0-9]+:[A-Za-z0-9_-]+$/.test(ref)) {
+    const exists = await client.findOne(
+      CLASS.TaskType as Ref<Class<Doc>>,
+      { _id: ref as Ref<Doc> }
+    )
+    if (exists !== null && exists !== undefined) return ref as Ref<Doc>
+  }
+  return await resolveTaskType(client, ref, project)
 }
 
 export async function listIssues(opts: {
@@ -247,26 +307,24 @@ export async function listIssues(opts: {
       if (!valid.includes(wanted)) {
         throw new CliError(ExitCode.Validation, `invalid --status-category: ${wanted}`, `expected one of ${valid.join(' | ')}`)
       }
-      // CLI-11: statusCategory values are stored as "task:statusCategory:Active".
-      // Strip the prefix before comparing. Also resolve a project when one
-      // wasn't supplied (statuses are not workspace-global).
-      let proj = project
-      if (!proj) {
-        const all = (await client.findAll(CLASS.Project as Ref<Class<Project>>, {})) as Project[]
-        proj = all[0] ?? null
-      }
-      if (!proj) throw new CliError(ExitCode.Validation, '--status-category requires a project (use --project)')
+      // IssueStatus records live in `core:space:Model`, not in the project's
+      // space. Filter by `ofAttribute` like the rest of the status lookups
+      // do — see firstStatus/resolveStatus above.
+      const ofAttribute = 'tracker:attribute:IssueStatus' as Ref<Doc>
       const statuses = (await client.findAll(
         CLASS.IssueStatus as Ref<Class<Doc>>,
-        { space: proj._id } as any
+        { ofAttribute } as any
       )) as Array<Doc & { category?: string; label?: string; name?: string }>
       const stripPrefix = (cat: string): string => cat.replace(/^task:statusCategory:/, '')
       const matchingIds = statuses
-        .filter((s) => stripPrefix(String(s.category ?? '')).toLowerCase() === wanted.toLowerCase())
+        .filter((s) => stripPrefix(String(s.category ?? '')) === wanted)
         .map((s) => s._id)
       if (matchingIds.length === 0) {
-        console.log('(no statuses in that category)')
-        return
+        throw new CliError(
+          ExitCode.NotFound,
+          `no statuses in category "${wanted}" in this workspace`,
+          `available categories: ${[...new Set(statuses.map((s) => stripPrefix(String(s.category ?? ''))))].filter(Boolean).join(', ') || '(none)'}`
+        )
       }
       query.status = { $in: matchingIds }
     }
@@ -305,7 +363,7 @@ export async function listIssues(opts: {
   } finally { await client.close() }
 }
 
-export async function getIssue(ref: string, opts: { json?: boolean; ci?: boolean; markdown?: boolean; workspace?: string; url?: string } = {}): Promise<void> {
+export async function getIssue(ref: string, opts: { json?: boolean; ci?: boolean; markdown?: boolean; rawMarkup?: boolean; workspace?: string; url?: string } = {}): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const id = await resolveRef(ref, {
@@ -316,14 +374,18 @@ export async function getIssue(ref: string, opts: { json?: boolean; ci?: boolean
     const issue = await client.findOne(CLASS.Issue as Ref<Class<Issue>>, { _id: id as Ref<Issue> })
     if (!issue) throw new CliError(ExitCode.NotFound, `issue ${ref} not found`)
 
-    if (opts.markdown && issue.description) {
+    if ((opts.markdown || opts.rawMarkup) && issue.description) {
       try {
         const body = await withTimeout(
-          client.fetchMarkup(CLASS.Issue as Ref<Class<Doc>>, issue._id, 'description', issue.description as any, 'markdown'),
+          client.fetchMarkup(CLASS.Issue as Ref<Class<Doc>>, issue._id, 'description', issue.description as any, opts.rawMarkup ? 'markup' : 'markdown'),
           5000,
           '(body fetch timed out)'
         )
-        console.log(body)
+        const bodyStr = String(body ?? '')
+        if (opts.markdown && looksLikeRawMarkup(bodyStr)) {
+          warnMarkdownFallback()
+        }
+        console.log(bodyStr)
         return
       } catch { console.log(String(issue.description)); return }
     }
@@ -423,32 +485,85 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
     }
     const identifier = `${project.identifier}-${number}`
 
-    const status = await resolveStatus(client, project, opts.status)
+    const status = opts.statusCategory !== undefined
+      ? await resolveStatusByCategory(client, project, opts.statusCategory)
+      : await resolveStatus(client, project, opts.status)
     const priority = await resolvePriority(client, opts.priority)
     const body = await readBody(opts)
     const dueDate = opts.due ? parseDate(opts.due, '--due') : null
 
+    // Generate an id up front so we can upload the description markup with
+    // that id, producing a blob ref that matches the issue we'll create.
+    // The Issue `description` field requires a MarkupBlobRef (not raw markup
+    // text) so subsequent `fetchMarkup` calls can resolve the blob.
+    const newIssueId = generateId()
+    const descriptionSource = body ?? opts.description
+    // Issue #9: skip the blob upload when there's no description.
+    const descriptionRef = descriptionSource !== undefined && descriptionSource.length > 0
+      ? await uploadMarkup(client, CLASS.Issue as Ref<Class<Doc>>, newIssueId, 'description', descriptionSource, 'markup')
+      : ''
+
     const data: Record<string, unknown> = {
       title,
-      description: opts.description ?? '',
+      description: descriptionRef,
       status,
       labels: opts.label ?? [],
       dueDate,
       space: project._id,
       number,
-      identifier
+      identifier,
+      // Issue #11: initialize all schema-required collection fields to empty
+      // values so any consumer that reads them gets a defined shape rather
+      // than `undefined`. Numeric collection sizes default to 0; the
+      // server's own create handler also defaults these, but the front-end
+      // reads them eagerly and a missing field can break the UI's computed
+      // counts on the first render after create.
+      parents: [],
+      childInfo: [],
+      blockedBy: [],
+      relations: [],
+      estimation: 0,
+      remainingTime: 0,
+      reportedTime: 0,
+      reports: 0,
+      subIssues: 0,
+      comments: 0,
+      attachments: 0,
+      todos: 0
     }
     if (priority !== undefined) data.priority = priority
 
     if (opts.taskType) {
       data.kind = await resolveTaskType(client, opts.taskType, project)
+    } else if (opts.kind) {
+      // Issue #18: --kind <ref> lets power users select any TaskType. Same
+      // validation as --taskType but skips the by-name lookup.
+      data.kind = await resolveKindByRef(client, opts.kind, project)
     } else {
-      // Default to the project's first available TaskType. The hard-coded
-      // `tracker:issue:default` is the bootstrap id, but projects can define
-      // custom task types and may not have a default-issue ref. The first
-      // TaskType in the project is the right fallback for both.
+      // Default to the project's first available TaskType. If none exist,
+      // fall back to the canonical `tracker:taskTypes:Issue` (the default
+      // TaskType installed by the tracker plugin). The previous fallback
+      // `tracker:issue:default` is not a real TaskType and breaks the UI
+      // issues view (the UI filters out issues whose `kind` doesn't match
+      // any defined TaskType in the project).
       const taskTypes = (await client.findAll(CLASS.TaskType as Ref<Class<Doc>>, { space: project._id })) as Array<Doc & { _id: Ref<Doc> }>
-      const defaultKind = taskTypes[0]?._id ?? ('tracker:issue:default' as Ref<Doc>)
+      let defaultKind: Ref<Doc> | undefined = taskTypes[0]?._id
+      if (defaultKind === undefined) {
+        defaultKind = 'tracker:taskTypes:Issue' as Ref<Doc>
+      }
+      // Issue #7: validate the resolved kind actually exists. If not,
+      // surface a clear error so the user knows to pass --kind explicitly.
+      const exists = await client.findOne(
+        'task:class:TaskType' as Ref<Class<Doc>>,
+        { _id: defaultKind as Ref<Doc> }
+      )
+      if (exists === null || exists === undefined) {
+        throw new CliError(
+          ExitCode.Validation,
+          `default TaskType "${defaultKind}" not found in this workspace`,
+          'pass --kind <ref> or --task-type <name> to specify a valid TaskType for this project'
+        )
+      }
       data.kind = defaultKind
     }
 
@@ -459,6 +574,9 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
         defaultProjectIdentifier: readEnv().project
       })) as Ref<Doc>
       data.parent = parentId
+      // Issue #10/#15: set attachedTo to the parent issue so queries
+      // filtering by attachedTo work correctly.
+      data.attachedTo = parentId
       // Mirror the front-end's `parents` walk (CreateIssue.svelte:492-503):
       // the new issue's `parents` is the immediate parent plus all of the
       // parent's own ancestors. Without this, child issues have no
@@ -484,6 +602,14 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
       data.parent = null
     }
 
+    // Issue #10/#15: always set attachedTo. For top-level issues this is
+    // the NoParent sentinel; for sub-issues it was set above to the parent
+    // issue id. Without this, queries that filter by attachedTo (e.g.
+    // "find all unattached issues in this project") miss the issue.
+    if (data.attachedTo === undefined) {
+      data.attachedTo = 'tracker:ids:NoParent' as Ref<Doc>
+    }
+
     if (!opts.minimal) {
       data.project = (project._id as unknown) as Ref<Project>
     }
@@ -492,11 +618,9 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
       data.assignee = await resolveAssignee(client, opts.assignee) as Ref<Doc>
     }
 
-    if (body) data.description = body
-
     if (opts.dryRun) {
       console.log('would create issue:')
-      console.log(JSON.stringify({ _class: CLASS.Issue, space: project._id, data }, null, 2))
+      console.log(JSON.stringify({ _class: CLASS.Issue, _id: newIssueId, space: project._id, data }, null, 2))
       return
     }
 
@@ -519,7 +643,7 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
     let id: Ref<Doc>
     try {
       id = await withSpinner('Creating issue…', () =>
-        client.createDoc(CLASS.Issue as Ref<Class<Issue>>, project._id as unknown as Ref<Space>, data as any)
+        client.createDoc(CLASS.Issue as Ref<Class<Issue>>, project._id as unknown as Ref<Space>, data as any, newIssueId as Ref<Issue>)
       )
     } catch (err: unknown) {
       // Workaround for C3: SDK's local model has incomplete inheritance info and
@@ -616,6 +740,7 @@ export async function updateIssue(
     set?: string[]
     unset?: string[]
     status?: string
+    statusCategory?: string
     priority?: string
     assignee?: string
     title?: string
@@ -627,6 +752,14 @@ export async function updateIssue(
     url?: string
   }
 ): Promise<void> {
+  // Validation: --status and --status-category target the same field
+  // (`status`). Pick one.
+  if (opts.status !== undefined && opts.statusCategory !== undefined) {
+    throw new CliError(ExitCode.Validation,
+      '--status and --status-category are mutually exclusive',
+      'pass only one: --status <name> or --status-category <c>')
+  }
+
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const id = await resolveRef(ref, {
@@ -634,13 +767,14 @@ export async function updateIssue(
       classId: CLASS.Issue as Ref<Class<Doc>>,
       defaultProjectIdentifier: readEnv().project
     })
-    const issue = await client.findOne(CLASS.Issue as Ref<Class<Issue>>, { _id: id as Ref<Issue> })
+    const issue = (await client.findOne(CLASS.Issue as Ref<Class<Issue>>, { _id: id as Ref<Issue> })) as (Issue & { identifier?: string }) | undefined
     if (!issue) throw new CliError(ExitCode.NotFound, `issue ${ref} not found`)
 
     const project = await client.findOne(CLASS.Project as Ref<Class<Project>>, { _id: issue.space as Ref<Project> })
     if (!project) throw new CliError(ExitCode.NotFound, 'project space not found')
 
     const ops: Record<string, unknown> = {}
+    let markupUpdated = false
     for (const item of opts.set ?? []) {
       const eq = item.indexOf('=')
       if (eq < 0) throw new CliError(ExitCode.Validation, `invalid --set entry (expected key=value): ${item}`)
@@ -655,25 +789,51 @@ export async function updateIssue(
     for (const k of opts.unset ?? []) ops[k] = null
 
     if (opts.status) ops.status = await resolveStatus(client, project, opts.status)
+    else if (opts.statusCategory) ops.status = await resolveStatusByCategory(client, project, opts.statusCategory)
     if (opts.priority) {
       const p = await resolvePriority(client, opts.priority)
       if (p !== undefined) ops.priority = p
     }
     if (opts.assignee) ops.assignee = await resolveAssignee(client, opts.assignee) as Ref<Doc>
     if (opts.title) ops.title = opts.title
-    if (opts.description) ops.description = opts.description
+    if (opts.description) {
+      // Update only the ydoc (issue #3). The ydoc is the source of truth
+      // for collaborative reads; uploading a new JSON blob on every update
+      // leaves orphaned blobs in MinIO and risks partial-write failures
+      // (issue #12).
+      await updateMarkup(
+        client, CLASS.Issue as Ref<Class<Doc>>, issue._id as Ref<Doc>, 'description', opts.description, 'markup'
+      )
+      markupUpdated = true
+    }
     if (opts.taskType) ops.kind = await resolveTaskType(client, opts.taskType, project)
+
+    // --minimal means "I know what I'm doing with --set/--unset, don't
+    // second-guess me." It only suppresses the empty-ops guard below,
+    // so a minimal but explicit --set still sends through. Was previously
+    // a dead flag; now actually does something safe.
+    if (Object.keys(ops).length === 0 && !markupUpdated && !opts.minimal) {
+      throw new CliError(ExitCode.Validation, 'nothing to update',
+        'pass --set/--unset, --status, --priority, --assignee, --title, --description, --task-type, or --kind (with --status-category to pick a workflow stage)')
+    }
 
     if (opts.dryRun) {
       console.log(`would update issue ${issue.identifier} (${issue._id}):`)
-      console.log(JSON.stringify({ _class: CLASS.Issue, objectId: issue._id, space: issue.space, ops }, null, 2))
+      console.log(JSON.stringify({ _class: CLASS.Issue, objectId: issue._id, space: issue.space, ops, markupUpdated }, null, 2))
       return
     }
 
-    await withSpinner('Updating…', () =>
-      client.updateDoc(CLASS.Issue as Ref<Class<Issue>>, issue.space as unknown as Ref<Space>, issue._id, ops as any)
-    )
-    updated(`updated issue`, issue._id)
+    const hasOps = Object.keys(ops).length > 0
+    if (hasOps) {
+      await withSpinner('Updating…', () =>
+        client.updateDoc(CLASS.Issue as Ref<Class<Issue>>, issue.space as unknown as Ref<Space>, issue._id, ops as any)
+      )
+    }
+    if (hasOps || markupUpdated) {
+      updated(`updated issue`, issue._id)
+    } else {
+      console.log(`nothing to update for ${issue.identifier} (${issue._id})`)
+    }
   } finally { await client.close() }
 }
 

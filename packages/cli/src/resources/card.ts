@@ -1,6 +1,4 @@
 import type { Doc, Ref, Space, Class } from '@hcengineering/core'
-import pkg from '@hcengineering/api-client'
-const { MarkupContent } = pkg
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, invalidateIndex } from '../transport/ref-resolver.js'
@@ -8,6 +6,7 @@ import { shouldJson, json, table, COLUMNS, withTimeout, success, updated, bulkRe
 import { withSpinner } from '../output/progress.js'
 import { deleteDoc } from '../commands/dry-run.js'
 import { CliError, ExitCode } from '../output/errors.js'
+import { generateId, uploadMarkup, updateMarkup, looksLikeRawMarkup, warnMarkdownFallback } from './_helpers.js'
 
 type CardDoc = Doc & {
   title: string
@@ -85,6 +84,8 @@ export async function createCardSpace(opts: {
   url?: string
 }): Promise<void> {
   if (!opts.name) throw new CliError(ExitCode.Validation, 'missing --name')
+  // CardSpace.description is a plain string field, not collaborative
+  // content — leave it as-is.
   const data: Record<string, unknown> = {
     name: opts.name,
     description: opts.description ?? '',
@@ -188,7 +189,7 @@ export async function listCards(opts: { cardSpace?: string; masterTag?: string; 
   } finally { await client.close() }
 }
 
-export async function getCard(ref: string, opts: { json?: boolean; ci?: boolean; markdown?: boolean; workspace?: string; url?: string }): Promise<void> {
+export async function getCard(ref: string, opts: { json?: boolean; ci?: boolean; markdown?: boolean; rawMarkup?: boolean; workspace?: string; url?: string }): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const id = await resolveRef(ref, {
@@ -197,14 +198,18 @@ export async function getCard(ref: string, opts: { json?: boolean; ci?: boolean;
     })
     const doc = await client.findOne(CLASS.Card as Ref<Class<CardDoc>>, { _id: id as Ref<CardDoc> })
     if (!doc) throw new CliError(ExitCode.NotFound, `card ${ref} not found`)
-    if (opts.markdown && doc.content) {
+    if ((opts.markdown || opts.rawMarkup) && doc.content) {
       try {
         const body = await withTimeout(
-          client.fetchMarkup(CLASS.Card as Ref<Class<Doc>>, doc._id, 'content', doc.content as any, 'markdown'),
+          client.fetchMarkup(CLASS.Card as Ref<Class<Doc>>, doc._id, 'content', doc.content as any, opts.rawMarkup ? 'markup' : 'markdown'),
           5000,
           '(body fetch timed out)'
         )
-        console.log(body)
+        const bodyStr = String(body ?? '')
+        if (opts.markdown && looksLikeRawMarkup(bodyStr)) {
+          warnMarkdownFallback()
+        }
+        console.log(bodyStr)
         return
       } catch { console.log(String(doc.content)); return }
     }
@@ -243,7 +248,7 @@ export async function createCard(opts: {
       })
       : ('card:space:Default' as Ref<Space>)
 
-    let body = opts.description ?? ''
+    let body = ''
     if (opts.body && opts.bodyFile) throw new CliError(ExitCode.Validation, 'ambiguous body input')
     if (opts.bodyFile) {
       const fs = await import('node:fs/promises')
@@ -251,6 +256,16 @@ export async function createCard(opts: {
     } else if (opts.body) {
       body = opts.body
     }
+    // If only --description was given without --replace-content, body stays ''
+    // here. That's intentional — we don't want to clobber the card's body in
+    // create-with-description by treating description as body content.
+
+    // Strip newlines/whitespace and decode HTML entities once before upload.
+    // The prosemirror parser preserves whitespace, so newlines between tags
+    // become phantom empty paragraphs (issue #2). Entity decoding prevents
+    // double-escaping on round-trip (issue #5).
+    // Upload only when there's actual body — empty cards should not create
+    // an empty JSON blob in MinIO (issue #9).
 
     // Mirror card-resources/src/utils.ts:createChildCard — when a card has a
     // parent, parentInfo is the parent's parentInfo + the parent's own
@@ -285,9 +300,20 @@ export async function createCard(opts: {
       ]
     }
 
+    // Upload markup first so we have a real blob ref. The card content field
+    // requires a MarkupBlobRef (e.g. "<cardId>-content-<ts>"), not raw markup
+    // text — the latter silently breaks every later `fetchMarkup` call.
+    const newCardId = generateId() as Ref<CardDoc>
+    const initialBody = body && body.length > 0 ? body : ''
+    // Skip the JSON-blob upload entirely when there's no body. An empty blob
+    // is wasted storage; the ydoc will be created lazily on first update/read.
+    const contentRef = initialBody.length > 0
+      ? await uploadMarkup(client, CLASS.Card as Ref<Class<Doc>>, newCardId, 'content', initialBody, 'markup')
+      : ''
+
     const data: Record<string, unknown> = {
       title: opts.title,
-      content: body ? body : '',
+      content: contentRef,
       parentInfo,
       rank: '0|aaaaa:',
       blobs: {},
@@ -296,12 +322,12 @@ export async function createCard(opts: {
     if (parent !== undefined && parent !== null) data.parent = parent._id as Ref<Doc>
     if (opts.dryRun) {
       console.log('would create card:')
-      console.log(JSON.stringify({ _class: tagId, space, data }, null, 2))
+      console.log(JSON.stringify({ _class: tagId, _id: newCardId, space, data }, null, 2))
       return
     }
     const id = await withSpinner(
       'Creating card…',
-      () => client.createDoc(CLASS.Card as Ref<Class<CardDoc>>, space as Ref<Space>, data as any),
+      () => client.createDoc(CLASS.Card as Ref<Class<CardDoc>>, space as Ref<Space>, data as any, newCardId),
       opts
     )
     invalidateIndex(client, CLASS.Card)
@@ -322,18 +348,22 @@ export async function updateCard(ref: string, opts: {
   workspace?: string
   url?: string
 }): Promise<void> {
-  if (opts.body && opts.bodyFile) {
-    throw new CliError(ExitCode.Validation, 'ambiguous body input', 'pass only one of --body or --body-file')
+  // Validation: split into two clear single-purpose checks (issue #16).
+  if (opts.body !== undefined && opts.bodyFile !== undefined) {
+    throw new CliError(ExitCode.Validation,
+      '--body and --body-file are mutually exclusive',
+      'pass only one: --body "<html>" or --body-file <path>')
   }
-  if ((opts.body !== undefined || opts.bodyFile !== undefined) && opts.description !== undefined) {
-    throw new CliError(ExitCode.Validation, 'ambiguous: pass either --body/--body-file (full content) OR --description (with --replace-content), not both')
+  if (opts.description !== undefined &&
+      (opts.body !== undefined || opts.bodyFile !== undefined)) {
+    throw new CliError(ExitCode.Validation,
+      '--description conflicts with --body/--body-file',
+      'use --body or --body-file for the main content, OR --description with --replace-content to overwrite')
   }
-  if (opts.description !== undefined && !opts.replaceContent && !opts.body && !opts.bodyFile) {
-    throw new CliError(
-      ExitCode.Validation,
-      '--description would overwrite the card body',
-      'use --body or --body-file to set content, or pass --replace-content to confirm overwriting the existing body with --description'
-    )
+  if (opts.description !== undefined && !opts.replaceContent) {
+    throw new CliError(ExitCode.Validation,
+      '--description overwrites the existing card body',
+      're-run with --replace-content to confirm overwriting the existing body')
   }
   let bodyFromFile: string | undefined
   if (opts.bodyFile) {
@@ -349,21 +379,36 @@ export async function updateCard(ref: string, opts: {
     const doc = await client.findOne(CLASS.Card as Ref<Class<CardDoc>>, { _id: id as Ref<CardDoc> })
     if (!doc) throw new CliError(ExitCode.NotFound, `card ${ref} not found`)
     const ops: Record<string, unknown> = {}
-    if (opts.title) ops.title = opts.title
-    if (opts.body) ops.content = opts.body
-    else if (bodyFromFile !== undefined) ops.content = bodyFromFile
-    else if (opts.description !== undefined && opts.replaceContent) ops.content = opts.description ? opts.description : ''
-    if (Object.keys(ops).length === 0) throw new CliError(ExitCode.Validation, 'nothing to update', 'pass --title, --description (with --replace-content), --body, or --body-file')
+    if (opts.title !== undefined) ops.title = opts.title
+    let markupUpdated = false
+    if (opts.body !== undefined) {
+      // Update only the ydoc (issue #3). The ydoc is the source of truth for
+      // collaborative content — calling uploadMarkup would create an orphan
+      // JSON blob in MinIO and risk partial-write failures (issue #12).
+      await updateMarkup(client, CLASS.Card as Ref<Class<Doc>>, id as Ref<CardDoc>, 'content', opts.body, 'markup')
+      markupUpdated = true
+    } else if (bodyFromFile !== undefined) {
+      await updateMarkup(client, CLASS.Card as Ref<Class<Doc>>, id as Ref<CardDoc>, 'content', bodyFromFile, 'markup')
+      markupUpdated = true
+    } else if (opts.description !== undefined && opts.replaceContent) {
+      await updateMarkup(client, CLASS.Card as Ref<Class<Doc>>, id as Ref<CardDoc>, 'content', opts.description, 'markup')
+      markupUpdated = true
+    }
+    if (Object.keys(ops).length === 0 && !markupUpdated) {
+      throw new CliError(ExitCode.Validation, 'nothing to update', 'pass --title, --body, --body-file, or --description (with --replace-content)')
+    }
     if (opts.dryRun) {
       console.log(`would update card ${id}:`)
-      console.log(JSON.stringify({ _class: CLASS.Card, objectId: id, space: doc.space, ops }, null, 2))
+      console.log(JSON.stringify({ _class: CLASS.Card, objectId: id, space: doc.space, ops, markupUpdated }, null, 2))
       return
     }
-    await withSpinner(
-      'Updating…',
-      () => client.updateDoc(CLASS.Card as Ref<Class<CardDoc>>, doc.space, id as Ref<CardDoc>, ops as any),
-      opts
-    )
+    if (Object.keys(ops).length > 0) {
+      await withSpinner(
+        'Updating…',
+        () => client.updateDoc(CLASS.Card as Ref<Class<CardDoc>>, doc.space, id as Ref<CardDoc>, ops as any),
+        opts
+      )
+    }
     updated(`updated card`, id)
   } finally { await client.close() }
 }
