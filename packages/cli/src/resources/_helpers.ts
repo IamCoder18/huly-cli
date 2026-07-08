@@ -94,6 +94,15 @@ function convertMarkup (body: string | undefined, kind: 'markup' | 'markdown' | 
  * return the resulting MarkupBlobRef. The body is converted to
  * prosemirror-JSON before being sent.
  */
+/**
+ * Valid empty prosemirror doc. Sent when a caller asks to clear a
+ * collaborative field — the collaborator rejects raw `''` (not a valid
+ * prosemirror-JSON payload) and rejects a doc containing a single empty
+ * paragraph (creates a stray visible node). An empty content array is the
+ * canonical "no nodes" form.
+ */
+const EMPTY_PROSEMIRROR_DOC = '{"type":"doc","content":[]}'
+
 export async function uploadMarkup (
   client: PlatformClient,
   objectClass: Ref<Class<Doc>>,
@@ -108,10 +117,12 @@ export async function uploadMarkup (
   // nothing to upload and no ref to record.
   if (converted.length === 0) return ''
   // The PlatformClient interface doesn't expose `markup`, but PlatformClientImpl
-  // does (set in its constructor). Cast for the runtime access.
+  // does (set in its constructor). Cast for the runtime access. Guard the
+  // specific sub-call so a partial/mock surface fails with a clear error
+  // rather than a TypeError.
   const ops = (client as unknown as PlatformClientWithMarkup).markup
-  if (ops === undefined) {
-    throw new CliError(ExitCode.Server, 'client.markup is not available on this PlatformClient', 'ensure you are connected to a recent Huly platform that exposes MarkupOperations')
+  if (ops?.uploadMarkup === undefined) {
+    throw new CliError(ExitCode.Server, 'client.markup.uploadMarkup is not available on this PlatformClient', 'ensure you are connected to a recent Huly platform that exposes MarkupOperations')
   }
   return await ops.uploadMarkup(objectClass, objectId, objectAttr, converted, 'markup')
 }
@@ -124,8 +135,10 @@ export async function uploadMarkup (
  *
  * On the first call (no ydoc exists yet) the collaborator auto-creates the
  * ydoc from the supplied markup. Passing an empty body clears the existing
- * ydoc contents; `body === undefined` is treated as "no-op" so callers
- * that pass through optional flag values don't accidentally clear.
+ * ydoc contents (forwarded as a valid empty prosemirror doc — the
+ * collaborator rejects raw `''`); `body === undefined` is treated as
+ * "no-op" so callers that pass through optional flag values don't
+ * accidentally clear.
  */
 export async function updateMarkup (
   client: PlatformClient,
@@ -136,10 +149,15 @@ export async function updateMarkup (
   kind: 'markup' | 'markdown' | 'html' = 'markup'
 ): Promise<void> {
   if (body === undefined) return
-  const converted = convertMarkup(body, kind)
+  // Empty body must be sent as a valid prosemirror doc, not the raw '' —
+  // the collaborator's `updateContent` RPC rejects anything that does
+  // not parse as prosemirror-JSON.
+  const converted = body.length === 0
+    ? EMPTY_PROSEMIRROR_DOC
+    : convertMarkup(body, kind)
   const ops = (client as unknown as PlatformClientWithMarkup).markup
-  if (ops === undefined) {
-    throw new CliError(ExitCode.Server, 'client.markup is not available on this PlatformClient', 'ensure you are connected to a recent Huly platform that exposes MarkupOperations')
+  if (ops?.collaborator === undefined) {
+    throw new CliError(ExitCode.Server, 'client.markup.collaborator is not available on this PlatformClient', 'ensure you are connected to a recent Huly platform that exposes MarkupOperations')
   }
   await ops.collaborator.updateMarkup({ objectClass, objectId, objectAttr }, converted)
 }
