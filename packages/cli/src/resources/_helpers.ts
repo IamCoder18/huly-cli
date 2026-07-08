@@ -23,18 +23,19 @@ import { deleteDoc } from '../commands/dry-run.js'
 /**
  * Sanitize HTML input before converting to prosemirror markup. The
  * prosemirror HTML parser uses `preserveWhitespace: 'full'`, so any literal
- * newline in the input becomes a phantom empty paragraph in the doc tree.
+ * newline *between tags* becomes a phantom empty paragraph in the doc tree.
+ * Newlines *inside* a text node (e.g. inside `<p>hello\nworld</p>`) are
+ * preserved so the round-trip keeps the word boundary.
  */
 export function normalizeMarkupInput (html: string): string {
-  // Strip newlines entirely. The prosemirror HTML parser uses
-  // `preserveWhitespace: 'full'`, so any literal newline between tags
-  // becomes a phantom empty paragraph (or a paragraph with just `" "`
-  // text when we replaced newlines with spaces). Removing the newline
-  // also removes the adjacent whitespace, so `<h1>x</h1>\n<p>y</p>`
-  // becomes `<h1>x</h1><p>y</p>` with no phantom nodes between.
   return html
     .replace(/\r\n?/g, '\n')
-    .replace(/\s*\n\s*/g, '')
+    // Match whitespace that includes a newline only when it sits between
+    // a `>` (end of one tag) and a `<` (start of the next). Removing the
+    // whitespace entirely (not collapsing to a single space) prevents the
+    // prosemirror parser from creating a text node of `" "` between the
+    // two block elements, which would otherwise render as a phantom gap.
+    .replace(/>\s*\n\s*</g, '><')
 }
 
 /**
@@ -109,6 +110,9 @@ export async function uploadMarkup (
   // The PlatformClient interface doesn't expose `markup`, but PlatformClientImpl
   // does (set in its constructor). Cast for the runtime access.
   const ops = (client as unknown as PlatformClientWithMarkup).markup
+  if (ops === undefined) {
+    throw new CliError(ExitCode.Server, 'client.markup is not available on this PlatformClient', 'ensure you are connected to a recent Huly platform that exposes MarkupOperations')
+  }
   return await ops.uploadMarkup(objectClass, objectId, objectAttr, converted, 'markup')
 }
 
@@ -119,7 +123,9 @@ export async function uploadMarkup (
  * it exists.
  *
  * On the first call (no ydoc exists yet) the collaborator auto-creates the
- * ydoc from the supplied markup.
+ * ydoc from the supplied markup. Passing an empty body clears the existing
+ * ydoc contents; `body === undefined` is treated as "no-op" so callers
+ * that pass through optional flag values don't accidentally clear.
  */
 export async function updateMarkup (
   client: PlatformClient,
@@ -129,9 +135,12 @@ export async function updateMarkup (
   body: string | undefined,
   kind: 'markup' | 'markdown' | 'html' = 'markup'
 ): Promise<void> {
+  if (body === undefined) return
   const converted = convertMarkup(body, kind)
-  if (converted.length === 0) return
   const ops = (client as unknown as PlatformClientWithMarkup).markup
+  if (ops === undefined) {
+    throw new CliError(ExitCode.Server, 'client.markup is not available on this PlatformClient', 'ensure you are connected to a recent Huly platform that exposes MarkupOperations')
+  }
   await ops.collaborator.updateMarkup({ objectClass, objectId, objectAttr }, converted)
 }
 

@@ -472,9 +472,10 @@ export async function updateDocument(ref: string, opts: UpdateDocumentOpts): Pro
       // Update only the ydoc (issue #3). The ydoc is the source of truth
       // for collaborative content; uploading a new JSON blob would leave
       // orphans in MinIO and risk partial-write failures (issue #12).
-      if (body.length > 0) {
-        await updateMarkup(client, DOCUMENT_CLASS as Ref<Class<Doc>>, id as Ref<Doc>, 'content', body, 'markup')
-      }
+      // Pass through even when `body` is empty so users can clear the
+      // document content; `updateMarkup` treats `undefined` as no-op and
+      // empty string as a deliberate clear.
+      await updateMarkup(client, DOCUMENT_CLASS as Ref<Class<Doc>>, id as Ref<Doc>, 'content', body, 'markup')
       markupUpdated = true
     } else if (opts.oldText && opts.newText !== undefined) {
       // Targeted replace — fetch current content, perform substitution.

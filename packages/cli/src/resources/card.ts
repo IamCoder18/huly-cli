@@ -6,7 +6,7 @@ import { shouldJson, json, table, COLUMNS, withTimeout, success, updated, bulkRe
 import { withSpinner } from '../output/progress.js'
 import { deleteDoc } from '../commands/dry-run.js'
 import { CliError, ExitCode } from '../output/errors.js'
-import { generateId, uploadMarkup, updateMarkup, looksLikeRawMarkup, warnMarkdownFallback } from './_helpers.js'
+import { generateId, uploadMarkup, updateMarkup, looksLikeRawMarkup, warnMarkdownFallback, readBodyText } from './_helpers.js'
 
 type CardDoc = Doc & {
   title: string
@@ -249,13 +249,8 @@ export async function createCard(opts: {
       : ('card:space:Default' as Ref<Space>)
 
     let body = ''
-    if (opts.body && opts.bodyFile) throw new CliError(ExitCode.Validation, 'ambiguous body input')
-    if (opts.bodyFile) {
-      const fs = await import('node:fs/promises')
-      body = (await fs.readFile(opts.bodyFile, 'utf8')).trim()
-    } else if (opts.body) {
-      body = opts.body
-    }
+    const bodyInput = await readBodyText(opts)
+    if (bodyInput !== undefined) body = bodyInput
     // If only --description was given without --replace-content, body stays ''
     // here. That's intentional — we don't want to clobber the card's body in
     // create-with-description by treating description as body content.

@@ -168,7 +168,10 @@ async function resolveStatus(client: PlatformClient, project: Project, name?: st
  */
 async function resolveStatusByCategory(client: PlatformClient, project: Project, category: string): Promise<Ref<Doc>> {
   const valid = ['UnStarted', 'ToDo', 'Active', 'Won', 'Lost']
-  if (!valid.includes(category)) {
+  // Case-insensitive lookup: accept 'active', 'Active', 'ACTIVE', etc.
+  const lower = category.toLowerCase()
+  const canonical = valid.find((c) => c.toLowerCase() === lower)
+  if (canonical === undefined) {
     throw new CliError(ExitCode.Validation, `invalid --status-category: ${category}`, `expected one of ${valid.join(' | ')}`)
   }
   // IssueStatus records live in `core:space:Model` (workspace-global). Filter
@@ -180,7 +183,7 @@ async function resolveStatusByCategory(client: PlatformClient, project: Project,
   )) as Array<Doc & { category?: string; rank?: string }>
   const stripPrefix = (cat: string): string => cat.replace(/^task:statusCategory:/, '')
   const matching = statuses
-    .filter((s) => stripPrefix(String(s.category ?? '')) === category)
+    .filter((s) => stripPrefix(String(s.category ?? '')).toLowerCase() === lower)
     .sort((a, b) => String(a.rank ?? '').localeCompare(String(b.rank ?? '')))
   if (matching.length === 0) {
     throw new CliError(
@@ -254,7 +257,7 @@ async function resolveTaskType(client: PlatformClient, name: string, project: Pr
  * a non-ref string, treat it as a name (delegates to resolveTaskType).
  */
 async function resolveKindByRef(client: PlatformClient, ref: string, project: Project): Promise<Ref<Doc>> {
-  if (/^[a-z0-9]+:[a-z0-9]+:[A-Za-z0-9_-]+$/.test(ref)) {
+  if (/^[a-zA-Z0-9_-]+:[a-zA-Z0-9_-]+:[A-Za-z0-9_-]+$/.test(ref)) {
     const exists = await client.findOne(
       CLASS.TaskType as Ref<Class<Doc>>,
       { _id: ref as Ref<Doc> }
@@ -554,7 +557,7 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
       // Issue #7: validate the resolved kind actually exists. If not,
       // surface a clear error so the user knows to pass --kind explicitly.
       const exists = await client.findOne(
-        'task:class:TaskType' as Ref<Class<Doc>>,
+        CLASS.TaskType as Ref<Class<Doc>>,
         { _id: defaultKind as Ref<Doc> }
       )
       if (exists === null || exists === undefined) {
@@ -796,11 +799,12 @@ export async function updateIssue(
     }
     if (opts.assignee) ops.assignee = await resolveAssignee(client, opts.assignee) as Ref<Doc>
     if (opts.title) ops.title = opts.title
-    if (opts.description) {
+    if (opts.description !== undefined) {
       // Update only the ydoc (issue #3). The ydoc is the source of truth
       // for collaborative reads; uploading a new JSON blob on every update
       // leaves orphaned blobs in MinIO and risks partial-write failures
-      // (issue #12).
+      // (issue #12). Empty string is a deliberate clear and is forwarded
+      // to updateMarkup (which treats undefined as no-op).
       await updateMarkup(
         client, CLASS.Issue as Ref<Class<Doc>>, issue._id as Ref<Doc>, 'description', opts.description, 'markup'
       )
