@@ -90,11 +90,6 @@ function convertMarkup (body: string | undefined, kind: 'markup' | 'markdown' | 
 }
 
 /**
- * Upload body content via the SDK's `MarkupOperations.uploadMarkup` and
- * return the resulting MarkupBlobRef. The body is converted to
- * prosemirror-JSON before being sent.
- */
-/**
  * Valid empty prosemirror doc. Sent when a caller asks to clear a
  * collaborative field — the collaborator rejects raw `''` (not a valid
  * prosemirror-JSON payload) and rejects a doc containing a single empty
@@ -103,6 +98,11 @@ function convertMarkup (body: string | undefined, kind: 'markup' | 'markdown' | 
  */
 const EMPTY_PROSEMIRROR_DOC = '{"type":"doc","content":[]}'
 
+/**
+ * Upload body content via the SDK's `MarkupOperations.uploadMarkup` and
+ * return the resulting MarkupBlobRef. The body is converted to
+ * prosemirror-JSON before being sent.
+ */
 export async function uploadMarkup (
   client: PlatformClient,
   objectClass: Ref<Class<Doc>>,
@@ -156,8 +156,8 @@ export async function updateMarkup (
     ? EMPTY_PROSEMIRROR_DOC
     : convertMarkup(body, kind)
   const ops = (client as unknown as PlatformClientWithMarkup).markup
-  if (ops?.collaborator === undefined) {
-    throw new CliError(ExitCode.Server, 'client.markup.collaborator is not available on this PlatformClient', 'ensure you are connected to a recent Huly platform that exposes MarkupOperations')
+  if (ops?.collaborator?.updateMarkup === undefined) {
+    throw new CliError(ExitCode.Server, 'client.markup.collaborator.updateMarkup is not available on this PlatformClient', 'ensure you are connected to a recent Huly platform that exposes MarkupOperations')
   }
   await ops.collaborator.updateMarkup({ objectClass, objectId, objectAttr }, converted)
 }
