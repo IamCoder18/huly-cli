@@ -1,7 +1,6 @@
 import type { Doc, Ref, Space, Class } from '@hcengineering/core'
 import type { PlatformClient } from '@hcengineering/api-client'
 import pkg from '@hcengineering/api-client'
-const { MarkupContent } = pkg
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli, connectAccountCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, buildIndex, invalidateIndex } from '../transport/ref-resolver.js'

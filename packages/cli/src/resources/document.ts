@@ -1,13 +1,13 @@
 import type { Doc, Ref, Class, Space } from '@hcengineering/core'
 import type { PlatformClient } from '@hcengineering/api-client'
 import pkg from '@hcengineering/api-client'
-const { MarkupContent } = pkg
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, buildIndex, invalidateIndex } from '../transport/ref-resolver.js'
 import { shouldJson, json, table, kv, header, COLUMNS, C, relTime, isoDate, withTimeout, success, updated, bulkRemoved } from "../output/format.js"
 import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
+import { generateId, uploadMarkup, updateMarkup, looksLikeRawMarkup, warnMarkdownFallback } from './_helpers.js'
 import { readEnv } from '../auth/env.js'
 
 type Teamspace = Doc & {
@@ -177,6 +177,7 @@ export async function createTeamspace(opts: {
   url?: string
 }): Promise<void> {
   if (!opts.name) throw new CliError(ExitCode.Validation, 'missing --name')
+  // Teamspace.description is a plain string field, not collaborative content.
   const data: Record<string, unknown> = {
     name: opts.name,
     description: opts.description ?? '',
@@ -303,7 +304,7 @@ export async function listDocuments(opts: {
   } finally { await client.close() }
 }
 
-export async function getDocument(ref: string, opts: { json?: boolean; ci?: boolean; markdown?: boolean; workspace?: string; url?: string }): Promise<void> {
+export async function getDocument(ref: string, opts: { json?: boolean; ci?: boolean; markdown?: boolean; rawMarkup?: boolean; workspace?: string; url?: string }): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const id = await resolveRef(ref, {
@@ -312,14 +313,18 @@ export async function getDocument(ref: string, opts: { json?: boolean; ci?: bool
     })
     const doc = await client.findOne(DOCUMENT_CLASS, { _id: id as Ref<Document> })
     if (!doc) throw new CliError(ExitCode.NotFound, `document ${ref} not found`)
-    if (opts.markdown && doc.content) {
+    if ((opts.markdown || opts.rawMarkup) && doc.content) {
       try {
         const body = await withTimeout(
-          client.fetchMarkup(DOCUMENT_CLASS as Ref<Class<Doc>>, doc._id, 'content', doc.content as any, 'markdown'),
+          client.fetchMarkup(DOCUMENT_CLASS as Ref<Class<Doc>>, doc._id, 'content', doc.content as any, opts.rawMarkup ? 'markup' : 'markdown'),
           5000,
           '(body fetch timed out)'
         )
-        console.log(body)
+        const bodyStr = String(body ?? '')
+        if (opts.markdown && looksLikeRawMarkup(bodyStr)) {
+          warnMarkdownFallback()
+        }
+        console.log(bodyStr)
         return
       } catch { console.log(String(doc.content)); return }
     }
@@ -387,15 +392,17 @@ export async function createDocument(opts: {
         parent = found._id
       }
     }
-    // The SDK's processMarkup tries to upload MarkupContent bodies to the
-    // collaborator service. If the collaborator is unhealthy the upload
-    // throws and the whole createDoc fails — leaving the CLI unable to
-    // create any document. We store the body as a plain string instead.
-    // The platform treats string content as already-rendered markup; the
-    // get --markdown path returns the body directly (see Fix #2 withTimeout).
+    // Upload content markup first so the content field gets a proper blob ref
+    // (not raw markup text). Raw markup in `content` silently breaks every
+    // later `fetchMarkup` because the platform can't resolve it as a blob.
+    const newDocId = generateId()
+    const contentRef = body !== undefined && body.length > 0
+      ? await uploadMarkup(client, DOCUMENT_CLASS, newDocId, 'content', body, 'markup')
+      : ''
+
     const data: Record<string, unknown> = {
       title: opts.title,
-      content: body ?? '',
+      content: contentRef,
       parent: parent as Ref<Doc>,
       space: teamspace._id,
       archived: opts.archived ?? false,
@@ -403,12 +410,12 @@ export async function createDocument(opts: {
     }
     if (opts.dryRun) {
       console.log('would create document:')
-      console.log(JSON.stringify({ _class: DOCUMENT_CLASS, space: teamspace._id, data }, null, 2))
+      console.log(JSON.stringify({ _class: DOCUMENT_CLASS, _id: newDocId, space: teamspace._id, data }, null, 2))
       return
     }
     const id = await withSpinner(
       `Creating document in ${teamspace.name}…`,
-      () => client.createDoc(DOCUMENT_CLASS, teamspace._id, data as any),
+      () => client.createDoc(DOCUMENT_CLASS, teamspace._id, data as any, newDocId),
       opts
     )
     invalidateIndex(client, DOCUMENT_CLASS)
@@ -457,14 +464,19 @@ export async function updateDocument(ref: string, opts: UpdateDocumentOpts): Pro
     if (opts.title) ops.title = opts.title
     if (opts.archived !== undefined) ops.archived = opts.archived
 
+    let markupUpdated = false
     if (body !== undefined) {
       if (opts.oldText && opts.newText !== undefined) {
         throw new CliError(ExitCode.Validation, 'ambiguous: pass either --body (full replace) OR --old-text/--new-text (targeted), not both')
       }
-      // See createDocument for why we pass the raw string instead of
-      // new MarkupContent(...): the SDK's processMarkup tries to upload
-      // MarkupContent to the collaborator, which throws on this selfhost.
-      ops.content = body
+      // Update only the ydoc (issue #3). The ydoc is the source of truth
+      // for collaborative content; uploading a new JSON blob would leave
+      // orphans in MinIO and risk partial-write failures (issue #12).
+      // Pass through even when `body` is empty so users can clear the
+      // document content; `updateMarkup` treats `undefined` as no-op and
+      // empty string as a deliberate clear.
+      await updateMarkup(client, DOCUMENT_CLASS as Ref<Class<Doc>>, id as Ref<Doc>, 'content', body, 'markup')
+      markupUpdated = true
     } else if (opts.oldText && opts.newText !== undefined) {
       // Targeted replace — fetch current content, perform substitution.
       const currentContent = doc.content
@@ -486,22 +498,27 @@ export async function updateDocument(ref: string, opts: UpdateDocumentOpts): Pro
           `otherwise narrow your --old-text to a unique substring`)
       }
       const newText = currentText.split(opts.oldText).join(opts.newText)
-      ops.content = newText
+      if (newText.length > 0) {
+        await updateMarkup(client, DOCUMENT_CLASS as Ref<Class<Doc>>, id as Ref<Doc>, 'content', newText, 'markup')
+      }
+      markupUpdated = true
     }
 
-    if (Object.keys(ops).length === 0) {
+    if (Object.keys(ops).length === 0 && !markupUpdated) {
       throw new CliError(ExitCode.Validation, 'nothing to update', 'pass --body, --title, --archived, or --old-text/--new-text')
     }
     if (opts.dryRun) {
       console.log(`would update document ${id}:`)
-      console.log(JSON.stringify({ _class: DOCUMENT_CLASS, objectId: id, space: doc.space, ops }, null, 2))
+      console.log(JSON.stringify({ _class: DOCUMENT_CLASS, objectId: id, space: doc.space, ops, markupUpdated }, null, 2))
       return
     }
-    await withSpinner(
-      'Updating…',
-      () => client.updateDoc(DOCUMENT_CLASS, doc.space as unknown as Ref<Space>, id as Ref<Document>, ops as any),
-      opts
-    )
+    if (Object.keys(ops).length > 0) {
+      await withSpinner(
+        'Updating…',
+        () => client.updateDoc(DOCUMENT_CLASS, doc.space as unknown as Ref<Space>, id as Ref<Document>, ops as any),
+        opts
+      )
+    }
     updated(`updated document`, id)
   } finally { await client.close() }
 }
@@ -552,7 +569,7 @@ export async function listSnapshots(ref: string, opts: { limit?: number; offset?
   } finally { await client.close() }
 }
 
-export async function getSnapshot(ref: string, opts: { snapshotId?: string; json?: boolean; ci?: boolean; markdown?: boolean; workspace?: string; url?: string }): Promise<void> {
+export async function getSnapshot(ref: string, opts: { snapshotId?: string; json?: boolean; ci?: boolean; markdown?: boolean; rawMarkup?: boolean; workspace?: string; url?: string }): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const id = await resolveRef(ref, {
@@ -569,14 +586,18 @@ export async function getSnapshot(ref: string, opts: { snapshotId?: string; json
     if (snap.parent !== id) {
       throw new CliError(ExitCode.Validation, `snapshot ${opts.snapshotId} is not a child of document ${ref}`)
     }
-    if (opts.markdown && snap.content) {
+    if ((opts.markdown || opts.rawMarkup) && snap.content) {
       try {
         const body = await withTimeout(
-          client.fetchMarkup(SNAPSHOT_CLASS as Ref<Class<Doc>>, snap._id, 'content', snap.content as any, 'markdown'),
+          client.fetchMarkup(SNAPSHOT_CLASS as Ref<Class<Doc>>, snap._id, 'content', snap.content as any, opts.rawMarkup ? 'markup' : 'markdown'),
           5000,
           '(body fetch timed out)'
         )
-        console.log(body)
+        const bodyStr = String(body ?? '')
+        if (opts.markdown && looksLikeRawMarkup(bodyStr)) {
+          warnMarkdownFallback()
+        }
+        console.log(bodyStr)
         return
       } catch { console.log(String(snap.content)); return }
     }

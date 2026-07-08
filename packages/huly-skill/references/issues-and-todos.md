@@ -44,7 +44,7 @@ huly issue list --project TSK --description-search "deploy" --json # MongoDB reg
 huly issue list --project TSK --parent null --json                # top-level only
 huly issue list --project TSK --limit 100 --offset 200 --json     # in-memory slice
 huly issue get TSK-1 --json
-huly issue get TSK-1 --markdown        # body as raw markdown
+huly issue get TSK-1 --markdown        # body as Markdown
 ```
 
 ### Create
@@ -403,3 +403,9 @@ huly ws findAll '["core:class:Tx",{"objectId":"<issue-id>","modifiedOn":{"$gte":
 - **Don't** try `action --set` — actions don't accept `--set key=value`. Use the typed flags (`--priority`, `--visibility`, `--owner`, `--title`, `--description`, `--body`, `--due`).
 - **Don't** assume the project's project-type is classic. Run `huly project-type get <ref>` if you need to confirm; Recruit/Lead projects disable cascades.
 - **Don't** pass `--body` AND `--body-file`. Mutually exclusive (`Validation: ambiguous body input`).
+- **Newlines in `--body` / `--description` are auto-stripped.** The CLI's `normalizeMarkupInput` strips newlines (and adjacent whitespace) before the prosemirror parser runs, so `<h1>Title</h1>\n<p>Body</p>` round-trips cleanly into one heading and one paragraph with no phantom empty paragraphs. (Earlier versions warned against embedded `\n`; that restriction is now lifted.)
+- **Nested HTML must be properly nested, not flat.** A nested list needs `<li>...<ul><li>...</li></ul></li>`, not `<li>...</li><ul><li>...</li></ul>`. The prosemirror parser validates structure and silently drops malformed siblings — same applies to blockquotes in lists, code blocks in table cells, etc.
+- **`--status` errors if the status doesn't exist.** `huly issue create --status "Bogus"` throws with the list of available statuses. Same for `--priority` and `--task-type`.
+- **`--status-category` (UnStarted | ToDo | Active | Won | Lost)** picks the lowest-ranked status in that category from the project's IssueStatus records. Available on `issue list`, `issue create`, and `issue update`.
+- **`--kind <ref>`** overrides the default TaskType. Default is the project's first available TaskType (or `tracker:taskTypes:Issue` as final fallback, validated via `findOne`).
+- **`--raw-markup` is read-only.** Use it on `issue get` / `document get` / `card get` / `document snapshot` to dump raw prosemirror-JSON. Using it on `issue create` / `issue update` returns `unknown option`.

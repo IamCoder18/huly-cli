@@ -1,7 +1,5 @@
 import type { Doc, Ref, Space, Class } from '@hcengineering/core'
 import type { PlatformClient } from '@hcengineering/api-client'
-import pkg from '@hcengineering/api-client'
-const { MarkupContent } = pkg
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, invalidateIndex } from '../transport/ref-resolver.js'
@@ -9,6 +7,7 @@ import { shouldJson, json, table, kv, header, COLUMNS, C, isoDate, relTime, with
 import { withSpinner } from '../output/progress.js'
 import { deleteDoc } from '../commands/dry-run.js'
 import { CliError, ExitCode } from '../output/errors.js'
+import { looksLikeRawMarkup, warnMarkdownFallback } from './_helpers.js'
 import { readEnv } from '../auth/env.js'
 import { connectAccountCli } from '../transport/sdk.js'
 import { getCachedWorkspaceToken } from '../auth/cache.js'
@@ -339,7 +338,7 @@ export async function listEvents(opts: {
   } finally { await client.close() }
 }
 
-export async function getEvent(ref: string, opts: { json?: boolean; ci?: boolean; markdown?: boolean; workspace?: string; url?: string } = {}): Promise<void> {
+export async function getEvent(ref: string, opts: { json?: boolean; ci?: boolean; markdown?: boolean; rawMarkup?: boolean; workspace?: string; url?: string } = {}): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const id = await resolveRef(ref, {
@@ -351,14 +350,18 @@ export async function getEvent(ref: string, opts: { json?: boolean; ci?: boolean
       doc = await client.findOne(CLASS.ReccuringEvent as Ref<Class<Event>>, { _id: id as Ref<Event> })
     }
     if (!doc) throw new CliError(ExitCode.NotFound, `event ${ref} not found`)
-    if (opts.markdown && doc.description) {
+    if ((opts.markdown || opts.rawMarkup) && doc.description) {
       try {
         const body = await withTimeout(
-          client.fetchMarkup(CLASS.Event as Ref<Class<Doc>>, doc._id, 'description', doc.description as any, 'markdown'),
+          client.fetchMarkup(CLASS.Event as Ref<Class<Doc>>, doc._id, 'description', doc.description as any, opts.rawMarkup ? 'markup' : 'markdown'),
           5000,
           '(body fetch timed out)'
         )
-        console.log(body)
+        const bodyStr = String(body ?? '')
+        if (opts.markdown && looksLikeRawMarkup(bodyStr)) {
+          warnMarkdownFallback()
+        }
+        console.log(bodyStr)
         return
       } catch { console.log(String(doc.description)); return }
     }

@@ -1,7 +1,6 @@
 import type { PlatformClient } from '@hcengineering/api-client'
 import type { Doc, Ref, Space, Class, Data, WithLookup } from '@hcengineering/core'
-import pkg from '@hcengineering/api-client'
-const { MarkupContent } = pkg
+import type { PlatformClientWithMarkup } from '../types/markup-operations.js'
 import { shouldJson, json } from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 
@@ -67,11 +66,51 @@ export async function deleteDoc<T extends Doc>(
     console.log(`would remove ${objectId} (${classId})`)
     return { id: objectId, skipped: true }
   }
+  // Issue #20: best-effort collaborative-state cleanup before removeDoc.
+  // For known markup-bearing classes, write an empty markup to the
+  // collaborator so the ydoc is dropped server-side. Without this, the
+  // ydoc binary and any JSON snapshots live in MinIO indefinitely.
+  const markupAttrs = await getCollaborativeAttrs(client, classId)
+  for (const attr of markupAttrs) {
+    try {
+      const collabId = { objectClass: classId as Ref<Class<Doc>>, objectId: objectId as Ref<Doc>, objectAttr: attr }
+      const ops = (client as unknown as PlatformClientWithMarkup).markup
+      if (ops?.collaborator?.updateMarkup !== undefined) {
+        await ops.collaborator.updateMarkup(collabId, '{"type":"doc","content":[{"type":"paragraph"}]}')
+      }
+    } catch {
+      // best-effort; failures here don't block the delete
+    }
+  }
   await withSpinner('Deleting…', () => client.removeDoc(classId, space, objectId))
   return { id: objectId, skipped: false }
 }
 
-export function wrapBody(body: string | undefined): InstanceType<typeof MarkupContent> | undefined {
-  if (!body) return undefined
-  return new MarkupContent(body, 'markdown')
+/**
+ * Discover which attributes on `classId` are collaborative markup.
+ * Used by deleteDoc to know which ydocs to clear before removal.
+ */
+async function getCollaborativeAttrs (client: PlatformClient, classId: Ref<Class<Doc>>): Promise<string[]> {
+  const cacheKey = String(classId)
+  if (_collaborativeAttrCache.has(cacheKey)) return _collaborativeAttrCache.get(cacheKey) ?? []
+  try {
+    const hidden = await (client as unknown as {
+      connection: { findAll: <T extends Doc>(_class: Ref<Class<T>>, query: unknown) => Promise<{ _id: string; attribute: string; type: string }[]> }
+    }).connection.findAll('core:class:Attribute' as Ref<Class<Doc>>, {})
+    const attrs = hidden
+      .filter((a) => a._id.startsWith(`${classId}:`) && a.type?.includes('Markup'))
+      .map((a) => a.attribute)
+    _collaborativeAttrCache.set(cacheKey, attrs)
+    return attrs
+  } catch {
+    // Unknown — fall back to the well-known markup attrs for the tracked classes
+    return defaultCollaborativeAttrs.get(String(classId)) ?? []
+  }
 }
+
+const _collaborativeAttrCache = new Map<string, string[]>()
+const defaultCollaborativeAttrs = new Map<string, string[]>([
+  ['card:class:Card', ['content']],
+  ['tracker:class:Issue', ['description']],
+  ['document:class:Document', ['content']]
+])

@@ -151,7 +151,8 @@ Full env var cheat sheet and the auth-state machine: `references/auth-and-setup.
 |---|---|---|
 | Read interactively (human) | default (table) | Auto-sized columns, hidden boring fields |
 | Pipe to `jq` / `xargs`, capture an `_id`, branch on data | `--json` (or `--ci`) | Raw arrays / objects |
-| Read the body of a doc/comment/message as markdown | `--markdown` | Raw string. Has a 5s timeout fallback. |
+| Read the body of a doc/comment/message as Markdown | `--markdown` | Rendered Markdown. Has a 5s timeout; warns on conversion failure. |
+| Read the raw prosemirror-JSON blob | `--raw-markup` (read commands only) | The literal prosemirror-JSON string stored in MinIO. |
 | See exactly what a write would do before committing | `--dry-run` | Prints the would-be tx JSON, no side effects |
 | Skip smart defaults (no auto-teamspace, no auto-issueStatus seeding) | `--minimal` | Lean writes |
 
@@ -229,6 +230,34 @@ The CLI is opinionated. When you don't specify, it does:
 | `huly calendar create` | Always creates a new `Calendar` doc — no "get-or-create" |
 | `huly card create` without `--card-space` | Defaults to `card:space:Default` literal — **this usually does not exist**; create one first |
 
+### Markup rules — `--body` / `--description` / `--markdown` / `--raw-markup`
+
+The CLI converts your HTML markup into prosemirror JSON before storing it. One layout rule still matters; the newline rule is no longer a hard requirement.
+
+- **Newlines are auto-stripped.** The CLI normalizes `<h1>x</h1>\n<p>y</p>` into `<h1>x</h1><p>y</p>` before parsing, so embedded `\n` no longer creates phantom empty paragraphs. Use `--body-file ./body.html` if you prefer, but you can now safely pass multi-line strings inline.
+- **Nested HTML must still be properly nested, not flat.** A nested list needs `<li>...<ul><li>...</li></ul></li>`, not `<li>...</li><ul><li>...</li></ul>`. Same for blockquotes in lists, code blocks in table cells, etc. — the prosemirror parser validates structure and silently drops malformed siblings.
+
+Examples of correct markup:
+
+```bash
+# OK — multi-line (newlines auto-stripped)
+huly card create --body "<h1>Title</h1>
+<p>Body</p>"
+
+# OK — single line still works
+huly card create --body "<h1>Title</h1><p>Body</p>"
+
+# BAD — flat nesting is silently dropped
+huly card create --body "<ul><li>A</li><ul><li>B</li></ul></ul>"
+
+# GOOD — proper nesting
+huly card create --body "<ul><li>A<ul><li>B</li></ul></li></ul>"
+```
+
+- **`--markdown` returns rendered Markdown.** `huly card get <ref> --markdown` (and `issue get`, `document get`) renders the body as Markdown. If the server's markdown converter is unavailable, `--markdown` falls back to the raw prosemirror-JSON string and writes a warning to stderr; set `HULY_MARKDOWN_FALLBACK_FAIL=1` to make this exit non-zero.
+- **`--raw-markup` returns raw prosemirror-JSON.** Read-only flag, available only on `card get`, `issue get`, `document get`, `document snapshot --snapshot-id`, and `calendar get`. Using it on `card create` / `card update` returns `unknown option --raw-markup`. Use this flag when scripting against the stored blob format.
+- **Update is single-write.** `card update --body` / `issue update --description` / `document update --body` write only the ydoc (the source of truth for collaborative reads). They do NOT also upload a new JSON blob on each edit. Storage grows by one snapshot per edit (server-controlled via the `updateContent` RPC), but no longer two.
+
 ### Reserved keys you cannot use in `--set key=value`
 
 The reserved set differs between `create` and `update`:
@@ -237,6 +266,8 @@ The reserved set differs between `create` and `update`:
 - **`update`:** `set, unset, json, ci, markdown, dryRun, minimal, yes, workspace, url, defaultProjectIdentifier`
 
 These are silently stripped. `defaultProjectIdentifier` is an internal helper option (used by `--project TSK-5` ref resolution), not a user-facing CLI flag.
+
+`--raw-markup` is **NOT** a global option — it only exists on read commands (`card get`, `issue get`, `document get`, `document snapshot`, `calendar get`). On other commands, Commander rejects it with `unknown option --raw-markup`.
 
 ### `--yes` is required for
 

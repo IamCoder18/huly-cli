@@ -41,7 +41,7 @@ huly document list --teamspace X --limit 100 --offset 0 --json               # i
 
 huly document get "My design doc" --json       # by title
 huly document get <doc-ref> --json              # by id (resolved against document:class:Document)
-huly document get <doc-ref> --markdown          # body as raw markdown
+huly document get <doc-ref> --markdown          # body as Markdown
 ```
 
 `--title-search` and `--content-search` are MongoDB-style regex (case-insensitive). They are best-effort — for serious fulltext use `huly ws queryAll` (Elasticsearch-backed).
@@ -71,7 +71,7 @@ huly document create \
 
 **`--body` vs `--body-file`:** mutually exclusive. Validation: `ambiguous body input`.
 
-**Stored as raw string:** the CLI bypasses the SDK's `MarkupContent` upload path. Body is stored as-is. `--markdown` round-trips correctly for CLI-created docs.
+**Stored as prosemirror markup:** `document create --body` uploads a prosemirror-JSON blob (via `client.markup.uploadMarkup`) referencing the new document's content field. The blob ref is stored in `doc.content`; the ydoc is created lazily on first read/edit. `--markdown` round-trips correctly. Web-UI-created docs that use embed / mention nodes may not round-trip cleanly via the CLI — these require `huly ws tx` to manipulate.
 
 ### Update
 
@@ -275,3 +275,6 @@ huly ws findAll '["core:class:Tx",{"objectId":"<doc-id>"}]' --json \
 - **No controlled-document state transitions on CLI.** Web UI only.
 - **No training-request management on CLI.** Web UI only.
 - **CLI-created docs store raw strings**, not `MarkupContent`. Rich-text features (mentions as actual nodes, embeds) don't survive the round-trip.
+- **Newlines in `--body` are auto-stripped.** The CLI's `normalizeMarkupInput` strips newlines (and adjacent whitespace) before the prosemirror parser runs, so `<h1>Title</h1>\n<p>Body</p>` round-trips cleanly into one heading and one paragraph with no phantom empty paragraphs. (Earlier versions warned against embedded `\n`; that restriction is now lifted.)
+- **Nested HTML must be properly nested, not flat.** A nested list needs `<li>...<ul><li>...</li></ul></li>`, not `<li>...</li><ul><li>...</li></ul>`. The prosemirror parser validates structure and silently drops malformed siblings — same applies to blockquotes in lists, code blocks in table cells, etc.
+- **`card delete` MinIO cleanup is best-effort.** Before `removeDoc`, the CLI writes an empty markup via `updateMarkup` to clear the ydoc. Old JSON snapshots may persist on disk until garbage-collected server-side. (Requires server-side Issue 4 fix to fully clean.)

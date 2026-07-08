@@ -24,6 +24,7 @@ the rationale behind design decisions.
 6. [Global flags](#global-flags)
 7. [Output modes](#output-modes)
 8. [Ref resolution](#ref-resolution)
+   - [Writing markup: layout rules](#writing-markup-body--description-layout-rules)
 9. [Command reference](#command-reference)
    - [login / signup / whoami](#login--signup--whoami)
    - [workspace](#workspace)
@@ -298,7 +299,7 @@ huly issue list --workspace prod        # equivalent
 | `--workspace <name>` | Active workspace (overrides `HULY_WORKSPACE`). Name or UUID. |
 | `--json` | Output machine-readable JSON |
 | `--ci` | Alias for `--json`. Same effect; signals non-interactive intent. |
-| `--markdown` | Output body content as raw markdown (skips markup resolution) |
+| `--markdown` | Output body content as rendered Markdown (read commands). Falls back to raw prosemirror-JSON with a stderr warning if conversion fails. |
 | `--dry-run` | Print the tx that would be applied, do not apply |
 | `--minimal` | Skip smart defaults (no auto-Teamspace, no auto-IssueStatus) |
 | `-y, --yes` | Skip confirmation prompts (required for destructive ops) |
@@ -371,17 +372,67 @@ strict-mode behavior.)
 ### Markdown body (`--markdown`)
 
 For resources that have body content (documents, comments, channel messages,
-issue descriptions), `--markdown` returns the raw markdown text instead
-of a table:
+issue descriptions), `--markdown` returns the rendered Markdown text:
 
 ```bash
 huly document get <ref> --markdown
-# prints: # Hello\nThis is the document body in markdown.
+# prints: # Hello
+#         This is the document body in Markdown.
 ```
 
-The CLI's read path catches markup resolution failures and falls back to
-returning the raw body string. If a doc was created with the CLI (which
-stores bodies as raw strings), `--markdown` returns that string verbatim.
+The CLI's read path catches markup conversion failures. If `markupToMarkdown`
+fails server-side, `--markdown` falls back to the raw prosemirror-JSON
+string and prints a warning to stderr; CI scripts can detect this by
+setting `HULY_MARKDOWN_FALLBACK_FAIL=1` to make non-zero exit.
+
+### Raw prosemirror-JSON (`--raw-markup`)
+
+For debugging or scripting against the stored blob format, `--raw-markup`
+returns the literal prosemirror-JSON string from MinIO (the same string
+that goes into `client.markup.uploadMarkup`):
+
+```bash
+huly document get <ref> --raw-markup
+# prints: {"type":"doc","content":[{"type":"paragraph",...}]}
+```
+
+`--raw-markup` is read-only: available on `card get`, `issue get`,
+`document get`, `document snapshot --snapshot-id`, and `calendar get`.
+Using it on create/update returns `unknown option --raw-markup`.
+
+### Writing markup: `--body` / `--description` layout rules
+
+The CLI converts your HTML markup into prosemirror JSON before storing it.
+One layout rule still matters; the newline rule is no longer a hard
+requirement.
+
+- **Newlines are auto-stripped.** The CLI normalizes
+  `<h1>x</h1>\n<p>y</p>` to `<h1>x</h1><p>y</p>` before parsing, so
+  embedded `\n` no longer creates phantom empty paragraphs. Pass
+  `--body-file ./body.html` if you prefer, but multi-line inline strings
+  are now safe.
+- **Nested HTML must be properly nested, not flat.** A nested list needs
+  `<li>...<ul><li>...</li></ul></li>`, not `<li>...</li><ul><li>...</li></ul>`.
+  Same for blockquotes in lists, code blocks in table cells, etc. — the
+  prosemirror parser validates structure and silently drops malformed
+  siblings.
+
+Examples of correct markup:
+
+```bash
+# OK — multi-line (newlines auto-stripped)
+huly card create --body "<h1>Title</h1>
+<p>Body</p>"
+
+# OK — single line also works
+huly card create --body "<h1>Title</h1><p>Body</p>"
+
+# BAD — flat nesting is silently dropped
+huly card create --body "<ul><li>A</li><ul><li>B</li></ul></ul>"
+
+# GOOD — proper nesting
+huly card create --body "<ul><li>A<ul><li>B</li></ul></li></ul>"
+```
 
 ---
 
@@ -604,11 +655,16 @@ the kanban-style status filters.
 **Priorities:** `Urgent | High | Normal | Low | None`. Server-side enum;
 the CLI auto-matches case-insensitively.
 
-**Body format:** Markdown. Stored as raw string.
+**Body format:** Markdown. Stored as prosemirror-JSON markup via
+`client.markup.uploadMarkup`. The blob ref is stored in the issue's
+`description` field; the ydoc is created lazily on first read/edit.
 
-**`--markdown` on get:** returns raw body string. For CLI-created
-documents (which store raw strings), this works correctly. For web-UI-created
-documents with markup refs to y-docs, the ref string is returned instead.
+**`--markdown` on get:** returns the body as rendered Markdown. For
+CLI-created documents (which store prosemirror-JSON markup) this works
+correctly. For web-UI-created documents with embed / mention nodes, the
+markdown conversion may produce partial output; the CLI warns to stderr
+if it falls back to raw prosemirror-JSON. Use `--raw-markup` to dump
+the stored prosemirror-JSON blob directly.
 
 **Best practices & side effects:** assigning an issue or changing its status
 may auto-create, auto-close, or auto-rollback attached `ProjectToDo`s and
@@ -1942,16 +1998,25 @@ docs/
 
 ### Markup handling
 
-The SDK's `processMarkup` calls the collaborator's `uploadMarkup` RPC
-on every `MarkupContent` instance. The CLI passes body content as raw
-strings instead of `new MarkupContent(body, 'markdown')`; the SDK's else
-branch forwards strings through unchanged. The read path
-(`get --markdown`) wraps `client.fetchMarkup` in a 5-second timeout and
-falls back to returning the raw body string when markup resolution fails.
+The CLI converts user-facing HTML / Markdown body content into
+prosemirror-JSON markup before storage. On `* create --body` it calls
+`client.markup.uploadMarkup(...)` directly (bypassing the SDK's
+`processMarkup`/`MarkupContent` path, which uses two ESM/CJS class
+instances of `MarkupContent` that fail the `instanceof` check). On
+`* update --body` it calls only `client.markup.collaborator.updateMarkup`
+(the `updateContent` RPC) — no redundant JSON-blob upload per edit.
 
-This means `get --markdown` returns the raw body for CLI-created docs
-(always correct) and the ref string for web-UI-created docs. If you need
-rich-text round-trip features, use the raw escape hatch:
+Read path: `get --markdown` calls `client.fetchMarkup(..., 'markdown')`
+which triggers the server's `markupToJSON` → `markupToMarkdown` pipeline.
+If the conversion fails server-side, the SDK returns the raw
+prosemirror-JSON string. The CLI detects this (heuristic: result starts
+with `{"type":"doc"`), prints a warning to stderr, and — if
+`HULY_MARKDOWN_FALLBACK_FAIL=1` is set — exits non-zero so CI scripts
+can detect silent fallback. Use `--raw-markup` (read commands only) to
+dump the stored prosemirror-JSON directly.
+
+For rich-text round-trip features (mention nodes, embeds) that don't
+survive the JSON round-trip, use the raw escape hatch:
 `huly ws tx '{"method":"createDoc", ...}'`.
 
 ---
@@ -2177,16 +2242,20 @@ Rejected txs surface as PlatformError. The CLI surfaces these as CliError.
 ### Markup and y-docs
 
 For content-bearing fields (description, body, content), the platform uses
-a markup reference indirection: the SDK's `processMarkup` uploads the
-body to the collaborator, which produces a y-doc, and the doc field
-stores a `MarkupRef` pointing to it instead of the inline text. On
-read, `client.fetchMarkup(...)` retrieves and renders the y-doc.
+a markup reference indirection: the CLI's `uploadMarkup` / `updateMarkup`
+helpers call the collaborator's RPCs directly, producing a y-doc binary
+and a JSON prosemirror-markup blob stored in MinIO. The doc field stores
+a `MarkupRef` pointing at the blob instead of inline text. On read,
+`client.fetchMarkup(...)` retrieves the blob, runs `markupToJSON`
+(prosemirror) and optionally `markupToMarkdown`.
 
-The CLI passes body content as raw strings instead of
-`new MarkupContent(...)`; the SDK's else-branch forwards strings
-through unchanged, and the read path falls back to the raw body string
-when markup resolution fails or times out. See
-[Markup handling](#markup-handling) for the rationale.
+On `* create --body` the CLI calls both `uploadMarkup` (creates the
+initial JSON blob) and lets the next `updateContent` create the ydoc.
+On `* update --body` the CLI calls only `updateMarkup` (the ydoc is the
+source of truth for collaborative reads; the JSON blob is no longer
+uploaded per edit). For read commands, `--markdown` requests markdown
+conversion and `--raw-markup` returns the raw prosemirror-JSON string.
+See [Markup handling](#markup-handling) for the rationale.
 
 ### Account-server permission model
 

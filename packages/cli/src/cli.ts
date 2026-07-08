@@ -127,7 +127,7 @@ function attachGlobalOpts(cmd: Command, opts: { skipNonInteractive?: boolean } =
     .option('--workspace <name>', 'workspace URL name or UUID')
     .option('--json', 'output JSON')
     .option('--ci', 'CI mode (JSON output)')
-    .option('--markdown', 'output body as markdown')
+    .option('--markdown', 'output body as markdown (warns and falls back if server cannot convert; --raw-markup on read commands for raw output)')
     .option('--dry-run', 'print intended tx, do not apply')
     .option('--minimal', 'minimal payload (no smart defaults)')
     .option('-y, --yes', 'skip confirmation prompts')
@@ -149,11 +149,14 @@ Global options (also available on parent commands):
   --url <url>           Huly server URL
   --workspace <name>    workspace URL name or UUID
   --json / --ci         output JSON
-  --markdown            output body as markdown
+  --markdown            output body as markdown (warns on conversion failure)
   --dry-run             print intended tx, do not apply
   --minimal             minimal payload (no smart defaults)
   -y, --yes             skip confirmation prompts
   --non-interactive     disable interactive prompts
+
+Read-command-only options (not on create/update):
+  --raw-markup          output raw prosemirror-JSON markup
 `
 
 function withGlobalHelp(cmd: Command): Command {
@@ -523,11 +526,13 @@ Ref formats accepted by --project, --assignee, --label: name, identifier, or _id
   issue
     .command('get <ref>')
     .description('Get an issue')
+    .option('--raw-markup', 'output raw prosemirror-JSON markup instead of markdown')
     .addHelpText('after', `
 Examples:
   $ huly issue get TSK-1
   $ huly issue get 1                # uses \$HULY_PROJECT
   $ huly issue get TSK-1 --markdown
+  $ huly issue get TSK-1 --raw-markup
   $ huly issue get tracker:issue:6a... # raw _id`)
     .action(async (ref, opts, cmd) => {
       try { await getIssue(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
@@ -541,12 +546,14 @@ Examples:
     .option('--body <md>')
     .option('--body-file <path>')
     .option('--status <name>')
+    .option('--status-category <c>', 'UnStarted | ToDo | Active | Won | Lost')
     .option('--priority <p>', 'Urgent | High | Normal | Low | None')
     .option('--assignee <email>', 'must be a workspace member')
     .option('--label <l...>', 'repeatable: --label bug --label auth')
     .option('--due <iso>', 'ISO 8601 e.g. 2026-07-01T14:00:00Z')
     .option('--parent <ref>')
     .option('--task-type <name|id>')
+    .option('--kind <ref>', 'TaskType ref (e.g. tracker:taskTypes:Issue)')
     .addHelpText('after', `
 Examples:
   $ huly issue create --project TSK --title "Add OAuth login"
@@ -588,6 +595,7 @@ behaviors and smart defaults' in README.md for full resolution order.`)
     .option('--set <kv...>', 'key=value (repeatable); key=null clears the field')
     .option('--unset <key...>')
     .option('--status <name>')
+    .option('--status-category <c>', 'UnStarted | ToDo | Active | Won | Lost')
     .option('--priority <p>', 'Urgent | High | Normal | Low | None')
     .option('--assignee <email>')
     .option('--title <t>')
@@ -1068,7 +1076,14 @@ as thread replies.`)
     .action(async (opts, cmd) => {
       try { await listCards({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
-  card.command('get <ref>').description('Get a card')
+  card.command('get <ref>')
+    .description('Get a card')
+    .option('--raw-markup', 'output raw prosemirror-JSON markup instead of markdown')
+    .addHelpText('after', `
+Examples:
+  $ huly card get LIFE-1
+  $ huly card get LIFE-1 --markdown       # render body as Markdown
+  $ huly card get LIFE-1 --raw-markup     # dump raw prosemirror-JSON`)
     .action(async (ref, opts, cmd) => {
       try { await getCard(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
@@ -1271,7 +1286,9 @@ check 'huly action list --issue <ref>' first.`)
     .action(async (opts, cmd) => {
       try { await listDocuments({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
-  doc.command('get <ref>').description('Get a document (use --markdown to render the body)')
+  doc.command('get <ref>')
+    .description('Get a document (use --markdown to render the body, --raw-markup for raw prosemirror-JSON)')
+    .option('--raw-markup', 'output raw prosemirror-JSON markup instead of markdown')
     .action(async (ref, opts, cmd) => {
       try { await getDocument(ref, { ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
@@ -1333,6 +1350,7 @@ Use \`document snapshot --snapshot-id <id>\` to fetch a specific snapshot.`)
     })
   doc.command('snapshot <ref>').description('Get a specific snapshot (by --snapshot-id)')
     .requiredOption('--snapshot-id <id>')
+    .option('--raw-markup', 'output raw prosemirror-JSON markup instead of markdown')
     .addHelpText('after', `
 Examples:
   $ huly document snapshot <docRef> --snapshot-id 6a41527f12a078ec98cf64d5
@@ -1419,10 +1437,12 @@ Examples:
       try { await listEvents({ ...opts, ...globalsFrom(cmd) }) } catch (e) { handleError(e) }
     })
   cal.command('get <ref>').description('Get an EVENT (not a calendar)')
+    .option('--raw-markup', 'output raw prosemirror-JSON markup instead of markdown')
     .addHelpText('after', `
 Examples:
   $ huly calendar get <eventRef>
   $ huly calendar get <eventRef> --markdown
+  $ huly calendar get <eventRef> --raw-markup
 
 To fetch a calendar (the container, not an event inside it), use
 \`calendar calendars --json\` and grep for the calendar id.`)
