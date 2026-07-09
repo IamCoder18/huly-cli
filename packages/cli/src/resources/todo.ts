@@ -7,8 +7,7 @@ import { shouldJson, json, table, kv, header, COLUMNS, C, withTimeout, success, 
 import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
 import { readEnv } from '../auth/env.js'
-import { connectAccountCli } from '../transport/sdk.js'
-import { normalizeSocialKey } from '../auth/social.js'
+import { resolveEmailToLocalId } from './_helpers.js'
 
 type ToDo = Doc & {
   title: string
@@ -71,34 +70,15 @@ async function readBodyText(opts: { body?: string; bodyFile?: string }): Promise
  */
 async function resolveEmployeeId(client: Awaited<ReturnType<typeof connectCli>>, email?: string): Promise<Ref<Doc>> {
   if (email) {
-    // Account-level lookup first: find the account UUID for the email, then
-    // match the workspace-local Person by their personUuid. The Todo `user`
-    // field accepts either an Employee ref or a Person ref depending on the
-    // workspace model, so we try Employee first and fall back to Person.
+    // Todo `user` accepts either an Employee or a Person ref depending on
+    // the workspace model, so try Employee first then Person via the shared
+    // helper (local email scan → cross-workspace account-service fallback).
     if (email.includes('@')) {
-      try {
-        const acc = await connectAccountCli({})
-        const socialKey = normalizeSocialKey(email)
-        const socialId = await acc.findSocialIdBySocialKey(socialKey)
-        if (socialId !== undefined && socialId !== null) {
-          const accountUuid = await acc.findPersonBySocialId(socialId, true)
-          if (accountUuid !== undefined && accountUuid !== null) {
-            for (const classId of ['contact:class:Employee', 'contact:class:Person']) {
-              try {
-                const candidates = (await client.findAll(
-                  classId as Ref<Class<Doc>>, {}, { limit: 500 }
-                )) as Array<Doc & { personUuid?: string }>
-                const match = candidates.find((p) => p.personUuid === accountUuid)
-                if (match) return match._id
-              } catch {
-                // class not in this workspace's model; try the next one
-              }
-            }
-          }
-        }
-      } catch {
-        // fall through to workspace-local scan
-      }
+      const id = await resolveEmailToLocalId(client, email, [
+        'contact:class:Employee',
+        'contact:class:Person'
+      ])
+      if (id !== undefined) return id
     }
     // Workspace-local fallback for name-based lookups or when the
     // cross-workspace lookup doesn't match anything in this workspace.

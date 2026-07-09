@@ -1,6 +1,6 @@
-import { connectPlatform, type PlatformClient, type AccountClient, resolveToken } from '../auth/client.js'
+import { connectPlatform, type PlatformClient, type AccountClient, resolveToken, accountClient } from '../auth/client.js'
 import { readEnv, requireUrl } from '../auth/env.js'
-import { readActiveWorkspace, getCachedWorkspaceToken, readActiveAccount } from '../auth/cache.js'
+import { readActiveWorkspace, getCachedWorkspaceToken, readActiveAccount, setCachedWorkspaceToken } from '../auth/cache.js'
 import { CliError, ExitCode } from '../output/errors.js'
 
 export interface ConnectOpts {
@@ -34,6 +34,12 @@ export async function connectCli(opts: ConnectOpts = {}): Promise<PlatformClient
  *
  * @returns The connected account client.
  */
+// kind: 'external' requests a workspace-scoped token whose JWT carries the
+// workspace UUID claim required by server-side permission gates
+// (e.g. deleteWorkspace). Hoisted so future call sites stay consistent
+// if the account-client types this parameter as a discriminated union.
+const WORKSPACE_TOKEN_KIND = 'external'
+
 export async function connectAccountCli(opts: ConnectOpts = {}): Promise<AccountClient> {
   const env = readEnv()
   const url = requireUrl(opts.url ?? env.url)
@@ -60,10 +66,8 @@ export async function connectAccountCli(opts: ConnectOpts = {}): Promise<Account
           // tokens missing the workspace claim) makes this refresh necessary
           // for any destructive call against a freshly-created or newly-
           // activated workspace.
-          const { accountClient } = await import('../auth/client.js')
           const ac = await accountClient(url, token)
-          const selected = await ac.selectWorkspace(workspace, 'external')
-          const { setCachedWorkspaceToken } = await import('../auth/cache.js')
+          const selected = await ac.selectWorkspace(workspace, WORKSPACE_TOKEN_KIND)
           await setCachedWorkspaceToken(url, email, workspace, {
             token: selected.token,
             role: selected.role,
@@ -77,6 +81,5 @@ export async function connectAccountCli(opts: ConnectOpts = {}): Promise<Account
       // best-effort; fall back to account token
     }
   }
-  const { accountClient } = await import('../auth/client.js')
   return await accountClient(url, token)
 }

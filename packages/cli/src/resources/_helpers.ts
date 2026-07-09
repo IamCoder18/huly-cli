@@ -483,9 +483,71 @@ export async function readBodyText(opts: { body?: string; bodyFile?: string }): 
 }
 
 /**
+ * Resolve an email-shaped input to a workspace-local doc _id.
+ *
+ * Strategy:
+ *   1. Exact (case-insensitive) email match against the requested workspace
+ *      classes — avoids expensive account-level roundtrips for users who
+ *      already exist in this workspace's contact collection.
+ *   2. Cross-workspace fallback via the account service: normalize the
+ *      social key, resolve to the account UUID, then match a workspace doc
+ *      by `personUuid`. The `contact:class:Person` result from step 1 is
+ *      reused here so we don't re-fetch the same class.
+ *
+ * Returns the matching _id, or `undefined` if neither path matched.
+ */
+export async function resolveEmailToLocalId(
+  client: PlatformClient,
+  email: string,
+  classIds: string[] = ['contact:class:Person']
+): Promise<Ref<Doc> | undefined> {
+  if (!email.includes('@')) return undefined
+  const lower = email.toLowerCase()
+
+  let personsCache: Array<Doc & { personUuid?: string; email?: string }> | undefined
+  for (const classId of classIds) {
+    try {
+      const candidates = (await client.findAll(
+        classId as Ref<Class<Doc>>, {}, { limit: 500 }
+      )) as Array<Doc & { personUuid?: string; email?: string }>
+      if (classId === 'contact:class:Person') personsCache = candidates
+      const hit = candidates.find((p) => (p.email ?? '').toLowerCase() === lower)
+      if (hit) return hit._id
+    } catch {
+      // class not in this workspace's model; try the next one
+    }
+  }
+
+  try {
+    const acc = await connectAccountCli({})
+    const socialId = await acc.findSocialIdBySocialKey(normalizeSocialKey(email))
+    if (socialId === undefined || socialId === null) return undefined
+    const accountUuid = await acc.findPersonBySocialId(socialId, true)
+    if (accountUuid === undefined || accountUuid === null) return undefined
+    for (const classId of classIds) {
+      const candidates =
+        classId === 'contact:class:Person' && personsCache !== undefined
+          ? personsCache
+          : ((await client.findAll(classId as Ref<Class<Doc>>, {}, { limit: 500 }).catch(() => [])) as Array<
+              Doc & { personUuid?: string }
+            >)
+      const match = candidates.find((p) => p.personUuid === accountUuid)
+      if (match) return match._id
+    }
+  } catch {
+    // fall through to caller-level fallback
+  }
+  return undefined
+}
+
+/**
  * Resolves an assignee reference to a workspace Person document ID.
  *
- * Accepts `me`, a ref-like identifier, an email address, or a person name. For email-like input, it also attempts account-level resolution and maps the account person to the matching workspace record.
+ * Accepts `me`, a ref-like identifier, an email address, or a person name.
+ * For email-shaped input, prefers a workspace-local email match and falls
+ * back to a cross-workspace account-service lookup. Otherwise scans
+ * workspace-local Person docs by exact name/email, then fuzzy name/email.
+ * Empty or "me" input resolves to the current user's _id.
  *
  * @param client - Platform client used to look up the current account and workspace contacts
  * @param ref - Assignee reference to resolve
@@ -501,28 +563,9 @@ export async function resolveAssignee(client: PlatformClient, ref: string): Prom
   if (/^[a-z0-9]+:[a-z0-9]+:[A-Za-z0-9_-]+$/.test(trimmed)) {
     return trimmed as Ref<Doc>
   }
-  // Account-level lookup: find the person UUID, then resolve to the
-  // workspace-local Person _id. The same Person UUID is reused across
-  // workspaces; the per-workspace Person doc is the one trackers store.
   if (trimmed.includes('@')) {
-    try {
-      const acc = await connectAccountCli({})
-      const socialKey = normalizeSocialKey(trimmed)
-      const socialId = await acc.findSocialIdBySocialKey(socialKey)
-      if (socialId !== undefined && socialId !== null) {
-        const accountUuid = await acc.findPersonBySocialId(socialId, true)
-        if (accountUuid !== undefined && accountUuid !== null) {
-          // Look up the workspace-local Person doc by their accountUuid.
-          const persons = (await client.findAll(
-            'contact:class:Person' as Ref<Class<Doc>>, {}, { limit: 500 }
-          )) as Array<Doc & { personUuid?: string; email?: string; name?: string }>
-          const byUuid = persons.find((p) => p.personUuid === accountUuid)
-          if (byUuid) return byUuid._id
-        }
-      }
-    } catch {
-      // fall through to workspace-local scan
-    }
+    const id = await resolveEmailToLocalId(client, trimmed)
+    if (id !== undefined) return id
   }
   const lower = trimmed.toLowerCase()
   const persons = (await client.findAll(

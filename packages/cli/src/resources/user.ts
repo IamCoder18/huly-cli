@@ -138,7 +138,7 @@ export async function findUser(email: string, opts: GlobalOpts = {}): Promise<vo
   try {
     const token = await resolveToken({ email: env.email, url })
     const acc = await accountClient(url!, token)
-const personUuid = await withSpinner(
+    const personUuid = await withSpinner(
         `Looking up ${email} (account)…`,
         () => acc.findPersonBySocialKey(normalizeSocialKey(email), false),
         opts

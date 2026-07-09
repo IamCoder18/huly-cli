@@ -11,7 +11,7 @@
  * @returns The normalized social key, or `input` unchanged when it is empty or already contains a type prefix.
  */
 export function normalizeSocialKey (input: string, type: SocialIdType = 'email'): string {
-  if (input == null || input === '') return input
+  if (input === '') return input
   if (input.includes(':')) return input
   return `${type}:${input}`
 }
