@@ -62,6 +62,13 @@ async function readBodyText(opts: { body?: string; bodyFile?: string }): Promise
   return opts.body
 }
 
+/**
+ * Resolves a workspace user reference for an email address or the current account.
+ *
+ * @param email - The person to resolve
+ * @returns The matching person or employee reference, or the current account UUID when `email` is omitted
+ * @throws {CliError} When no matching person is found in the workspace
+ */
 async function resolveEmployeeId(client: Awaited<ReturnType<typeof connectCli>>, email?: string): Promise<Ref<Doc>> {
   if (email) {
     // Account-level lookup first: find the account UUID for the email, then

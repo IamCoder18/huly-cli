@@ -58,6 +58,15 @@ async function resolveChannel(client: PlatformClient, ref: string): Promise<Chan
   throw new CliError(ExitCode.NotFound, `channel ${ref} not found`)
 }
 
+/**
+ * Resolves a person identifier to a workspace person document id.
+ *
+ * @param emailOrName - The person name, email, social key, or UUID to resolve
+ * @param client - The platform client used to search workspace person documents
+ * @param opts - Connection options for the account service
+ * @returns The resolved person document id
+ * @throws {CliError} If no matching person can be found
+ */
 async function resolvePersonId(
   emailOrName: string,
   client: PlatformClient,
