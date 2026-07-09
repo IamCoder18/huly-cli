@@ -5,6 +5,8 @@ import textPkg from '@hcengineering/text'
 import textCorePkg from '@hcengineering/text-core'
 import textMarkdownPkg from '@hcengineering/text-markdown'
 import type { PlatformClientWithMarkup } from '../types/markup-operations.js'
+import { connectAccountCli } from '../transport/sdk.js'
+import { normalizeSocialKey } from '../auth/social.js'
 
 const { htmlToJSON, htmlToMarkup: textHtmlToMarkup } = textPkg
 const { jsonToMarkup } = textCorePkg
@@ -474,9 +476,11 @@ export async function readBodyText(opts: { body?: string; bodyFile?: string }): 
 }
 
 /**
- * Resolve an assignee (email or name) to a contact:class:Person _id by scanning
- * workspace-local Persons. Falls back to the current account's own _id if the
- * input is empty or matches the current user.
+ * Resolve an assignee (email, name, or UUID) to a contact:class:Person _id.
+ * Prefers a cross-workspace lookup via the account service
+ * (`findPersonBySocialKey` + `findPersonBySocialId`) so users from other
+ * workspaces resolve correctly. Falls back to a workspace-local Person scan,
+ * then to the current user's _id for empty / "me" input.
  */
 export async function resolveAssignee(client: PlatformClient, ref: string): Promise<Ref<Doc>> {
   const trimmed = ref.trim()
@@ -487,6 +491,29 @@ export async function resolveAssignee(client: PlatformClient, ref: string): Prom
   // Already a ref-like id?
   if (/^[a-z0-9]+:[a-z0-9]+:[A-Za-z0-9_-]+$/.test(trimmed)) {
     return trimmed as Ref<Doc>
+  }
+  // Account-level lookup: find the person UUID, then resolve to the
+  // workspace-local Person _id. The same Person UUID is reused across
+  // workspaces; the per-workspace Person doc is the one trackers store.
+  if (trimmed.includes('@')) {
+    try {
+      const acc = await connectAccountCli({})
+      const socialKey = normalizeSocialKey(trimmed)
+      const socialId = await acc.findSocialIdBySocialKey(socialKey)
+      if (socialId !== undefined && socialId !== null) {
+        const accountUuid = await acc.findPersonBySocialId(socialId, true)
+        if (accountUuid !== undefined && accountUuid !== null) {
+          // Look up the workspace-local Person doc by their accountUuid.
+          const persons = (await client.findAll(
+            'contact:class:Person' as Ref<Class<Doc>>, {}, { limit: 500 }
+          )) as Array<Doc & { personUuid?: string; email?: string; name?: string }>
+          const byUuid = persons.find((p) => p.personUuid === accountUuid)
+          if (byUuid) return byUuid._id
+        }
+      }
+    } catch {
+      // fall through to workspace-local scan
+    }
   }
   const lower = trimmed.toLowerCase()
   const persons = (await client.findAll(

@@ -35,9 +35,9 @@ export async function connectAccountCli(opts: ConnectOpts = {}): Promise<Account
   let token = await resolveToken({ ...opts, url })
   // If a workspace is in scope (flag, env var, or active workspace file),
   // prefer the workspace-scoped token so methods like getWorkspaceMembers /
-  // getWorkspaceInfo (which require workspace authorization) succeed.
-  // Workspace-scoped tokens have the workspace UUID which server-side
-  // permission gates (e.g. deleteWorkspace) require.
+  // getWorkspaceInfo / deleteWorkspace (which require workspace authorization)
+  // succeed. Workspace-scoped tokens carry the workspace UUID in the JWT,
+  // which the server-side permission gates require.
   const workspace = opts.workspace ?? env.workspace ?? (await readActiveWorkspace())
   if (workspace) {
     try {
@@ -46,8 +46,27 @@ export async function connectAccountCli(opts: ConnectOpts = {}): Promise<Account
       const active = await readActiveAccount(url)
       const email = active ?? opts.email ?? env.email
       if (email) {
-        const ws = await getCachedWorkspaceToken(url, email, workspace)
-        if (ws?.token) token = ws.token
+        const cached = await getCachedWorkspaceToken(url, email, workspace)
+        if (cached?.token) {
+          token = cached.token
+        } else {
+          // Cache miss: ask the account service for a workspace-scoped token.
+          // Server-side fix #2 (deleteWorkspace now rejects BadRequest for
+          // tokens missing the workspace claim) makes this refresh necessary
+          // for any destructive call against a freshly-created or newly-
+          // activated workspace.
+          const { accountClient } = await import('../auth/client.js')
+          const ac = await accountClient(url, token)
+          const selected = await ac.selectWorkspace(workspace, 'external')
+          const { setCachedWorkspaceToken } = await import('../auth/cache.js')
+          await setCachedWorkspaceToken(url, email, workspace, {
+            token: selected.token,
+            role: selected.role,
+            endpoint: selected.endpoint,
+            workspaceId: selected.workspace
+          })
+          token = selected.token
+        }
       }
     } catch {
       // best-effort; fall back to account token

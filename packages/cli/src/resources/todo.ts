@@ -8,6 +8,7 @@ import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
 import { readEnv } from '../auth/env.js'
 import { connectAccountCli } from '../transport/sdk.js'
+import { normalizeSocialKey } from '../auth/social.js'
 
 type ToDo = Doc & {
   title: string
@@ -63,8 +64,37 @@ async function readBodyText(opts: { body?: string; bodyFile?: string }): Promise
 
 async function resolveEmployeeId(client: Awaited<ReturnType<typeof connectCli>>, email?: string): Promise<Ref<Doc>> {
   if (email) {
-    // findPersonBySocialKey returns Forbidden on this selfhost; fall back to
-    // a workspace-local Person scan (by email or by name).
+    // Account-level lookup first: find the account UUID for the email, then
+    // match the workspace-local Person by their personUuid. The Todo `user`
+    // field accepts either an Employee ref or a Person ref depending on the
+    // workspace model, so we try Employee first and fall back to Person.
+    if (email.includes('@')) {
+      try {
+        const acc = await connectAccountCli({})
+        const socialKey = normalizeSocialKey(email)
+        const socialId = await acc.findSocialIdBySocialKey(socialKey)
+        if (socialId !== undefined && socialId !== null) {
+          const accountUuid = await acc.findPersonBySocialId(socialId, true)
+          if (accountUuid !== undefined && accountUuid !== null) {
+            for (const classId of ['contact:class:Employee', 'contact:class:Person']) {
+              try {
+                const candidates = (await client.findAll(
+                  classId as Ref<Class<Doc>>, {}, { limit: 500 }
+                )) as Array<Doc & { personUuid?: string }>
+                const match = candidates.find((p) => p.personUuid === accountUuid)
+                if (match) return match._id
+              } catch {
+                // class not in this workspace's model; try the next one
+              }
+            }
+          }
+        }
+      } catch {
+        // fall through to workspace-local scan
+      }
+    }
+    // Workspace-local fallback for name-based lookups or when the
+    // cross-workspace lookup doesn't match anything in this workspace.
     const persons = (await client.findAll('contact:class:Person' as Ref<Class<Doc>>, {}, { limit: 200 })) as Array<Doc & { name?: string; email?: string }>
     const lower = email.toLowerCase()
     const hit = persons.find((p) => (p.name ?? '').toLowerCase() === lower || (p.email ?? '').toLowerCase() === lower)

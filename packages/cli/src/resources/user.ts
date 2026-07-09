@@ -8,6 +8,7 @@ import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
 import { accountClient, resolveToken } from '../auth/client.js'
 import { readEnv, requireUrl } from '../auth/env.js'
+import { normalizeSocialKey } from '../auth/social.js'
 import type { GlobalOpts } from '../cli.js'
 
 type Person = Doc & {
@@ -131,17 +132,17 @@ export async function findUser(email: string, opts: GlobalOpts = {}): Promise<vo
   try {
     const token = await resolveToken({ email: env.email, url })
     const acc = await accountClient(url!, token)
-    const result = await withSpinner(
-      `Looking up ${email} (account)…`,
-      () => acc.findPersonBySocialKey(email, false),
-      opts
-    ) as { personUuid?: string } | undefined
-    if (result?.personUuid !== undefined) {
+const personUuid = await withSpinner(
+        `Looking up ${email} (account)…`,
+        () => acc.findPersonBySocialKey(normalizeSocialKey(email), false),
+        opts
+      )
+    if (personUuid !== undefined && personUuid !== null) {
       if (shouldJson({ json: opts.json, ci: opts.ci })) {
-        json({ email, personUuid: result.personUuid, source: 'account' })
+        json({ email, personUuid, source: 'account' })
         return
       }
-      console.log(`${email}\t${result.personUuid}`)
+      console.log(`${email}\t${personUuid}`)
       return
     }
   } catch {

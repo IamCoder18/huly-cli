@@ -4,6 +4,7 @@ import pkg from '@hcengineering/api-client'
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli, connectAccountCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, buildIndex, invalidateIndex } from '../transport/ref-resolver.js'
+import { normalizeSocialKey } from '../auth/social.js'
 import { shouldJson, json, table, COLUMNS, C, success, updated, bulkRemoved } from "../output/format.js"
 import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
@@ -91,7 +92,7 @@ async function resolvePersonId(
       const me = await accountClient.getPerson().catch(() => null)
       const myUuid = me?.uuid
       if (emailOrName.includes('@')) {
-        const socialId = await accountClient.findSocialIdBySocialKey(emailOrName).catch(() => undefined)
+        const socialId = await accountClient.findSocialIdBySocialKey(normalizeSocialKey(emailOrName)).catch(() => undefined)
         if (socialId !== undefined) {
           const person = await accountClient.findPersonBySocialId(socialId, true).catch(() => undefined)
           if (person !== undefined) return person as Ref<Doc>
