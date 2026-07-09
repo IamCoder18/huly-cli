@@ -464,6 +464,13 @@ export function makeDelete<T extends Doc>(opts: DeleteOpts<T>) {
   }
 }
 
+/**
+ * Reads body text from a string or file input.
+ *
+ * @param opts - Body input options
+ * @returns The provided body text, trimmed file contents, or `undefined` when no body is supplied
+ * @throws `CliError` when both `body` and `bodyFile` are provided
+ */
 export async function readBodyText(opts: { body?: string; bodyFile?: string }): Promise<string | undefined> {
   if (opts.body && opts.bodyFile) {
     throw new CliError(ExitCode.Validation, 'ambiguous body input', 'pass only one of --body or --body-file')
@@ -476,11 +483,13 @@ export async function readBodyText(opts: { body?: string; bodyFile?: string }): 
 }
 
 /**
- * Resolve an assignee (email, name, or UUID) to a contact:class:Person _id.
- * Prefers a cross-workspace lookup via the account service
- * (`findPersonBySocialKey` + `findPersonBySocialId`) so users from other
- * workspaces resolve correctly. Falls back to a workspace-local Person scan,
- * then to the current user's _id for empty / "me" input.
+ * Resolves an assignee reference to a workspace Person document ID.
+ *
+ * Accepts `me`, a ref-like identifier, an email address, or a person name. For email-like input, it also attempts account-level resolution and maps the account person to the matching workspace record.
+ *
+ * @param client - Platform client used to look up the current account and workspace contacts
+ * @param ref - Assignee reference to resolve
+ * @returns The resolved `contact:class:Person` document ID
  */
 export async function resolveAssignee(client: PlatformClient, ref: string): Promise<Ref<Doc>> {
   const trimmed = ref.trim()

@@ -29,6 +29,11 @@ export async function connectCli(opts: ConnectOpts = {}): Promise<PlatformClient
   return client
 }
 
+/**
+ * Creates an account client for the configured API endpoint and workspace context.
+ *
+ * @returns The connected account client.
+ */
 export async function connectAccountCli(opts: ConnectOpts = {}): Promise<AccountClient> {
   const env = readEnv()
   const url = requireUrl(opts.url ?? env.url)

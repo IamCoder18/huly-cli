@@ -124,6 +124,12 @@ export async function updateUser(opts: {
   }
 }
 
+/**
+ * Finds a user by email and prints an identifier for the matching person.
+ *
+ * @param email - The email address to search for.
+ * @param opts - CLI options that control output and workspace selection.
+ */
 export async function findUser(email: string, opts: GlobalOpts = {}): Promise<void> {
   // Try account-level findPersonBySocialKey first (works after Fix #1).
   // Fall back to workspace-local Person scan on Forbidden / error.
