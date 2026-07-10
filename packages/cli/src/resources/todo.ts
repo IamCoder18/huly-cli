@@ -93,7 +93,7 @@ async function resolveEmployeeId(
     // are still matched by name.
     const lower = email.toLowerCase()
     const candidates: Array<Doc & { name?: string; email?: string }> = []
-    for (const classId of ['contact:class:Person', 'contact:class:Employee']) {
+    for (const classId of ['contact:class:Employee', 'contact:class:Person']) {
       try {
         const docs = (await client.findAll(
           classId as Ref<Class<Doc>>, {}, { limit: 500 }
