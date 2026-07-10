@@ -4,6 +4,7 @@ import pkg from '@hcengineering/api-client'
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli, connectAccountCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, buildIndex, invalidateIndex } from '../transport/ref-resolver.js'
+import { normalizeSocialKey } from '../auth/social.js'
 import { shouldJson, json, table, COLUMNS, C, success, updated, bulkRemoved } from "../output/format.js"
 import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
@@ -57,6 +58,15 @@ async function resolveChannel(client: PlatformClient, ref: string): Promise<Chan
   throw new CliError(ExitCode.NotFound, `channel ${ref} not found`)
 }
 
+/**
+ * Resolves a person identifier to a workspace person document id.
+ *
+ * @param emailOrName - The person name, email, social key, or UUID to resolve
+ * @param client - The platform client used to search workspace person documents
+ * @param opts - Connection options for the account service
+ * @returns The resolved person document id
+ * @throws {CliError} If no matching person can be found
+ */
 async function resolvePersonId(
   emailOrName: string,
   client: PlatformClient,
@@ -91,7 +101,7 @@ async function resolvePersonId(
       const me = await accountClient.getPerson().catch(() => null)
       const myUuid = me?.uuid
       if (emailOrName.includes('@')) {
-        const socialId = await accountClient.findSocialIdBySocialKey(emailOrName).catch(() => undefined)
+        const socialId = await accountClient.findSocialIdBySocialKey(normalizeSocialKey(emailOrName)).catch(() => undefined)
         if (socialId !== undefined) {
           const person = await accountClient.findPersonBySocialId(socialId, true).catch(() => undefined)
           if (person !== undefined) return person as Ref<Doc>

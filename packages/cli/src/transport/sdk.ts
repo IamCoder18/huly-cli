@@ -1,6 +1,6 @@
-import { connectPlatform, type PlatformClient, type AccountClient, resolveToken } from '../auth/client.js'
+import { connectPlatform, type PlatformClient, type AccountClient, resolveToken, accountClient } from '../auth/client.js'
 import { readEnv, requireUrl } from '../auth/env.js'
-import { readActiveWorkspace, getCachedWorkspaceToken, readActiveAccount } from '../auth/cache.js'
+import { readActiveWorkspace, getCachedWorkspaceToken, readActiveAccount, setCachedWorkspaceToken } from '../auth/cache.js'
 import { CliError, ExitCode } from '../output/errors.js'
 
 export interface ConnectOpts {
@@ -29,15 +29,26 @@ export async function connectCli(opts: ConnectOpts = {}): Promise<PlatformClient
   return client
 }
 
+// kind: 'external' requests a workspace-scoped token whose JWT carries the
+// workspace UUID claim required by server-side permission gates
+// (e.g. deleteWorkspace). Hoisted so future call sites stay consistent
+// if the account-client types this parameter as a discriminated union.
+const WORKSPACE_TOKEN_KIND = 'external'
+
+/**
+ * Creates an account client for the configured API endpoint and workspace context.
+ *
+ * @returns The connected account client.
+ */
 export async function connectAccountCli(opts: ConnectOpts = {}): Promise<AccountClient> {
   const env = readEnv()
   const url = requireUrl(opts.url ?? env.url)
   let token = await resolveToken({ ...opts, url })
   // If a workspace is in scope (flag, env var, or active workspace file),
   // prefer the workspace-scoped token so methods like getWorkspaceMembers /
-  // getWorkspaceInfo (which require workspace authorization) succeed.
-  // Workspace-scoped tokens have the workspace UUID which server-side
-  // permission gates (e.g. deleteWorkspace) require.
+  // getWorkspaceInfo / deleteWorkspace (which require workspace authorization)
+  // succeed. Workspace-scoped tokens carry the workspace UUID in the JWT,
+  // which the server-side permission gates require.
   const workspace = opts.workspace ?? env.workspace ?? (await readActiveWorkspace())
   if (workspace) {
     try {
@@ -46,13 +57,33 @@ export async function connectAccountCli(opts: ConnectOpts = {}): Promise<Account
       const active = await readActiveAccount(url)
       const email = active ?? opts.email ?? env.email
       if (email) {
-        const ws = await getCachedWorkspaceToken(url, email, workspace)
-        if (ws?.token) token = ws.token
+        const cached = await getCachedWorkspaceToken(url, email, workspace)
+        if (cached?.token) {
+          token = cached.token
+        } else {
+          // Cache miss: ask the account service for a workspace-scoped token.
+          // Server-side fix #2 (deleteWorkspace now rejects BadRequest for
+          // tokens missing the workspace claim) makes this refresh necessary
+          // for any destructive call against a freshly-created or newly-
+          // activated workspace.
+          const ac = await accountClient(url, token)
+          const selected = await ac.selectWorkspace(workspace, WORKSPACE_TOKEN_KIND)
+          // Adopt the workspace-scoped token immediately so any failure in
+          // cache persistence below cannot cause the returned client to
+          // fall back to the plain account token.
+          token = selected.token
+          // Cache persistence is best-effort.
+          await setCachedWorkspaceToken(url, email, workspace, {
+            token: selected.token,
+            role: selected.role,
+            endpoint: selected.endpoint,
+            workspaceId: selected.workspace
+          }).catch(() => { /* ignore cache write failures */ })
+        }
       }
     } catch {
       // best-effort; fall back to account token
     }
   }
-  const { accountClient } = await import('../auth/client.js')
   return await accountClient(url, token)
 }
