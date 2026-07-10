@@ -7,7 +7,7 @@ import { shouldJson, json, table, kv, header, COLUMNS, C, withTimeout, success, 
 import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
 import { readEnv } from '../auth/env.js'
-import { resolveEmailToLocalId } from './_helpers.js'
+import { resolveEmailToLocalId, type ResolveOpts } from './_helpers.js'
 
 type ToDo = Doc & {
   title: string
@@ -72,7 +72,7 @@ async function readBodyText(opts: { body?: string; bodyFile?: string }): Promise
 async function resolveEmployeeId(
   client: Awaited<ReturnType<typeof connectCli>>,
   email?: string,
-  resolveOpts: { url?: string; workspace?: string } = {}
+  resolveOpts: ResolveOpts = {}
 ): Promise<Ref<Doc>> {
   if (email) {
     // Todo `user` accepts either an Employee or a Person ref depending on

@@ -68,13 +68,17 @@ export async function connectAccountCli(opts: ConnectOpts = {}): Promise<Account
           // activated workspace.
           const ac = await accountClient(url, token)
           const selected = await ac.selectWorkspace(workspace, WORKSPACE_TOKEN_KIND)
+          // Adopt the workspace-scoped token immediately so any failure in
+          // cache persistence below cannot cause the returned client to
+          // fall back to the plain account token.
+          token = selected.token
+          // Cache persistence is best-effort.
           await setCachedWorkspaceToken(url, email, workspace, {
             token: selected.token,
             role: selected.role,
             endpoint: selected.endpoint,
             workspaceId: selected.workspace
-          })
-          token = selected.token
+          }).catch(() => { /* ignore cache write failures */ })
         }
       }
     } catch {
