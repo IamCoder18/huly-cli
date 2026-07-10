@@ -287,7 +287,7 @@ export async function listIssues(opts: {
     const project = opts.project ? await resolveProject(client, opts.project) : null
     const query: Record<string, unknown> = {}
     if (project) query.space = project._id
-    if (opts.assignee) query.assignee = await resolveAssignee(client, opts.assignee)
+    if (opts.assignee) query.assignee = await resolveAssignee(client, opts.assignee, { url: opts.url, workspace: opts.workspace })
     if (opts.label && opts.label.length > 0) query.labels = { $in: opts.label }
 
     // Status filter — either direct name or by category
@@ -618,7 +618,7 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
     }
 
     if (opts.assignee) {
-      data.assignee = await resolveAssignee(client, opts.assignee) as Ref<Doc>
+      data.assignee = await resolveAssignee(client, opts.assignee, { url: opts.url, workspace: opts.workspace }) as Ref<Doc>
     }
 
     if (opts.dryRun) {
@@ -797,7 +797,7 @@ export async function updateIssue(
       const p = await resolvePriority(client, opts.priority)
       if (p !== undefined) ops.priority = p
     }
-    if (opts.assignee) ops.assignee = await resolveAssignee(client, opts.assignee) as Ref<Doc>
+    if (opts.assignee) ops.assignee = await resolveAssignee(client, opts.assignee, { url: opts.url, workspace: opts.workspace }) as Ref<Doc>
     if (opts.title) ops.title = opts.title
     if (opts.description !== undefined) {
       // Update only the ydoc (issue #3). The ydoc is the source of truth

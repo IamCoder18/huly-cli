@@ -483,6 +483,17 @@ export async function readBodyText(opts: { body?: string; bodyFile?: string }): 
 }
 
 /**
+ * Options forwarded to `connectAccountCli` when looking up account-level
+ * identifiers. Lets callers thread through `--url` / `--workspace` so the
+ * account client uses the same connection context as the workspace client
+ * instead of falling back to env / active-workspace defaults.
+ */
+export interface ResolveOpts {
+  url?: string
+  workspace?: string
+}
+
+/**
  * Resolve an email-shaped input to a workspace-local doc _id.
  *
  * Strategy:
@@ -491,26 +502,33 @@ export async function readBodyText(opts: { body?: string; bodyFile?: string }): 
  *      already exist in this workspace's contact collection.
  *   2. Cross-workspace fallback via the account service: normalize the
  *      social key, resolve to the account UUID, then match a workspace doc
- *      by `personUuid`. The `contact:class:Person` result from step 1 is
- *      reused here so we don't re-fetch the same class.
+ *      by `personUuid`. The class results from step 1 are cached in a Map
+ *      so the `personUuid` pass doesn't re-issue queries the first loop
+ *      just ran.
  *
  * Returns the matching _id, or `undefined` if neither path matched.
+ * Rethrows `CliError` (e.g. workspace-not-found) so callers can surface it;
+ * other failures collapse to `undefined` so the caller can fall back.
  */
 export async function resolveEmailToLocalId(
   client: PlatformClient,
   email: string,
-  classIds: string[] = ['contact:class:Person']
+  classIds: string[] = ['contact:class:Person'],
+  resolveOpts: ResolveOpts = {}
 ): Promise<Ref<Doc> | undefined> {
   if (!email.includes('@')) return undefined
   const lower = email.toLowerCase()
 
-  let personsCache: Array<Doc & { personUuid?: string; email?: string }> | undefined
+  const candidatesByClass = new Map<
+    string,
+    Array<Doc & { personUuid?: string; email?: string }>
+  >()
   for (const classId of classIds) {
     try {
       const candidates = (await client.findAll(
         classId as Ref<Class<Doc>>, {}, { limit: 500 }
       )) as Array<Doc & { personUuid?: string; email?: string }>
-      if (classId === 'contact:class:Person') personsCache = candidates
+      candidatesByClass.set(classId, candidates)
       const hit = candidates.find((p) => (p.email ?? '').toLowerCase() === lower)
       if (hit) return hit._id
     } catch {
@@ -519,23 +537,25 @@ export async function resolveEmailToLocalId(
   }
 
   try {
-    const acc = await connectAccountCli({})
+    const acc = await connectAccountCli(resolveOpts)
     const socialId = await acc.findSocialIdBySocialKey(normalizeSocialKey(email))
     if (socialId === undefined || socialId === null) return undefined
     const accountUuid = await acc.findPersonBySocialId(socialId, true)
     if (accountUuid === undefined || accountUuid === null) return undefined
     for (const classId of classIds) {
-      const candidates =
-        classId === 'contact:class:Person' && personsCache !== undefined
-          ? personsCache
-          : ((await client.findAll(classId as Ref<Class<Doc>>, {}, { limit: 500 }).catch(() => [])) as Array<
-              Doc & { personUuid?: string }
-            >)
+      let candidates = candidatesByClass.get(classId)
+      if (candidates === undefined) {
+        candidates = (await client
+          .findAll(classId as Ref<Class<Doc>>, {}, { limit: 500 })
+          .catch(() => [])) as Array<Doc & { personUuid?: string }>
+      }
       const match = candidates.find((p) => p.personUuid === accountUuid)
       if (match) return match._id
     }
-  } catch {
-    // fall through to caller-level fallback
+  } catch (err) {
+    if (err instanceof CliError) throw err
+    // other failures (network, 401, …) collapse to undefined so the
+    // caller can fall back to its own lookup
   }
   return undefined
 }
@@ -551,9 +571,14 @@ export async function resolveEmailToLocalId(
  *
  * @param client - Platform client used to look up the current account and workspace contacts
  * @param ref - Assignee reference to resolve
+ * @param resolveOpts - Optional `--url` / `--workspace` to thread through to the account-service fallback
  * @returns The resolved `contact:class:Person` document ID
  */
-export async function resolveAssignee(client: PlatformClient, ref: string): Promise<Ref<Doc>> {
+export async function resolveAssignee(
+  client: PlatformClient,
+  ref: string,
+  resolveOpts: ResolveOpts = {}
+): Promise<Ref<Doc>> {
   const trimmed = ref.trim()
   if (trimmed === '' || trimmed === 'me') {
     const me = await client.getAccount()
@@ -564,7 +589,7 @@ export async function resolveAssignee(client: PlatformClient, ref: string): Prom
     return trimmed as Ref<Doc>
   }
   if (trimmed.includes('@')) {
-    const id = await resolveEmailToLocalId(client, trimmed)
+    const id = await resolveEmailToLocalId(client, trimmed, undefined, resolveOpts)
     if (id !== undefined) return id
   }
   const lower = trimmed.toLowerCase()

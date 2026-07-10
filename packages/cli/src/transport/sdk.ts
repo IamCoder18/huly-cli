@@ -29,17 +29,17 @@ export async function connectCli(opts: ConnectOpts = {}): Promise<PlatformClient
   return client
 }
 
-/**
- * Creates an account client for the configured API endpoint and workspace context.
- *
- * @returns The connected account client.
- */
 // kind: 'external' requests a workspace-scoped token whose JWT carries the
 // workspace UUID claim required by server-side permission gates
 // (e.g. deleteWorkspace). Hoisted so future call sites stay consistent
 // if the account-client types this parameter as a discriminated union.
 const WORKSPACE_TOKEN_KIND = 'external'
 
+/**
+ * Creates an account client for the configured API endpoint and workspace context.
+ *
+ * @returns The connected account client.
+ */
 export async function connectAccountCli(opts: ConnectOpts = {}): Promise<AccountClient> {
   const env = readEnv()
   const url = requireUrl(opts.url ?? env.url)

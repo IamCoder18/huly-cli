@@ -65,26 +65,47 @@ async function readBodyText(opts: { body?: string; bodyFile?: string }): Promise
  * Resolves a workspace user reference for an email address or the current account.
  *
  * @param email - The person to resolve
+ * @param resolveOpts - Optional `--url` / `--workspace` to thread through to the account-service fallback
  * @returns The matching person or employee reference, or the current account UUID when `email` is omitted
  * @throws {CliError} When no matching person is found in the workspace
  */
-async function resolveEmployeeId(client: Awaited<ReturnType<typeof connectCli>>, email?: string): Promise<Ref<Doc>> {
+async function resolveEmployeeId(
+  client: Awaited<ReturnType<typeof connectCli>>,
+  email?: string,
+  resolveOpts: { url?: string; workspace?: string } = {}
+): Promise<Ref<Doc>> {
   if (email) {
     // Todo `user` accepts either an Employee or a Person ref depending on
     // the workspace model, so try Employee first then Person via the shared
     // helper (local email scan → cross-workspace account-service fallback).
     if (email.includes('@')) {
-      const id = await resolveEmailToLocalId(client, email, [
-        'contact:class:Employee',
-        'contact:class:Person'
-      ])
+      const id = await resolveEmailToLocalId(
+        client,
+        email,
+        ['contact:class:Employee', 'contact:class:Person'],
+        resolveOpts
+      )
       if (id !== undefined) return id
     }
     // Workspace-local fallback for name-based lookups or when the
     // cross-workspace lookup doesn't match anything in this workspace.
-    const persons = (await client.findAll('contact:class:Person' as Ref<Class<Doc>>, {}, { limit: 200 })) as Array<Doc & { name?: string; email?: string }>
+    // Scan both Employee and Person so users who exist only as Employee
+    // are still matched by name.
     const lower = email.toLowerCase()
-    const hit = persons.find((p) => (p.name ?? '').toLowerCase() === lower || (p.email ?? '').toLowerCase() === lower)
+    const candidates: Array<Doc & { name?: string; email?: string }> = []
+    for (const classId of ['contact:class:Person', 'contact:class:Employee']) {
+      try {
+        const docs = (await client.findAll(
+          classId as Ref<Class<Doc>>, {}, { limit: 500 }
+        )) as Array<Doc & { name?: string; email?: string }>
+        candidates.push(...docs)
+      } catch {
+        // class not in this workspace's model; try the next one
+      }
+    }
+    const hit = candidates.find(
+      (p) => (p.name ?? '').toLowerCase() === lower || (p.email ?? '').toLowerCase() === lower
+    )
     if (!hit) throw new CliError(ExitCode.NotFound, `no person matching ${email} in this workspace`)
     return hit._id
   }
@@ -116,7 +137,7 @@ export async function listActions(opts: ListActionsOpts = {}): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const query: Record<string, unknown> = {}
-    if (opts.owner) query.user = await resolveEmployeeId(client, opts.owner)
+    if (opts.owner) query.user = await resolveEmployeeId(client, opts.owner, { url: opts.url, workspace: opts.workspace })
     if (opts.priority) {
       if (!TODO_PRIORITIES.has(opts.priority)) {
         throw new CliError(ExitCode.Validation, `invalid --priority: ${opts.priority}`, `expected one of ${[...TODO_PRIORITIES].join(' | ')}`)
@@ -254,7 +275,7 @@ export async function createAction(opts: CreateActionOpts): Promise<void> {
     : (opts.description ? opts.description : '')
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const user = await resolveEmployeeId(client, opts.owner)
+    const user = await resolveEmployeeId(client, opts.owner, { url: opts.url, workspace: opts.workspace })
     if (opts.priority && !TODO_PRIORITIES.has(opts.priority)) {
       throw new CliError(ExitCode.Validation, `invalid --priority: ${opts.priority}`, `expected one of ${[...TODO_PRIORITIES].join(' | ')}`)
     }
@@ -352,7 +373,7 @@ export async function updateAction(ref: string, opts: UpdateActionOpts): Promise
       }
       ops.visibility = opts.visibility
     }
-    if (opts.owner) ops.user = await resolveEmployeeId(client, opts.owner)
+    if (opts.owner) ops.user = await resolveEmployeeId(client, opts.owner, { url: opts.url, workspace: opts.workspace })
 
     if (Object.keys(ops).length === 0) {
       throw new CliError(ExitCode.Validation, 'nothing to update', 'pass --title, --description, --due, --priority, --visibility, or --owner')
