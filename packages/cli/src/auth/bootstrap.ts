@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { PlatformClient } from '@hcengineering/api-client'
 import { CLASS, SPACE } from '../transport/identifiers.js'
-import { isBootstrapped, loadBootstrap, markBootstrapped } from './bootstrap-cache.js'
+import { loadBootstrap, markBootstrapped } from './bootstrap-cache.js'
 import { normalizeHost } from './cache.js'
 
 // In-memory short-circuit so a CLI process that runs many commands in a
@@ -171,19 +171,18 @@ export async function bootstrapEmployee(args: BootstrapArgs): Promise<BootstrapR
   //      workspace is treated as bootstrapped for the typical
   //      single-operator-per-CLI-install case and getAccount() is
   //      skipped entirely.
-  const key = workspaceKey(args.url, args.workspace)
-  if (bootstrappedWorkspaces.has(key)) {
+  if (isWorkspaceKnownBootstrapped(args.url, args.workspace)) {
     return { state: 'already-bootstrapped' }
   }
 
-  let workspaceHasMarker: boolean
-  if (unknownWorkspaces.has(key)) {
-    workspaceHasMarker = false
-  } else {
+  if (!isWorkspaceKnownAbsent(args.url, args.workspace)) {
     const file = await loadBootstrap()
-    workspaceHasMarker = Object.values(file[normalizeHost(args.url)] ?? {}).some(
-      (ws) => Object.keys(ws ?? {}).length > 0
-    )
+    // Scope strictly to args.workspace — a sibling workspace on the same
+    // host must NOT be treated as bootstrapped just because some other
+    // workspace under the host is.
+    const hostKey = normalizeHost(args.url)
+    const workspaceHasMarker =
+      Object.keys(file[hostKey]?.[args.workspace] ?? {}).length > 0
     if (workspaceHasMarker) {
       rememberWorkspaceBootstrapped(args.url, args.workspace)
       return { state: 'already-bootstrapped' }
@@ -194,11 +193,6 @@ export async function bootstrapEmployee(args: BootstrapArgs): Promise<BootstrapR
   const account = await args.client.getAccount()
   if (account === undefined || account.uuid === undefined || account.uuid === '') {
     return { state: 'no-account' }
-  }
-
-  if (workspaceHasMarker || (await isBootstrapped(args.url, args.workspace, account.uuid))) {
-    rememberWorkspaceBootstrapped(args.url, args.workspace)
-    return { state: 'already-bootstrapped' }
   }
 
   const { tx, txFactory } = getConnection(args.client)
@@ -220,15 +214,17 @@ export async function bootstrapEmployee(args: BootstrapArgs): Promise<BootstrapR
     // Recovery path: Person may exist without personUuid but already have
     // one of our social identities attached (e.g. a mail/github/telegram
     // pod ran `ensurePerson` on the transactor REST endpoint earlier).
+    // Single batched query against the SocialIdentity table for all of
+    // the account's social id refs, then pick the first attachedTo.
     const socialIdRefs = Array.isArray(account.socialIds) ? account.socialIds : []
-    for (const sidRef of socialIdRefs) {
-      const found = await args.client.findOne<{ attachedTo: string }>(
+    if (socialIdRefs.length > 0) {
+      const foundSids = await args.client.findAll<{ attachedTo?: string }>(
         CLASS.SocialIdentity,
-        { _id: sidRef }
+        { _id: { $in: socialIdRefs } }
       )
+      const found = foundSids.find((s) => s.attachedTo !== undefined)
       if (found?.attachedTo !== undefined) {
         personId = found.attachedTo
-        break
       }
     }
   }
@@ -259,11 +255,15 @@ export async function bootstrapEmployee(args: BootstrapArgs): Promise<BootstrapR
   }
 
   // 2. Reconcile SocialIdentity collection items.
-  const socialIdRefs = Array.isArray(account.socialIds) ? account.socialIds : []
-  if (socialIdRefs.length > 0) {
+  // Gate on fullSocialIds (data we have) rather than account.socialIds
+  // (refs to it) — the two arrays can drift apart on freshly-created or
+  // not-yet-propagated accounts, and we'd otherwise leave the Person
+  // with an empty socialIds collection.
+  if (fullSocialIds.length > 0) {
+    const fullSidsIds = fullSocialIds.map((s) => s._id)
     const existingSids = await args.client.findAll<{ _id: string }>(
       CLASS.SocialIdentity,
-      { _id: { $in: socialIdRefs } }
+      { _id: { $in: fullSidsIds } }
     )
     const existingSet = new Set(existingSids.map((s) => s._id))
     for (const sid of fullSocialIds) {
@@ -294,14 +294,18 @@ export async function bootstrapEmployee(args: BootstrapArgs): Promise<BootstrapR
     }
   }
 
-  // 3. Create the Employee mixin if missing or stale.
+  // 3. Refresh the Employee mixin if missing, inactive, or stale role.
+  // `role` reflects the account's current privilege on the account pod;
+  // a promotion/demotion between User/Guest must propagate so that
+  // role-gated UI features (auto-join for guests, etc.) stay correct.
   const employeeRole = employeeRoleFor(account.role)
   const employee = await args.client.findOne<{ active?: boolean; role?: string }>(
     CLASS.Employee,
     { _id: personId }
   )
-  const isActiveEmployee = employee !== undefined && employee.active === true
-  if (!isActiveEmployee) {
+  const isFreshEmployee =
+    employee !== undefined && employee.active === true && employee.role === employeeRole
+  if (!isFreshEmployee) {
     await tx(
       txFactory.createTxMixin(
         personId,

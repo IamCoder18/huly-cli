@@ -26,20 +26,53 @@ export function bootstrapPath(): string {
   return `${configDir()}/bootstrap.json`
 }
 
+// Latch so a corrupt bootstrap.json emits a single warning per process,
+// not one per CLI invocation. Reset on a successful save.
+let corruptWarningEmitted = false
+
 export async function loadBootstrap(): Promise<BootstrapFile> {
+  let raw: string
   try {
-    const raw = await fs.readFile(bootstrapPath(), 'utf8')
-    return JSON.parse(raw) as BootstrapFile
+    raw = await fs.readFile(bootstrapPath(), 'utf8')
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return {}
     throw err
+  }
+  try {
+    return JSON.parse(raw) as BootstrapFile
+  } catch (err) {
+    // A truncated or otherwise corrupt file (interrupted write, manual
+    // edit, disk full) must NOT disable bootstrap forever — fall back
+    // to an empty marker so the next connect can repair it via a fresh
+    // save. Quarantine the bad copy for post-mortem.
+    if (!corruptWarningEmitted) {
+      corruptWarningEmitted = true
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[huly] bootstrap.json is corrupt (${(err as Error).message}); ` +
+          'quarantining and treating as empty. Bootstrap will run again on the next connect.'
+      )
+      try {
+        await fs.rename(bootstrapPath(), `${bootstrapPath()}.corrupt.${Date.now()}.bak`)
+      } catch {
+        /* best effort */
+      }
+    }
+    return {}
   }
 }
 
 export async function saveBootstrap(file: BootstrapFile): Promise<void> {
   await fs.mkdir(configDir(), { recursive: true })
-  await fs.writeFile(bootstrapPath(), JSON.stringify(file, null, 2), { mode: 0o600 })
-  await fs.chmod(bootstrapPath(), 0o600).catch(() => { /* not all platforms support chmod */ })
+  // Atomic write: write to a temp file in the same directory, apply
+  // permissions, then rename. Avoids leaving a half-written bootstrap.json
+  // if the process is killed mid-write, and avoids concurrent-process
+  // races where two saves stomp each other.
+  const tmpPath = `${bootstrapPath()}.${process.pid}.${Date.now()}.tmp`
+  await fs.writeFile(tmpPath, JSON.stringify(file, null, 2), { mode: 0o600 })
+  await fs.chmod(tmpPath, 0o600).catch(() => { /* not all platforms support chmod */ })
+  await fs.rename(tmpPath, bootstrapPath())
+  corruptWarningEmitted = false
 }
 
 export async function isBootstrapped(
