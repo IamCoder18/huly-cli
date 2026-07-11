@@ -83,6 +83,17 @@ export function insecureTLS(env: NodeJS.ProcessEnv = process.env): boolean {
 }
 
 /**
+ * When `HULY_SKIP_BOOTSTRAP=1` the CLI does NOT auto-create the operator's
+ * workspace-local Person/Employee/SocialIdentity on first connect. This
+ * mirrors the upstream `ensureEmployee()` flow that runs only on the
+ * web UI; CLI users typically want the auto-bootstrap, but it can be
+ * disabled for CI, for benchmarks, or to keep a workspace untouched.
+ */
+export function skipBootstrap(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.HULY_SKIP_BOOTSTRAP === '1'
+}
+
+/**
  * Apply `HULY_INSECURE_TLS=1` to the global Node TLS state so that ALL
  * outgoing HTTPS requests (including those performed by Node's built-in
  * undici `fetch` and SDK code that ignores our `agent` option) skip TLS

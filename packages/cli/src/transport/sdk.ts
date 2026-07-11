@@ -1,6 +1,7 @@
 import { connectPlatform, type PlatformClient, type AccountClient, resolveToken, accountClient } from '../auth/client.js'
-import { readEnv, requireUrl } from '../auth/env.js'
+import { readEnv, requireUrl, skipBootstrap } from '../auth/env.js'
 import { readActiveWorkspace, getCachedWorkspaceToken, readActiveAccount, setCachedWorkspaceToken } from '../auth/cache.js'
+import { bootstrapEmployee } from '../auth/bootstrap.js'
 import { CliError, ExitCode } from '../output/errors.js'
 
 export interface ConnectOpts {
@@ -26,6 +27,26 @@ export async function resolveWorkspace(opts: ConnectOpts): Promise<string> {
 export async function connectCli(opts: ConnectOpts = {}): Promise<PlatformClient> {
   const workspace = await resolveWorkspace(opts)
   const client = await connectPlatform({ ...opts, workspace })
+  // Auto-create the operator's workspace-local Person/Employee/SocialIdentity
+  // so the CLI behaves like the web UI on first workbench connect. This is
+  // what unblocks `--assignee <email>` lookups and the action cascade for
+  // users who have never opened the workspace in a browser.
+  // Gated by HULY_SKIP_BOOTSTRAP=1; see `bootstrap.ts` for the trigger chain.
+  if (!skipBootstrap()) {
+    const url = opts.url ?? readEnv().url
+    if (url !== undefined && url !== '') {
+      try {
+        await bootstrapEmployee({ url, workspace, client })
+      } catch (err) {
+        // Bootstrap is best-effort: do not break the calling command.
+        // The marker is only written on full success, so a future run
+        // will retry. The manual workaround (open the workspace in a
+        // browser once) still applies if this keeps failing.
+        const msg = err instanceof Error ? err.message : String(err)
+        console.warn(`[huly] workspace bootstrap skipped: ${msg}`)
+      }
+    }
+  }
   return client
 }
 
