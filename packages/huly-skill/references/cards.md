@@ -64,7 +64,7 @@ huly card create \
 **Resolution:** `--master-tag foo` matches `foo` against `label`, `name`, or raw `_id`. Look at `master-tag list --json` to see what's available.
 
 **Defaults silently applied:**
-- `card-space`: With **opinionated defaults ON** (default; `HULY_OPINIONATED=1`): the CLI picks the first available `CardSpace` automatically (`findAll` returns the one created earliest). Pass `--card-space <name>` to override. With `HULY_OPINIONATED=0` or `--minimal`: literal `card:space:Default` — **this usually does not exist**; if you don't have a card space, the create will fail with `PLATFORM_NOT_FOUND`. Pass `--card-space <name>` explicitly in that mode.
+- `card-space`: With **opinionated defaults ON** (default; `HULY_OPINIONATED=1`): the CLI picks the first available `CardSpace` automatically — `findAll({ archived: false }, { sort: { createdOn: 1 }, limit: 1 })` resolves to the oldest non-archived card space. Pass `--card-space <name>` to override. With `HULY_OPINIONATED=0` or `--minimal`: literal `card:space:Default` — **this usually does not exist**; if you don't have a card space, the create will fail with `PLATFORM_NOT_FOUND`. Pass `--card-space <name>` explicitly in that mode.
 - `parentInfo`: `[]` (no parent). Pass `--parent <card-ref>` to nest.
 - `rank: '0|aaaaa:'`, `blobs: {}`.
 - `_class`: the resolved MasterTag's id.

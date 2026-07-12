@@ -473,15 +473,21 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
         //   { uuid, role, primarySocialId, socialIds, fullSocialIds }
         // `fullSocialIds` is the array of SocialIdentity records; the one
         // with type "email" carries the user's email address. Older SDK
-        // builds expose `account.email` directly, so check both.
+        // builds expose `account.email` directly, so check both. Use
+        // optional chaining because `getAccount()` can legitimately
+        // return null/undefined in some auth-failure paths; we want a
+        // graceful "unassigned" fallback rather than a TypeError here.
         const account = await client.getAccount() as unknown as {
           email?: string
           fullSocialIds?: Array<{ type?: string; value?: string }>
-        }
-        const directEmail = account.email
-        const socialEmail = account.fullSocialIds?.find((s) => s.type === 'email')?.value
-        const resolvedEmail = directEmail ?? socialEmail
-        if (resolvedEmail !== undefined && resolvedEmail !== '') {
+        } | null | undefined
+        const directEmail = account?.email
+        const socialEmail = account?.fullSocialIds?.find((s) => s.type === 'email')?.value
+        // Pick the first non-empty value: `??` preserves `''` so an empty
+        // account.email would short-circuit the SocialIdentity fallback.
+        const candidates = [directEmail, socialEmail]
+        const resolvedEmail = candidates.find((v): v is string => typeof v === 'string' && v !== '')
+        if (resolvedEmail !== undefined) {
           effectiveAssignee = resolvedEmail
         }
       } catch {
@@ -534,13 +540,22 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
       : opts.status !== undefined
         ? await resolveStatus(client, project, opts.status)
         : opinionated
-          ? await resolveStatusByCategory(client, project, 'ToDo').catch(async () => {
-              // Fallback if no `ToDo` category statuses exist in this
-              // workspace (rare — only on hand-curated projects). Use the
-              // lowest-rank status overall so the issue still lands in
-              // something sensible.
-              return await resolveStatus(client, project, undefined)
-            })
+          ? await (async (): Promise<Ref<Doc>> => {
+              try {
+                return await resolveStatusByCategory(client, project, 'ToDo')
+              } catch (err) {
+                // Narrow the fallback to the documented "no statuses in
+                // category `ToDo`" case. Anything else (transport /
+                // auth / server errors) is a real failure that the
+                // caller needs to see — silently masking it would hide
+                // connectivity issues from the user and make the cascade
+                // appear to work when the category lookup never ran.
+                if (err instanceof CliError && err.code === ExitCode.NotFound) {
+                  return await resolveStatus(client, project, undefined)
+                }
+                throw err
+              }
+            })()
           : await resolveStatus(client, project, opts.status)
     const priority = await resolvePriority(client, opts.priority)
     const body = await readBody(opts)
@@ -669,7 +684,17 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
     }
 
     if (effectiveAssignee !== undefined) {
-      data.assignee = await resolveAssignee(client, effectiveAssignee, { url: opts.url, workspace: opts.workspace }) as Ref<Doc>
+      // Explicit empty string (`--assignee ''`) means "leave unassigned",
+      // distinct from "not specified" (which triggers the opinionated
+      // default above). resolveAssignee('') would treat it as `me` and
+      // silently assign to the current user — that's the bug we're
+      // working around here. Set `data.assignee = null` explicitly so
+      // the server's ProjectToDo cascade does NOT fire.
+      if (effectiveAssignee === '') {
+        data.assignee = null
+      } else {
+        data.assignee = await resolveAssignee(client, effectiveAssignee, { url: opts.url, workspace: opts.workspace }) as Ref<Doc>
+      }
     }
 
     if (opts.dryRun) {

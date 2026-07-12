@@ -1538,7 +1538,7 @@ will do when you don't.
 | `huly issue create` | First `ProjectToDo` (classic projects only) | `--assignee` set OR assignee defaulted to current user, status category `ToDo`/`Active`. See cascade table. |
 | `huly dm create --person <email>` / `huly dm send --person <email>` | A DM with that person (resolves via `resolvePersonId`) | No existing DM with that person. |
 | `huly issue label add <ref> --label <name>` | A `TagElement` in `tags:space:Tag` (first `TagCategory`) | Label doesn't exist yet. |
-| `huly project create` | The current user is added as a `members: [<uuid>]` | Always, unless `--minimal`. |
+| `huly project create` | The current user is added as a `members: [<uuid>]` | Always (security invariant — required by `SpaceSecurityMiddleware` so the creator can `findAll` their own project). Not gated by `--minimal` or `HULY_OPINIONATED=0`. |
 | `huly calendar create` | A new `Calendar` doc | Always; `--type public\|private` defaults to `public`. |
 | `huly action create` | If `--attached-to` omitted, the task is attached to the owner's `Person` (or current user) | Default. |
 
@@ -1561,7 +1561,7 @@ will do when you don't.
 | `huly issue create` | `--task-type` | `tracker:issue:default` |
 | `huly issue create` | `parent` | `null` (top-level), unless `--minimal` / `HULY_OPINIONATED=0` |
 | `huly issue create` | `space` | `project._id` (unless `--minimal` / `HULY_OPINIONATED=0`) |
-| `huly card create` | `--card-space` | First available `CardSpace` (`findAll` returns the one created earliest). Falls back to literal `card:space:Default` if zero exist. With `HULY_OPINIONATED=0` or `--minimal`, uses the literal `card:space:Default` directly (which often does not exist — see the SKILL.md warning). |
+| `huly card create` | `--card-space` | First available, non-archived `CardSpace` (resolved with `findAll({ archived: false }, { sort: { createdOn: 1 }, limit: 1 })` — the oldest by `createdOn`). Falls back to literal `card:space:Default` if zero exist. With `HULY_OPINIONATED=0` or `--minimal`, uses the literal `card:space:Default` directly (which often does not exist — see the SKILL.md warning). |
 | `huly calendar create-calendar` | `--access` | `public` (one of `owner` / `team` / `public`) |
 | `huly calendar create-calendar` | `--private` | `false` |
 | `huly schedule create` | `--duration` | `30` (minutes) |
@@ -1584,7 +1584,7 @@ will do when you don't.
 When you pass a value to a flag like `--assignee`, `--project`, `--owner`,
 `--person`, `--calendar`, etc., the CLI tries in this order:
 
-1. **`me` / `""`** (empty string) — resolves to current user.
+1. **`me` / `""`** (empty string) — resolves to current user. **Exception:** `huly issue create --assignee ''` treats `''` as "leave unassigned" (sets `data.assignee = null`), suppressing the ProjectToDo cascade. This is the documented way to override the opinionated default that would otherwise auto-assign to you.
 2. **Raw `_id`** (matches `^[a-z-]+:[a-z-]+:[0-9a-f-]{36}$`) — used as-is.
 3. **Prefixed form** (`PREFIX-123`, e.g. `TSK-1`, `USR-42`) — looked up via the index.
 4. **Bare number** (`42`) — uses `$HULY_PROJECT` env var for project context.

@@ -136,12 +136,15 @@ export async function createProject(opts: {
   if (opinionated) {
     data.type = CLASSIC_PROJECT_TYPE_ID as Ref<Doc>
   }
-  if (!opinionated) {
+  if (!opinionated && opts.description === undefined) {
     delete data.description
     // Note: members MUST stay set to the current user UUID, otherwise
     // SpaceSecurityMiddleware.mergeQuery returns { $in: [] } and the
     // creator can never findAll the project. --minimal only controls
-    // user-facing description, not security-critical fields.
+    // user-facing description, not security-critical fields. An
+    // explicitly supplied --description '' is preserved verbatim so
+    // callers can distinguish "omitted" from "explicit empty string"
+    // downstream.
   }
   if (opts.dryRun) {
     console.log('would create project:')

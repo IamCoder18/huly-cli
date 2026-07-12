@@ -228,7 +228,7 @@ The CLI is opinionated. When you don't specify, it does:
 | Any auto-retry on duplicate | `huly issue create` and `huly project create` retry on `duplicate`/`already`/`exists` and return the existing record's `_id` |
 | `huly action create` without `--attached-to` | Sets `attachedTo` to the resolved Person's `_id` when `--owner <email>` is passed, OR the current user's `account.uuid` when `--owner` is omitted; `attachedToClass` is always `contact:class:Person`. So the todo appears under "my tasks" (or the named owner's personal list), but it is single-parent on the Person — not dual-parent on the issue's `todos` collection (see "The dual-parent trap" above). |
 | `huly calendar create` | Always creates a new `Calendar` doc — no "get-or-create" |
-| `huly card create` without `--card-space` | With opinionated defaults ON (default): auto-picks the first available `CardSpace` (the one created earliest). With `HULY_OPINIONATED=0` or `--minimal`: uses the literal `card:space:Default` — **this usually does not exist**; create one first. |
+| `huly card create` without `--card-space` | With opinionated defaults ON (default): auto-picks the first available `CardSpace` (the oldest non-archived one, sorted by `createdOn` ascending). With `HULY_OPINIONATED=0` or `--minimal`: uses the literal `card:space:Default` — **this usually does not exist**; create one first. |
 
 ### Markup rules — `--body` / `--description` / `--markdown` / `--raw-markup`
 

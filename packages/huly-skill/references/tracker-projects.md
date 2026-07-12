@@ -214,7 +214,7 @@ huly ws findAll '["core:class:Tx",{"space":"<project-space-id>","modifiedOn":{"$
 - **`issue-template add-child`** uses `{ id }` in `children[]`, but other trackers' relations usually use `{ _id }`. Don't apply cross-template patterns blindly.
 - **`project create --sequence 0`** is automatic. Don't try to override it; the issue-number minting depends on it.
 - **`project create --members <emails>` does NOT exist.** The CLI auto-injects the current user as `members[0]`. There is no flag to override. If you want additional members, use `huly workspace members --role Admin` for global or `huly space add-member` for per-space (on channels / DMs).
-- **`project create` without `--description`** stores `description: ''` (empty string) by default. The default has always been empty, but `--minimal` (and `HULY_OPINIONATED=0`) now also OMIT the field from the create payload entirely — the server stores `undefined` instead. Either is fine for read-back, but if a downstream consumer distinguishes "missing" from "empty", pass `--description ''` explicitly when running with `--minimal`.
+- **`--minimal` and `--description`:** with opinionated defaults ON (default), `project create` stores `description: ''` (empty string) when `--description` is omitted. With `--minimal` / `HULY_OPINIONATED=0`, an *omitted* `--description` is omitted from the create payload entirely; an *explicit* `--description ''` is still preserved verbatim. So if a downstream consumer distinguishes "missing" from "empty", pass `--description ''` explicitly when running with `--minimal`.
 - **Custom space types are only available on NEW projects.** Create a new project if you need to change the type.
 
 ---

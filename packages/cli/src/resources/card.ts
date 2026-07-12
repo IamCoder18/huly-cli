@@ -256,7 +256,17 @@ export async function createCard(opts: {
         classId: CLASS.CardSpace as Ref<Class<Doc>>,
       })
     } else if (opinionated) {
-      const spaces = (await client.findAll(CLASS.CardSpace as Ref<Class<Doc>>, {}, { limit: 1 })) as Array<Doc & { _id: Ref<Doc> }>
+      // Pick the first available CardSpace. Sort by `createdOn` ascending
+      // so the result is deterministic — without an explicit sort, `findAll`
+      // returns rows in whatever order the underlying storage iterates
+      // (often `_id`/creation order on memdb, but not contractually
+      // guaranteed across SDK builds). Archived card spaces are excluded
+      // so an old retired space doesn't accidentally become the default.
+      const spaces = (await client.findAll(
+        CLASS.CardSpace as Ref<Class<Doc>>,
+        { archived: false },
+        { sort: { createdOn: 1 }, limit: 1 }
+      )) as Array<Doc & { _id: Ref<Doc> }>
       resolvedCardSpace = spaces.length > 0
         ? (spaces[0]._id as unknown as Ref<Space>)
         : ('card:space:Default' as Ref<Space>)

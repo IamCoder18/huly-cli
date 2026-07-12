@@ -68,7 +68,7 @@ Defaults the CLI silently applies (use `--minimal` or `HULY_OPINIONATED=0` to sk
 |---|---|---|
 | `status` | lowest-rank IssueStatus in category `ToDo` (usually `To do`) — NOT `Backlog` | `--status "Backlog"`, `--status "Done"`, etc. |
 | `priority` | `Normal` or first available | `--priority High` |
-| `task-type` | first available, else `tracker:issue:default` | `--task-type "Story"` |
+| `task-type` | first available TaskType for the project; if none, falls back to `tracker:taskTypes:Issue` (NOT `tracker:issue:default` — that ref is invalid and the create errors) | `--task-type "Story"` |
 | `parent` | `null` (top-level) | `--parent TSK-42` |
 | `members` (on project) | current user added | cannot skip on `project create` |
 | `description` | `''` | `--body "…"` |
@@ -76,7 +76,7 @@ Defaults the CLI silently applies (use `--minimal` or `HULY_OPINIONATED=0` to sk
 | issue number | `$inc` the project's `sequence` field, before create | n/a (automatic) |
 | `--body` vs `--description` | both stored; `--body` is the rich Markdown | pass one or the other |
 
-**Opinionated defaults master switch:** every default above EXCEPT the issue-number `$inc` and the `members` injection is gated by `HULY_OPINIONATED` (default `1`). Setting `HULY_OPINIONATED=0` (or `false` / `no` / `off`) — or passing `--minimal` on the command — disables all of them. With opinionated defaults OFF, `status` reverts to the workspace's lowest-rank status overall (usually `Backlog`), `assignee` is unset, `parent` is omitted entirely, `space` is omitted entirely, and `description` is omitted from `project create`.
+**Opinionated defaults master switch:** the new opinionated defaults (`status` = `ToDo` category, `assignee` = current user's email) AND the pre-existing `--minimal`-gated fields (`parent: null` and `space: project._id` on `issue create`, plus `description` omission on `project create`) are all disabled by `HULY_OPINIONATED=0` (or `false` / `no` / `off`) or by passing `--minimal`. With opinionated defaults OFF, `status` reverts to the workspace's lowest-rank status overall (usually `Backlog`), `assignee` is unset (unless you pass `--assignee <email>` or `--assignee ''`), `parent` and `space` are omitted entirely from the issue payload, and `description` is omitted from `project create`. The remaining defaults that are NOT gated by `HULY_OPINIONATED` continue to apply: `priority` resolves to `Normal` or first available; `task-type` resolves to the first available TaskType; the issue number is always `$inc`'d; `body`/`description` storage and the `--body` vs `--description` precedence are unaffected.
 
 **Critical:** creating an issue with `--assignee` (or with the opinionated default assignee) while status category is `ToDo` or `Active` triggers the server-side auto-creation of a `ProjectToDo` (classic projects only). With the opinionated default ON, this fires on every `issue create` that doesn't pass `--assignee ''` because the status lands in `ToDo` AND the assignee resolves to you — see the state machine below.
 
