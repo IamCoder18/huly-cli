@@ -13,6 +13,12 @@ import { normalizeHost } from './cache.js'
 const bootstrappedAccounts = new Set<string>()
 const unknownAccounts = new Set<string>()
 
+// In-flight Promise coalesce so overlapping bootstrap calls for the same
+// account (e.g. one CLI command that issues several `connectCli()` calls
+// in parallel) don't race into duplicate Person creation. Different
+// accounts stay independent because the key includes accountUuid.
+const inflightBootstraps = new Map<string, Promise<BootstrapResult>>()
+
 function accountKey(host: string, workspace: string, accountUuid: string): string {
   return `${normalizeHost(host)}\n${workspace}\n${accountUuid}`
 }
@@ -69,10 +75,11 @@ function rememberWorkspaceAccountAbsent(
  * Idempotent: a successful run writes a marker to the on-disk bootstrap
  * cache keyed on (host, workspace, accountUuid), so an unrelated account
  * on the same workspace will still trigger a full bootstrap on first
- * connect. The next call from the same account returns early after a
- * `bootstrap.json` read; subsequent calls within the same process
- * short-circuit on the in-memory cache and never touch disk or the
- * network.
+ * connect. Subsequent calls within the same process short-circuit on
+ * the in-memory cache and skip the `bootstrap.json` read; concurrent
+ * calls for the same account share a single in-flight Promise so
+ * overlapping `connectCli` invocations do not race into duplicate
+ * Person creation.
  *
  * Failures are returned to the caller; the caller (`connectCli`) decides
  * whether to log/warn or propagate.
@@ -180,20 +187,12 @@ function employeeRoleFor(accountRole: string): 'GUEST' | 'USER' {
 }
 
 export async function bootstrapEmployee(args: BootstrapArgs): Promise<BootstrapResult> {
-  // Two-level short-circuit, keyed on (host, workspace, accountUuid):
-  //
-  //   1. In-memory hit  — repeated calls within the same process for
-  //      THIS account skip the disk read AND the bootstrap transactors.
-  //      A different account on the same workspace in this process
-  //      misses this cache and falls through to the disk check, so it
-  //      cannot inherit another account's bootstrap state.
-  //   2. In-memory miss + known-absent — skip the disk read but still
-  //      need to do the bootstrap transactors.
-  //   3. First time seen — read bootstrap.json from disk once.
-  //
-  // `PlatformClient.getAccount()` is a cached property accessor on the
-  // SDK client (no network), so pulling it up here to key the in-memory
-  // cache by accountUuid is free.
+  // Resolve account first so the rest of the flow can key by accountUuid.
+  // `PlatformClient.getAccount()` is implemented as `return this.account`
+  // in @hcengineering/api-client (verified against the bundled build — it
+  // is a property accessor set once during `connect()`, no transactor
+  // round-trip), so this is effectively free regardless of how many
+  // times it is awaited in one process.
   let account
   try {
     account = await args.client.getAccount()
@@ -207,10 +206,33 @@ export async function bootstrapEmployee(args: BootstrapArgs): Promise<BootstrapR
     return { state: 'no-account' }
   }
 
+  // Fast in-memory hit before we touch the coalesce map. Once any call
+  // has successfully bootstrapped this account, subsequent calls for
+  // the same account in the same process return immediately.
   if (isWorkspaceAccountKnownBootstrapped(args.url, args.workspace, account.uuid)) {
     return { state: 'already-bootstrapped' }
   }
 
+  // Coalesce concurrent calls for the same account. A second call that
+  // arrives while the first is still doing the disk read / Person
+  // reconciliation awaits the same in-flight Promise instead of
+  // duplicating the bootstrap transactors. The finally-cleanup removes
+  // the entry once the in-flight work settles (resolved OR thrown), so
+  // a later call after a transient failure can retry cleanly.
+  const key = accountKey(args.url, args.workspace, account.uuid)
+  const existing = inflightBootstraps.get(key)
+  if (existing !== undefined) {
+    return await existing
+  }
+
+  const work = bootstrapFromAccount(args, account).finally(() => {
+    inflightBootstraps.delete(key)
+  })
+  inflightBootstraps.set(key, work)
+  return await work
+}
+
+async function bootstrapFromAccount(args: BootstrapArgs, account: any): Promise<BootstrapResult> {
   if (!isWorkspaceAccountKnownAbsent(args.url, args.workspace, account.uuid)) {
     const file = await loadBootstrap()
     // Scope by (host, workspace, accountUuid) — a sibling account's
