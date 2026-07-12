@@ -35,7 +35,9 @@
     "build": "tsc -p tsconfig.build.json && chmod +x dist/index.js",
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "node -e \"require('fs').copyFileSync('../../README.md','./README.md')\"",
+    "postpublish": "node -e \"require('fs').rmSync('./README.md',{force:true})\""
   },
   "repository": {
     "type": "git",
