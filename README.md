@@ -1553,12 +1553,12 @@ will do when you don't.
 |---|---|---|
 | `huly project create` | `--sequence` | `0` |
 | `huly project create` | `--members` | `[<current-user-uuid>]` |
-| `huly project create` | `--description` | `''` (omitted with `--minimal` / `HULY_OPINIONATED=0`) |
+| `huly project create` | `--description` | `''` (omitted with `--minimal` / `HULY_OPINIONATED=0` — but an explicit `--description ''` is still preserved verbatim; only a fully omitted flag is removed from the payload) |
 | `huly project create` | `type` | `tracker:ids:ClassingProjectType` (the classic tracker ProjectType — note the server-side typo "Classing"). Without this default, projects may not be classic and miss the issue↔action cascade. Pass `HULY_OPINIONATED=0` or `--minimal` to skip. |
 | `huly issue create` | `--status` | Lowest-rank `IssueStatus` in category `ToDo` (usually `To do`). Pin to Backlog with `--status Backlog`. With `HULY_OPINIONATED=0` or `--minimal`, falls back to the lowest-rank status overall (usually `Backlog`). |
 | `huly issue create` | `--assignee` | Current user's email (resolved from `getAccount().fullSocialIds`). Pass `--assignee <other>` to override, `--assignee ''` to leave unassigned. Disabled with `HULY_OPINIONATED=0` or `--minimal`. |
 | `huly issue create` | `--priority` | `Normal` if it exists in the workspace; else first priority; else omitted |
-| `huly issue create` | `--task-type` | `tracker:issue:default` |
+| `huly issue create` | `--task-type` | First available TaskType for the project; if none, falls back to `tracker:taskTypes:Issue` (NOT `tracker:issue:default` — that ref is invalid and the create errors) |
 | `huly issue create` | `parent` | `null` (top-level), unless `--minimal` / `HULY_OPINIONATED=0` |
 | `huly issue create` | `space` | `project._id` (unless `--minimal` / `HULY_OPINIONATED=0`) |
 | `huly card create` | `--card-space` | First available, non-archived `CardSpace` (resolved with `findAll({ archived: false }, { sort: { createdOn: 1 }, limit: 1 })` — the oldest by `createdOn`). Falls back to literal `card:space:Default` if zero exist. With `HULY_OPINIONATED=0` or `--minimal`, uses the literal `card:space:Default` directly (which often does not exist — see the SKILL.md warning). |
