@@ -50,8 +50,10 @@ function rememberWorkspaceAbsent(host: string, workspace: string): void {
  * PersonSpace, autoJoin memberships, Member role grants) automatically.
  *
  * Idempotent: a successful run writes a marker to the on-disk bootstrap
- * cache keyed on (host, workspace, accountUuid). The next call returns
- * early after a single `findOne` round-trip.
+ * cache keyed on (host, workspace, accountUuid), so an unrelated account
+ * on the same workspace will still trigger a full bootstrap on first
+ * connect. The next call from the same account returns early after a
+ * `getAccount()` round-trip and a `bootstrap.json` read.
  *
  * Failures are returned to the caller; the caller (`connectCli`) decides
  * whether to log/warn or propagate.
@@ -159,40 +161,44 @@ function employeeRoleFor(accountRole: string): 'GUEST' | 'USER' {
 }
 
 export async function bootstrapEmployee(args: BootstrapArgs): Promise<BootstrapResult> {
-  // Two-level short-circuit so repeated calls within the same process
-  // (and even the first call after a previous one) skip both the disk
-  // read of bootstrap.json AND the getAccount() transactor round-trip:
-  //
-  //   1. In-memory hit (Set lookup, ~0ms): definite no-op.
-  //   2. In-memory miss + known-absent: definitely needs bootstrap, but
-  //      we still need getAccount() for social IDs.
-  //   3. First time this workspace is seen: read bootstrap.json ONCE.
-  //      If ANY account entry exists under (host, workspace), the
-  //      workspace is treated as bootstrapped for the typical
-  //      single-operator-per-CLI-install case and getAccount() is
-  //      skipped entirely.
+  // Short-circuit so repeated calls within the same process (after at
+  // least one successful bootstrap for this workspace) skip both the
+  // disk read of bootstrap.json AND the getAccount() transactor
+  // round-trip. Keyed on (host, workspace) — see known limitation
+  // below around multi-account same-process scenarios.
   if (isWorkspaceKnownBootstrapped(args.url, args.workspace)) {
     return { state: 'already-bootstrapped' }
   }
 
+  // We need account.uuid BEFORE we can check the on-disk marker
+  // account-scoped, so fetch the account first. A bootstrap for a
+  // different account on the same (host, workspace) does not count.
+  let account
+  try {
+    account = await args.client.getAccount()
+  } catch (err) {
+    return {
+      state: 'skipped',
+      reason: `getAccount failed: ${err instanceof Error ? err.message : String(err)}`
+    }
+  }
+  if (account === undefined || account.uuid === undefined || account.uuid === '') {
+    return { state: 'no-account' }
+  }
+
   if (!isWorkspaceKnownAbsent(args.url, args.workspace)) {
     const file = await loadBootstrap()
-    // Scope strictly to args.workspace — a sibling workspace on the same
-    // host must NOT be treated as bootstrapped just because some other
-    // workspace under the host is.
+    // Scope by (host, workspace, accountUuid) — a sibling account's
+    // marker under the same workspace must NOT short-circuit this
+    // account's bootstrap.
     const hostKey = normalizeHost(args.url)
-    const workspaceHasMarker =
-      Object.keys(file[hostKey]?.[args.workspace] ?? {}).length > 0
-    if (workspaceHasMarker) {
+    const accountHasMarker =
+      file[hostKey]?.[args.workspace]?.[account.uuid] !== undefined
+    if (accountHasMarker) {
       rememberWorkspaceBootstrapped(args.url, args.workspace)
       return { state: 'already-bootstrapped' }
     }
     rememberWorkspaceAbsent(args.url, args.workspace)
-  }
-
-  const account = await args.client.getAccount()
-  if (account === undefined || account.uuid === undefined || account.uuid === '') {
-    return { state: 'no-account' }
   }
 
   const { tx, txFactory } = getConnection(args.client)

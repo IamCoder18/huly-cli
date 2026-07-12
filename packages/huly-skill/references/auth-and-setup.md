@@ -99,7 +99,7 @@ Two sibling files:
 | File | Purpose | Mode |
 |---|---|---|
 | `credentials.json` | Tokens (above) | 0600 |
-| `bootstrap.json` | Marker for completed workspace-identity bootstrap, keyed on `host -> workspace -> accountUuid -> {at}`. Delete to force a re-bootstrap. | 0600 |
+| `bootstrap.json` | Per-account marker for completed workspace-identity bootstrap, keyed on `host -> workspace -> accountUuid -> {at}`. Delete the file (or just the affected account entry) to force a re-bootstrap. | 0600 |
 | `active-workspace` | Last-used workspace name | 0600 |
 | `active-account` | `host\|email` per host | 0600 |
 | `.env` | URL + credentials if you want them on disk | your choice |
@@ -136,7 +136,7 @@ Then `huly login --headless` to re-auth.
 | `HULY_ENV_FILE` | `~/.config/huly/.env` | Path to the dotenv file | Optional |
 | `HULY_NONINTERACTIVE` | — | `1` disables ALL prompts | Optional |
 | `HULY_INSECURE_TLS` | — | `1` disables TLS verification globally | Avoid in production |
-| `HULY_SKIP_BOOTSTRAP` | — | `1` skips the auto workspace-identity bootstrap on `connectCli`. Set this in CI / benchmarks / when the workspace must stay untouched. Leave unset for normal agent runs — the bootstrap is idempotent and writes a per-`(host, workspace, account)` marker to `~/.config/huly/bootstrap.json` so it costs ~1 disk read + 1 transactor round-trip per cold process, and zero on subsequent calls in the same process. | Optional |
+| `HULY_SKIP_BOOTSTRAP` | — | `1` skips the auto workspace-identity bootstrap on `connectCli`. Set this in CI / benchmarks / when the workspace must stay untouched. Leave unset for normal agent runs — the bootstrap is idempotent and writes a per-`(host, workspace, accountUuid)` marker to `~/.config/huly/bootstrap.json`. Cost per fresh CLI process: 1 read of `bootstrap.json` to look up the marker for the current account, plus 1 `getAccount()` transactor round-trip and, only when that marker is missing, the bootstrap transactor round-trip (createDoc / addCollection / mixin) to reconcile Person + SocialIdentity + Employee. Subsequent calls within the same process short-circuit on an in-memory lookup once a bootstrap has succeeded, so they cost 0 after the first successful bootstrap in that process; later CLI processes pay the same per-process cost. | Optional |
 | `NO_COLOR` | — | Disables chalk colors | Optional |
 | `CI` | — | Triggers JSON output and disables spinner | Optional |
 
@@ -166,7 +166,7 @@ On selfhost the signup endpoint is open. On hosted/invite-only deployments the a
 
 If signup doesn't return a session token (account-pod propagation lag), the CLI retries login up to 3× with exponential backoff (250/500/750 ms).
 
-**Right-after-signup caveat:** the CLI auto-runs `ensureEmployee()` on the first `connectCli` after signup / workspace creation / join, so `huly user update`, `huly notification settings update`, `--assignee <email>` lookups, and the `ProjectToDo` cascade all work on the first command without ever opening the workspace in a browser. The bootstrap is idempotent (a per-`(host, workspace, account)` marker is written to `~/.config/huly/bootstrap.json`), so subsequent commands in the same or any later CLI process are zero-cost. Set `HULY_SKIP_BOOTSTRAP=1` to opt out.
+**Right-after-signup caveat:** the CLI auto-runs `ensureEmployee()` on the first `connectCli` after signup / workspace creation / join, so `huly user update`, `huly notification settings update`, `--assignee <email>` lookups, and the `ProjectToDo` cascade all work on the first command without ever opening the workspace in a browser. The bootstrap is idempotent (a per-`(host, workspace, accountUuid)` marker is written to `~/.config/huly/bootstrap.json`): subsequent commands in the same process are zero-cost after the first successful bootstrap, while later CLI processes repeat the single disk read + `getAccount()` check (and the bootstrap transactors only if the per-account marker is missing). Set `HULY_SKIP_BOOTSTRAP=1` to opt out entirely.
 
 ---
 
