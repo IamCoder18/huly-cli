@@ -67,17 +67,13 @@ const ASCII_CHARS: Record<string, string> = {
 // box-drawing chars that legitimately appear inside user-supplied cell
 // content (titles, descriptions, etc.) are left untouched. cli-table3 emits
 // these chars verbatim; ANSI codes are zero-width so column alignment is
-// preserved.
-const ROUNDED_CHARS: Record<string, string> = useColor ? {
+// preserved. Only used when useColor is true; ASCII_CHARS is selected in
+// NO_COLOR mode at the call site.
+const ROUNDED_CHARS: Record<string, string> = {
   top: chalk.gray('─'), 'top-mid': chalk.gray('┬'), 'top-left': chalk.gray('╭'), 'top-right': chalk.gray('╮'),
   bottom: chalk.gray('─'), 'bottom-mid': chalk.gray('┴'), 'bottom-left': chalk.gray('╰'), 'bottom-right': chalk.gray('╯'),
   left: chalk.gray('│'), 'left-mid': chalk.gray('├'), mid: chalk.gray('─'), 'mid-mid': chalk.gray('┼'),
   right: chalk.gray('│'), 'right-mid': chalk.gray('┤'), middle: chalk.gray('│')
-} : {
-  top: '─', 'top-mid': '┬', 'top-left': '╭', 'top-right': '╮',
-  bottom: '─', 'bottom-mid': '┴', 'bottom-left': '╰', 'bottom-right': '╯',
-  left: '│', 'left-mid': '├', mid: '─', 'mid-mid': '┼',
-  right: '│', 'right-mid': '┤', middle: '│'
 }
 
 const NO_BORDER_CHARS: Record<string, string> = {
@@ -238,16 +234,7 @@ export function table<T extends Record<string, unknown>>(
   columns: TableColumn<T>[],
   opts: TableOptions = {}
 ): void {
-  if (rows.length === 0) {
-    const msg = '(no results)'
-    if (opts.title !== undefined) {
-      console.log()
-      const accent = useColor ? chalk.bold.cyan('◆ ') : '◆ '
-      console.log('  ' + accent + (useColor ? chalk.bold(opts.title) : opts.title))
-    }
-    console.log(dim('  ' + msg))
-    return
-  }
+  const isEmpty = rows.length === 0
 
   const cells: string[][] = rows.map((row) =>
     columns.map((col) => {
@@ -300,7 +287,9 @@ export function table<T extends Record<string, unknown>>(
     out.push('  ' + accent + (useColor ? chalk.bold(opts.title) : opts.title))
   }
   out.push(t.toString())
-  if (opts.count === true) {
+  if (isEmpty) {
+    out.push(dim('  (no results)'))
+  } else if (opts.count === true) {
     const countText = `${rows.length} ${rows.length === 1 ? 'result' : 'results'}`
     out.push(C.muted('  ' + countText))
   }
