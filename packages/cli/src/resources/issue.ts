@@ -9,7 +9,7 @@ import { resolveAssignee, generateId, uploadMarkup, updateMarkup, looksLikeRawMa
 import { withSpinner } from '../output/progress.js'
 import { deleteDoc } from '../commands/dry-run.js'
 import { CliError, ExitCode } from '../output/errors.js'
-import { readEnv } from '../auth/env.js'
+import { readEnv, isOpinionated } from '../auth/env.js'
 import { pickProject } from '../auth/prompts.js'
 
 type Issue = Doc & {
@@ -455,6 +455,46 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
     const title = opts.title
     if (!title) throw new CliError(ExitCode.Validation, 'missing --title')
 
+    // Master switch: --minimal OR HULY_OPINIONATED=0 both disable.
+    const opinionated = !opts.minimal && isOpinionated()
+
+    // Opinionated default: assign the issue to the current user by email.
+    // The CLI prefers email (NOT `me`) so the resulting Issue doc has the
+    // same `assignee` shape as issues created from the web UI, and so the
+    // server-side ProjectToDo cascade fires (auto-creates a todo on the
+    // issue if status category is `ToDo` or `Active`).
+    //
+    // We resolve the current user's email BEFORE constructing `data` so
+    // the caller can still pass --assignee to override.
+    let effectiveAssignee: string | undefined = opts.assignee
+    if (effectiveAssignee === undefined && opinionated) {
+      try {
+        // Account shape (see hcengineering/api-client Account type):
+        //   { uuid, role, primarySocialId, socialIds, fullSocialIds }
+        // `fullSocialIds` is the array of SocialIdentity records; the one
+        // with type "email" carries the user's email address. Older SDK
+        // builds expose `account.email` directly, so check both. Use
+        // optional chaining because `getAccount()` can legitimately
+        // return null/undefined in some auth-failure paths; we want a
+        // graceful "unassigned" fallback rather than a TypeError here.
+        const account = await client.getAccount() as unknown as {
+          email?: string
+          fullSocialIds?: Array<{ type?: string; value?: string }>
+        } | null | undefined
+        const directEmail = account?.email
+        const socialEmail = account?.fullSocialIds?.find((s) => s.type === 'email')?.value
+        // Pick the first non-empty value: `??` preserves `''` so an empty
+        // account.email would short-circuit the SocialIdentity fallback.
+        const candidates = [directEmail, socialEmail]
+        const resolvedEmail = candidates.find((v): v is string => typeof v === 'string' && v !== '')
+        if (resolvedEmail !== undefined) {
+          effectiveAssignee = resolvedEmail
+        }
+      } catch {
+        // No account available — fall through; the issue will be unassigned.
+      }
+    }
+
     // Server-side triggers don't assign `number`/`identifier` on issue create
     // (see `OnIssueUpdate` in server-plugins/tracker-resources). The reference
     // front-end does it in CreateIssue.svelte: $inc the project's sequence,
@@ -488,9 +528,35 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
     }
     const identifier = `${project.identifier}-${number}`
 
+    // Opinionated default: when the user does not pin a status explicitly,
+    // land the new issue in the lowest-rank status of category `ToDo`
+    // (typically `To do`). Without this, the default is the workspace's
+    // lowest-rank status overall — usually `Backlog` — which means most
+    // issues sit invisible until someone drags them. Pinning to `ToDo`
+    // also fires the server-side ProjectToDo cascade when an assignee is
+    // set, since `ToDo` is one of the two categories that triggers it.
     const status = opts.statusCategory !== undefined
       ? await resolveStatusByCategory(client, project, opts.statusCategory)
-      : await resolveStatus(client, project, opts.status)
+      : opts.status !== undefined
+        ? await resolveStatus(client, project, opts.status)
+        : opinionated
+          ? await (async (): Promise<Ref<Doc>> => {
+              try {
+                return await resolveStatusByCategory(client, project, 'ToDo')
+              } catch (err) {
+                // Narrow the fallback to the documented "no statuses in
+                // category `ToDo`" case. Anything else (transport /
+                // auth / server errors) is a real failure that the
+                // caller needs to see — silently masking it would hide
+                // connectivity issues from the user and make the cascade
+                // appear to work when the category lookup never ran.
+                if (err instanceof CliError && err.code === ExitCode.NotFound) {
+                  return await resolveStatus(client, project, undefined)
+                }
+                throw err
+              }
+            })()
+          : await resolveStatus(client, project, opts.status)
     const priority = await resolvePriority(client, opts.priority)
     const body = await readBody(opts)
     const dueDate = opts.due ? parseDate(opts.due, '--due') : null
@@ -598,7 +664,7 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
         },
         ...((parentIssue.parents ?? []) as Array<{ parentId: string; identifier: string; parentTitle: string; space: string }>)
       ]
-    } else if (!opts.minimal) {
+    } else if (opinionated) {
       // CLI-12: top-level issues must have parent=null so that
       // `issue list --parent null` matches them. Setting parent=project._id
       // would create a phantom parent and break the CLI's own filter.
@@ -613,12 +679,22 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
       data.attachedTo = 'tracker:ids:NoParent' as Ref<Doc>
     }
 
-    if (!opts.minimal) {
+    if (opinionated) {
       data.project = (project._id as unknown) as Ref<Project>
     }
 
-    if (opts.assignee) {
-      data.assignee = await resolveAssignee(client, opts.assignee, { url: opts.url, workspace: opts.workspace }) as Ref<Doc>
+    if (effectiveAssignee !== undefined) {
+      // Explicit empty string (`--assignee ''`) means "leave unassigned",
+      // distinct from "not specified" (which triggers the opinionated
+      // default above). resolveAssignee('') would treat it as `me` and
+      // silently assign to the current user — that's the bug we're
+      // working around here. Set `data.assignee = null` explicitly so
+      // the server's ProjectToDo cascade does NOT fire.
+      if (effectiveAssignee === '') {
+        data.assignee = null
+      } else {
+        data.assignee = await resolveAssignee(client, effectiveAssignee, { url: opts.url, workspace: opts.workspace }) as Ref<Doc>
+      }
     }
 
     if (opts.dryRun) {

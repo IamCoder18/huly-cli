@@ -94,6 +94,43 @@ export function skipBootstrap(env: NodeJS.ProcessEnv = process.env): boolean {
 }
 
 /**
+ * Master switch for opinionated defaults.
+ *
+ * Defaults to `true` (opinionated ON). Set `HULY_OPINIONATED=0` to disable
+ * ALL of the CLI's silent defaults — equivalent to passing `--minimal` on
+ * every command. Other recognized values that DISABLE: "false", "no", "off"
+ * (case-insensitive). Anything else (or unset) keeps the opinionated
+ * defaults enabled.
+ *
+ * What "opinionated" currently covers:
+ *   - `project create`: sets `type = tracker:ids:ClassingProjectType`
+ *     (the server-side name has a preexisting typo — "Classing" not
+ *     "Classic") so the project supports the issue↔action cascade.
+ *   - `issue create`: status defaults to category `ToDo` (lowest-rank
+ *     status in the `ToDo` category, usually `To do`) instead of the
+ *     workspace's lowest-rank status overall (usually `Backlog`).
+ *   - `issue create`: assignee defaults to the current user's email.
+ *   - `card create`: --card-space defaults to the first available
+ *     CardSpace instead of the literal `card:space:Default` (which the
+ *     skill docs warn usually does not exist).
+ *   - All existing smart defaults previously gated by `--minimal`
+ *     (skipping auto-Teamspace, auto-IssueStatus seeding, auto-fill of
+ *     `parent: null` / `space: project._id` on issue create, omitting
+ *     `description` on project create, etc.).
+ *
+ * Note: `members: [<current-user>]` on `project create` is NEVER skipped —
+ * it's required by `SpaceSecurityMiddleware` so the creator can findAll
+ * their own project (not a UX default; a security invariant).
+ */
+export function isOpinionated(env: NodeJS.ProcessEnv = process.env): boolean {
+  const v = env.HULY_OPINIONATED
+  if (v === undefined || v === '') return true
+  const lower = v.toLowerCase()
+  if (lower === '0' || lower === 'false' || lower === 'no' || lower === 'off') return false
+  return true
+}
+
+/**
  * Apply `HULY_INSECURE_TLS=1` to the global Node TLS state so that ALL
  * outgoing HTTPS requests (including those performed by Node's built-in
  * undici `fetch` and SDK code that ignores our `agent` option) skip TLS

@@ -8,10 +8,20 @@ import { withSpinner } from '../output/progress.js'
 import { deleteDoc } from '../commands/dry-run.js'
 import { CliError, ExitCode } from '../output/errors.js'
 import { pickProject } from '../auth/prompts.js'
-import { readEnv } from '../auth/env.js'
+import { readEnv, isOpinionated } from '../auth/env.js'
 import type { GlobalOpts } from '../cli.js'
 import { parseSet } from './project.parse.js'
 import { resolveProjectForCommand } from './_project-resolve.js'
+
+/**
+ * Server-side ID of the classic tracker ProjectType. Note the typo:
+ * "Classing" (not "Classic") — preserved verbatim in the codebase and
+ * in the platform's data model. Setting `Project.type` to this ref makes
+ * the project participate in the issue↔action cascade (auto-creates a
+ * `ProjectToDo` when an issue is assigned in `ToDo`/`Active` category,
+ * auto-advances/rolls-back status on todo lifecycle, etc.).
+ */
+const CLASSIC_PROJECT_TYPE_ID = 'tracker:ids:ClassingProjectType'
 
 type Project = Doc & {
   name: string
@@ -87,6 +97,8 @@ export async function createProject(opts: {
 }): Promise<void> {
   if (!opts.name) throw new CliError(ExitCode.Validation, 'missing --name')
   if (!opts.identifier) throw new CliError(ExitCode.Validation, 'missing --identifier (e.g. HULY)')
+  // The env var defaults to ON. --minimal OR HULY_OPINIONATED=0 both disable.
+  const opinionated = !opts.minimal && isOpinionated()
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   let currentAccountUuid: string
   try {
@@ -116,12 +128,23 @@ export async function createProject(opts: {
     defaultTimeReportDay: 0, // 0 = TimeReportDayType.PreviousWorkDay
     defaultAssignee: null
   }
-  if (opts.minimal) {
+  // Opinionated default: pin the project type to the classic tracker
+  // ProjectType. Without this, projects may be created without a `type`
+  // and miss the issue↔action cascade (auto-todo on assign, status
+  // auto-advance/rollback on todo lifecycle, etc.). The "Classing" ID is
+  // a server-side typo preserved verbatim — see CLASSIC_PROJECT_TYPE_ID.
+  if (opinionated) {
+    data.type = CLASSIC_PROJECT_TYPE_ID as Ref<Doc>
+  }
+  if (!opinionated && opts.description === undefined) {
     delete data.description
     // Note: members MUST stay set to the current user UUID, otherwise
     // SpaceSecurityMiddleware.mergeQuery returns { $in: [] } and the
     // creator can never findAll the project. --minimal only controls
-    // user-facing description, not security-critical fields.
+    // user-facing description, not security-critical fields. An
+    // explicitly supplied --description '' is preserved verbatim so
+    // callers can distinguish "omitted" from "explicit empty string"
+    // downstream.
   }
   if (opts.dryRun) {
     console.log('would create project:')
