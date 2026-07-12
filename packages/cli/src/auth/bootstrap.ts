@@ -232,7 +232,10 @@ export async function bootstrapEmployee(args: BootstrapArgs): Promise<BootstrapR
   return await work
 }
 
-async function bootstrapFromAccount(args: BootstrapArgs, account: any): Promise<BootstrapResult> {
+async function bootstrapFromAccount(
+  args: BootstrapArgs,
+  account: NonNullable<Awaited<ReturnType<PlatformClient['getAccount']>>>
+): Promise<BootstrapResult> {
   if (!isWorkspaceAccountKnownAbsent(args.url, args.workspace, account.uuid)) {
     const file = await loadBootstrap()
     // Scope by (host, workspace, accountUuid) — a sibling account's
