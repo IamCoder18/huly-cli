@@ -62,21 +62,23 @@ huly issue create \
   --parent TSK-42                # or 'parent:null' or just omit for top-level
 ```
 
-Defaults the CLI silently applies (use `--minimal` to skip most):
+Defaults the CLI silently applies (use `--minimal` or `HULY_OPINIONATED=0` to skip the opinionated ones):
 
 | Default | What gets set | How to skip |
 |---|---|---|
-| `status` | lowest-rank IssueStatus (usually Backlog) | `--status "To do"` |
+| `status` | lowest-rank IssueStatus in category `ToDo` (usually `To do`) — NOT `Backlog` | `--status "Backlog"`, `--status "Done"`, etc. |
 | `priority` | `Normal` or first available | `--priority High` |
 | `task-type` | first available, else `tracker:issue:default` | `--task-type "Story"` |
 | `parent` | `null` (top-level) | `--parent TSK-42` |
 | `members` (on project) | current user added | cannot skip on `project create` |
 | `description` | `''` | `--body "…"` |
-| `assignee` | unset | `--assignee <email>` |
+| `assignee` | **current user's email** (resolved from `getAccount().fullSocialIds`) | `--assignee <other-email>` to override; `--assignee ''` to leave unassigned |
 | issue number | `$inc` the project's `sequence` field, before create | n/a (automatic) |
 | `--body` vs `--description` | both stored; `--body` is the rich Markdown | pass one or the other |
 
-**Critical:** creating an issue with `--assignee` while status is `ToDo` or `Active` triggers the server-side auto-creation of a `ProjectToDo` (classic projects only). See the state machine below.
+**Opinionated defaults master switch:** every default above EXCEPT the issue-number `$inc` and the `members` injection is gated by `HULY_OPINIONATED` (default `1`). Setting `HULY_OPINIONATED=0` (or `false` / `no` / `off`) — or passing `--minimal` on the command — disables all of them. With opinionated defaults OFF, `status` reverts to the workspace's lowest-rank status overall (usually `Backlog`), `assignee` is unset, `parent` is omitted entirely, `space` is omitted entirely, and `description` is omitted from `project create`.
+
+**Critical:** creating an issue with `--assignee` (or with the opinionated default assignee) while status category is `ToDo` or `Active` triggers the server-side auto-creation of a `ProjectToDo` (classic projects only). With the opinionated default ON, this fires on every `issue create` that doesn't pass `--assignee ''` because the status lands in `ToDo` AND the assignee resolves to you — see the state machine below.
 
 **Idempotency:** if `huly issue create` returns `duplicate` / `exists` / `already`, the CLI re-fetches and returns the existing `_id`. But the issue number is NOT rolled back on that path — the next new issue still gets the next number.
 
@@ -297,6 +299,8 @@ ALL of the following happen server-side via mixins on classic projects (`Project
 - `ToDo` and `Active` cause `ProjectToDo` creation (combined with `--assignee`).
 - `Won` (typically `Done`) and `Lost` (typically `Canceled`) cause open todos to close.
 - `UnStarted` (typically `Backlog`) does neither.
+
+**Opinionated default:** `huly issue create` without an explicit `--status` lands the new issue in the lowest-rank status of category `ToDo` (usually `To do` / `Todo`). Pin to `Backlog` with `--status Backlog`. Disable with `--minimal` or `HULY_OPINIONATED=0`. This is intentional — combined with the opinionated default `--assignee <current-user-email>`, it means a bare `huly issue create --project X --title "…"` fires the full ProjectToDo cascade. To suppress that, pass `--assignee ''` (explicit empty string) — empty is treated as "no assignee", distinct from "not specified".
 
 Filter with `--status <label>` (case-insensitive exact on label/name) or `--status-category <UnStarted|ToDo|Active|Won|Lost>` (the accepted-value list is case-sensitive, but matching against stored categories is case-insensitive).
 

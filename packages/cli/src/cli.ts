@@ -129,7 +129,7 @@ function attachGlobalOpts(cmd: Command, opts: { skipNonInteractive?: boolean } =
     .option('--ci', 'CI mode (JSON output)')
     .option('--markdown', 'output body as markdown (warns and falls back if server cannot convert; --raw-markup on read commands for raw output)')
     .option('--dry-run', 'print intended tx, do not apply')
-    .option('--minimal', 'minimal payload (no smart defaults)')
+    .option('--minimal', 'minimal payload (no smart defaults; equivalent to HULY_OPINIONATED=0 for this invocation)')
     .option('-y, --yes', 'skip confirmation prompts')
   if (!opts.skipNonInteractive) {
     c = c.option('--non-interactive', 'disable interactive prompts')
@@ -151,7 +151,7 @@ Global options (also available on parent commands):
   --json / --ci         output JSON
   --markdown            output body as markdown (warns on conversion failure)
   --dry-run             print intended tx, do not apply
-  --minimal             minimal payload (no smart defaults)
+  --minimal             minimal payload (no smart defaults; equivalent to HULY_OPINIONATED=0 for this invocation)
   -y, --yes             skip confirmation prompts
   --non-interactive     disable interactive prompts
 

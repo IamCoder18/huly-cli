@@ -154,7 +154,7 @@ Full env var cheat sheet and the auth-state machine: `references/auth-and-setup.
 | Read the body of a doc/comment/message as Markdown | `--markdown` | Rendered Markdown. Has a 5s timeout; warns on conversion failure. |
 | Read the raw prosemirror-JSON blob | `--raw-markup` (read commands only) | The literal prosemirror-JSON string stored in MinIO. |
 | See exactly what a write would do before committing | `--dry-run` | Prints the would-be tx JSON, no side effects |
-| Skip smart defaults (no auto-teamspace, no auto-issueStatus seeding) | `--minimal` | Lean writes |
+| Skip smart defaults (no auto-teamspace, no auto-issueStatus seeding, no project-type pinning, no opinionated status/assignee/card-space defaults) | `--minimal` (or `HULY_OPINIONATED=0` env) | Lean writes |
 
 `--ci` is an alias for `--json` today, but signals intent — use it in scripts so future maintainers know you meant "no prompts".
 
@@ -219,16 +219,16 @@ The CLI is opinionated. When you don't specify, it does:
 |---|---|
 | First `huly document create` in a workspace with zero teamspaces | Auto-creates a `General` teamspace |
 | First `huly issue create` in a workspace with zero issue statuses | Auto-seeds 5 defaults (Backlog / To do / In progress / Done / Canceled) into `core:space:Model`. Best-effort; re-run if it silently fails. |
-| `huly issue create --assignee …` in `ToDo`/`Active` category | Auto-creates the first `ProjectToDo` (see state machine above) |
+| `huly issue create --assignee …` in `ToDo`/`Active` category | Auto-creates the first `ProjectToDo` (see state machine above). With opinionated defaults ON, this fires whenever you create an issue without `--assignee ''` because the assignee defaults to you. |
 | `huly dm send --person <email>` | Always creates a new `DirectMessage` doc (no get-or-create; duplicates possible — call `huly dm list --json` first if you care) |
 | `huly channel message send` (server-side) | Sender is added to channel `members` if not already a member. The CLI does NOT do this client-side; if the platform doesn't either, the send will fail for non-members. |
 | `@<name>` in any message/comment body | Server parses via `extractReferences`, auto-adds mentioned person as `Collaborator`, emits inbox notification |
-| `huly project create` | Adds current user as `members[0]` (required by `SpaceSecurityMiddleware` — cannot be skipped) |
+| `huly project create` | Adds current user as `members[0]` (required by `SpaceSecurityMiddleware` — cannot be skipped) AND pins `type = tracker:ids:ClassingProjectType` so the project supports the issue↔action cascade. The `type` pin is part of the opinionated defaults (disable with `--minimal` or `HULY_OPINIONATED=0`). |
 | `huly issue create` body is empty | Stores as raw empty string |
 | Any auto-retry on duplicate | `huly issue create` and `huly project create` retry on `duplicate`/`already`/`exists` and return the existing record's `_id` |
 | `huly action create` without `--attached-to` | Sets `attachedTo` to the resolved Person's `_id` when `--owner <email>` is passed, OR the current user's `account.uuid` when `--owner` is omitted; `attachedToClass` is always `contact:class:Person`. So the todo appears under "my tasks" (or the named owner's personal list), but it is single-parent on the Person — not dual-parent on the issue's `todos` collection (see "The dual-parent trap" above). |
 | `huly calendar create` | Always creates a new `Calendar` doc — no "get-or-create" |
-| `huly card create` without `--card-space` | Defaults to `card:space:Default` literal — **this usually does not exist**; create one first |
+| `huly card create` without `--card-space` | With opinionated defaults ON (default): auto-picks the first available `CardSpace` (the one created earliest). With `HULY_OPINIONATED=0` or `--minimal`: uses the literal `card:space:Default` — **this usually does not exist**; create one first. |
 
 ### Markup rules — `--body` / `--description` / `--markdown` / `--raw-markup`
 

@@ -6,6 +6,7 @@ import { shouldJson, json, table, COLUMNS, withTimeout, success, updated, bulkRe
 import { withSpinner } from '../output/progress.js'
 import { deleteDoc } from '../commands/dry-run.js'
 import { CliError, ExitCode } from '../output/errors.js'
+import { isOpinionated } from '../auth/env.js'
 import { generateId, uploadMarkup, updateMarkup, looksLikeRawMarkup, warnMarkdownFallback, readBodyText } from './_helpers.js'
 
 type CardDoc = Doc & {
@@ -227,6 +228,7 @@ export async function createCard(opts: {
   bodyFile?: string
   description?: string
   parent?: string
+  minimal?: boolean
   json?: boolean
   ci?: boolean
   dryRun?: boolean
@@ -241,12 +243,27 @@ export async function createCard(opts: {
       client,
       classId: CLASS.MasterTag as Ref<Class<Doc>>,
     })
-    const space = opts.cardSpace
-      ? await resolveRef(opts.cardSpace, {
+    const opinionated = !opts.minimal && isOpinionated()
+    // Opinionated default: pick the first available CardSpace instead of
+    // the literal `card:space:Default`, which the SKILL.md flags as
+    // usually-doesn't-exist. Falls back to the literal if the workspace
+    // truly has zero CardSpaces (server will then reject the create with
+    // a clear error message).
+    let resolvedCardSpace: Ref<Space>
+    if (opts.cardSpace) {
+      resolvedCardSpace = await resolveRef(opts.cardSpace, {
         client,
         classId: CLASS.CardSpace as Ref<Class<Doc>>,
       })
-      : ('card:space:Default' as Ref<Space>)
+    } else if (opinionated) {
+      const spaces = (await client.findAll(CLASS.CardSpace as Ref<Class<Doc>>, {}, { limit: 1 })) as Array<Doc & { _id: Ref<Doc> }>
+      resolvedCardSpace = spaces.length > 0
+        ? (spaces[0]._id as unknown as Ref<Space>)
+        : ('card:space:Default' as Ref<Space>)
+    } else {
+      resolvedCardSpace = 'card:space:Default' as Ref<Space>
+    }
+    const space = resolvedCardSpace
 
     let body = ''
     const bodyInput = await readBodyText(opts)

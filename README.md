@@ -302,7 +302,7 @@ huly issue list --workspace prod        # equivalent
 | `--ci` | Alias for `--json`. Same effect; signals non-interactive intent. |
 | `--markdown` | Output body content as rendered Markdown (read commands). Falls back to raw prosemirror-JSON with a stderr warning if conversion fails. |
 | `--dry-run` | Print the tx that would be applied, do not apply |
-| `--minimal` | Skip smart defaults (no auto-Teamspace, no auto-IssueStatus) |
+| `--minimal` | Skip smart defaults (no auto-Teamspace, no auto-IssueStatus, no project-type pinning, no opinionated status/assignee/card-space defaults). Equivalent to setting `HULY_OPINIONATED=0` for this invocation only. |
 | `-y, --yes` | Skip confirmation prompts (required for destructive ops) |
 | `--non-interactive` | Same as `--yes` + disable any interactive prompts |
 
@@ -1535,7 +1535,7 @@ will do when you don't.
 |---|---|---|
 | `huly document create` | A `General` teamspace (type `space-type:default`, members `[]`, description "Default teamspace (auto-created)") | Workspace has zero teamspaces. |
 | `huly issue create` | 5 default `IssueStatus` records (`Backlog`, `To do`, `In progress`, `Done`, `Canceled`) in `core:space:Model` | Workspace has zero `IssueStatus`. |
-| `huly issue create` | First `ProjectToDo` (classic projects only) | `--assignee` set, status `Todo`/`Active`. See cascade table. |
+| `huly issue create` | First `ProjectToDo` (classic projects only) | `--assignee` set OR assignee defaulted to current user, status category `ToDo`/`Active`. See cascade table. |
 | `huly dm create --person <email>` / `huly dm send --person <email>` | A DM with that person (resolves via `resolvePersonId`) | No existing DM with that person. |
 | `huly issue label add <ref> --label <name>` | A `TagElement` in `tags:space:Tag` (first `TagCategory`) | Label doesn't exist yet. |
 | `huly project create` | The current user is added as a `members: [<uuid>]` | Always, unless `--minimal`. |
@@ -1553,12 +1553,15 @@ will do when you don't.
 |---|---|---|
 | `huly project create` | `--sequence` | `0` |
 | `huly project create` | `--members` | `[<current-user-uuid>]` |
-| `huly project create` | `--description` | `''` (omitted with `--minimal`) |
-| `huly issue create` | `--status` | Lowest-rank `IssueStatus` (usually `Backlog`) |
+| `huly project create` | `--description` | `''` (omitted with `--minimal` / `HULY_OPINIONATED=0`) |
+| `huly project create` | `type` | `tracker:ids:ClassingProjectType` (the classic tracker ProjectType — note the server-side typo "Classing"). Without this default, projects may not be classic and miss the issue↔action cascade. Pass `HULY_OPINIONATED=0` or `--minimal` to skip. |
+| `huly issue create` | `--status` | Lowest-rank `IssueStatus` in category `ToDo` (usually `To do`). Pin to Backlog with `--status Backlog`. With `HULY_OPINIONATED=0` or `--minimal`, falls back to the lowest-rank status overall (usually `Backlog`). |
+| `huly issue create` | `--assignee` | Current user's email (resolved from `getAccount().fullSocialIds`). Pass `--assignee <other>` to override, `--assignee ''` to leave unassigned. Disabled with `HULY_OPINIONATED=0` or `--minimal`. |
 | `huly issue create` | `--priority` | `Normal` if it exists in the workspace; else first priority; else omitted |
 | `huly issue create` | `--task-type` | `tracker:issue:default` |
-| `huly issue create` | `parent` | `null` (top-level), unless `--minimal` |
-| `huly issue create` | `space` | `project._id` (unless `--minimal`) |
+| `huly issue create` | `parent` | `null` (top-level), unless `--minimal` / `HULY_OPINIONATED=0` |
+| `huly issue create` | `space` | `project._id` (unless `--minimal` / `HULY_OPINIONATED=0`) |
+| `huly card create` | `--card-space` | First available `CardSpace` (`findAll` returns the one created earliest). Falls back to literal `card:space:Default` if zero exist. With `HULY_OPINIONATED=0` or `--minimal`, uses the literal `card:space:Default` directly (which often does not exist — see the SKILL.md warning). |
 | `huly calendar create-calendar` | `--access` | `public` (one of `owner` / `team` / `public`) |
 | `huly calendar create-calendar` | `--private` | `false` |
 | `huly schedule create` | `--duration` | `30` (minutes) |
@@ -1728,6 +1731,7 @@ These are CLI-user-facing, not server-admin-facing.
 | `HULY_NONINTERACTIVE` | — | `1` disables all prompts |
 | `HULY_INSECURE_TLS` | — | `1` disables TLS verification globally (sets `NODE_TLS_REJECT_UNAUTHORIZED=0` + `https.globalAgent.options.rejectUnauthorized = false`) |
 | `HULY_SKIP_BOOTSTRAP` | — | `1` skips the automatic workspace-identity bootstrap that runs on every `connectCli`. Set this in CI / benchmarks / when you want to leave a workspace untouched. Without it, the CLI mirrors the web UI's `ensureEmployee()` flow on first connect per `(host, workspace, accountUuid)` and writes a per-account marker to `~/.config/huly/bootstrap.json` so `--assignee <email>` lookups, the `ProjectToDo` cascade, and role-gated queries work without ever opening the workspace in a browser. |
+| `HULY_OPINIONATED` | `1` | Master switch for the CLI's opinionated defaults. Set to `0` (also `false` / `no` / `off`, case-insensitive) to disable ALL of: project-type pinning to the classic tracker ProjectType, issue status defaulting to category `ToDo`, issue assignee defaulting to the current user by email, and `card create` auto-picking the first available CardSpace. Equivalent to passing `--minimal` on every command. Anything else (or unset) keeps the defaults enabled. |
 | `NO_COLOR` | — | Disables chalk colors |
 | `XDG_CONFIG_HOME` | `~/.config` | Base for credential/config files |
 | `CI` | — | Triggers JSON output and disables spinner |
