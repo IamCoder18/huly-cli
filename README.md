@@ -189,6 +189,7 @@ Configuration comes from (in precedence order):
 |---|---|
 | `~/.config/huly/.env` | Login + URL config (mode 0600 recommended) |
 | `~/.config/huly/credentials.json` | Cached JWT tokens (mode 0600) |
+| `~/.config/huly/bootstrap.json` | Per-`(host, workspace, accountUuid)` marker for completed workspace-identity bootstrap (mode 0600). Delete the file (or just the affected `host -> workspace -> accountUuid` entry) to force a re-bootstrap. |
 | `~/.config/huly/active-workspace` | Last-used workspace name |
 
 The CLI creates these on first run. Deleting `credentials.json` forces
@@ -1726,6 +1727,7 @@ These are CLI-user-facing, not server-admin-facing.
 | `HULY_ENV_FILE` | `~/.config/huly/.env` | Path to the dotenv file |
 | `HULY_NONINTERACTIVE` | — | `1` disables all prompts |
 | `HULY_INSECURE_TLS` | — | `1` disables TLS verification globally (sets `NODE_TLS_REJECT_UNAUTHORIZED=0` + `https.globalAgent.options.rejectUnauthorized = false`) |
+| `HULY_SKIP_BOOTSTRAP` | — | `1` skips the automatic workspace-identity bootstrap that runs on every `connectCli`. Set this in CI / benchmarks / when you want to leave a workspace untouched. Without it, the CLI mirrors the web UI's `ensureEmployee()` flow on first connect per `(host, workspace, accountUuid)` and writes a per-account marker to `~/.config/huly/bootstrap.json` so `--assignee <email>` lookups, the `ProjectToDo` cascade, and role-gated queries work without ever opening the workspace in a browser. |
 | `NO_COLOR` | — | Disables chalk colors |
 | `XDG_CONFIG_HOME` | `~/.config` | Base for credential/config files |
 | `CI` | — | Triggers JSON output and disables spinner |

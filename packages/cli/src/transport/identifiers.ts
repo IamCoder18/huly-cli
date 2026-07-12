@@ -10,7 +10,11 @@ export const CLASS = {
   Permission: 'core:class:Permission' as const,
   Association: 'core:class:Association' as const,
   Relation: 'core:class:Relation' as const,
+
+  // contact
   Person: 'contact:class:Person' as const,
+  SocialIdentity: 'contact:class:SocialIdentity' as const,
+  Employee: 'contact:mixin:Employee' as const,
 
   // tracker
   Project: 'tracker:class:Project' as const,
@@ -72,7 +76,8 @@ export const SPACE = {
   Tx: 'core:space:Tx' as const,
   PersonalTaskList: 'task:space:MyTasks' as const,
   DocumentRoot: 'document:space:Document' as const,
-  CalendarPersonal: 'calendar:space:Personal' as const
+  CalendarPersonal: 'calendar:space:Personal' as const,
+  Contacts: 'contact:space:Contacts' as const
 } as const
 
 export type ClassRef = (typeof CLASS)[keyof typeof CLASS]
