@@ -54,9 +54,11 @@
     "@hcengineering/text-core": "^0.7.423",
     "@hcengineering/text-markdown": "^0.7.423",
     "chalk": "^5.3.0",
+    "cli-table3": "^0.6.5",
     "commander": "^15.0.0",
     "inquirer": "^14.0.2",
     "ora": "^9.4.1",
+    "string-width": "^4.2.3",
     "ws": "^8.18.0"
   },
   "devDependencies": {

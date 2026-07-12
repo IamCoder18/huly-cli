@@ -20,10 +20,10 @@ export async function withSpinner<T>(
   const s = spinner(label, opts)
   try {
     const result = await fn()
-    if (s) s.succeed()
+    if (s) s.stop()
     return result
   } catch (err) {
-    if (s) s.fail((err as Error)?.message ?? String(err))
+    if (s) s.stop()
     throw err
   }
 }

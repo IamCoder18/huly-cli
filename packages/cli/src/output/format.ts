@@ -1,4 +1,6 @@
 import chalk from 'chalk'
+import Table from 'cli-table3'
+import stringWidth from 'string-width'
 
 const useColor = !process.env.NO_COLOR && process.stdout.isTTY !== false
 const noColor = (s: string): string => s
@@ -53,17 +55,43 @@ export interface TableOptions {
   noBorder?: boolean
 }
 
+const ASCII_CHARS: Record<string, string> = {
+  top: '-', 'top-mid': '+', 'top-left': '+', 'top-right': '+',
+  bottom: '-', 'bottom-mid': '+', 'bottom-left': '+', 'bottom-right': '+',
+  left: '|', 'left-mid': '+', mid: '-', 'mid-mid': '+',
+  right: '|', 'right-mid': '+', middle: '|'
+}
+
+const ROUNDED_CHARS: Record<string, string> = {
+  top: '─', 'top-mid': '┬', 'top-left': '╭', 'top-right': '╮',
+  bottom: '─', 'bottom-mid': '┴', 'bottom-left': '╰', 'bottom-right': '╯',
+  left: '│', 'left-mid': '├', mid: '─', 'mid-mid': '┼',
+  right: '│', 'right-mid': '┤', middle: '│'
+}
+
+const NO_BORDER_CHARS: Record<string, string> = {
+  top: '', 'top-mid': '', 'top-left': '', 'top-right': '',
+  bottom: '', 'bottom-mid': '', 'bottom-left': '', 'bottom-right': '',
+  left: '', 'left-mid': '', mid: '', 'mid-mid': '',
+  right: '', 'right-mid': '', middle: ''
+}
+
+const BORDER_REGEX = /[─│╭╮╰╯┬┴├┤┼]/g
+function grayBorders(s: string): string {
+  if (!useColor) return s
+  return s.replace(BORDER_REGEX, (m) => chalk.gray(m))
+}
+
 const SHARP = useColor ? '│' : '|'
 const THIN = useColor ? '─' : '-'
 const TLCOR = useColor ? '┌' : '+'
 const TRCOR = useColor ? '┐' : '+'
 const BLCOR = useColor ? '└' : '+'
 const BRCOR = useColor ? '┘' : '+'
-const TMID = useColor ? '┬' : '+'
-const BMID = useColor ? '┴' : '+'
-const LMID = useColor ? '├' : '+'
-const RMID = useColor ? '┤' : '+'
-const CROSS = useColor ? '┼' : '+'
+
+function stripAnsi(s: string): string {
+  return s.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '')
+}
 
 function stripRef(value: unknown): string {
   if (value == null) return ''
@@ -140,6 +168,25 @@ function colorizeStatus(s: string): string {
   return stripped
 }
 
+const STATUS_BADGE: Record<string, { bg: string; fg: string; glyph: string }> = {
+  todo:      { bg: 'bgYellow', fg: 'black', glyph: '○' },
+  active:    { bg: 'bgCyan',   fg: 'black', glyph: '●' },
+  won:       { bg: 'bgGreen',  fg: 'black', glyph: '✓' },
+  lost:      { bg: 'bgRed',    fg: 'white', glyph: '✗' },
+  unstarted: { bg: 'bgWhite',  fg: 'gray',  glyph: '◌' }
+}
+
+export function statusBadge(s: string): string {
+  if (!s) return C.none()
+  const stripped = stripRef(s)
+  const style = STATUS_BADGE[stripped.toLowerCase()]
+  if (!style) return stripped
+  if (!useColor) return `${style.glyph} ${stripped}`
+  const bgFn = (chalk as unknown as Record<string, Record<string, (s: string) => string>>)[style.bg]
+  const colorized = bgFn[style.fg](` ${style.glyph} ${stripped} `)
+  return colorized
+}
+
 function colorizePriority(s: string): string {
   if (!s) return C.none()
   const stripped = stripRef(s)
@@ -183,48 +230,6 @@ function priorityGlyph(s: string): string {
   return '·'
 }
 
-function calcWidth(rows: string[][], header: string, requested: number | undefined): number {
-  if (requested !== undefined) return requested
-  let w = header.length
-  for (const r of rows) {
-    const cellLen = stripAnsi(r.join('')).length
-    if (cellLen > w) w = cellLen
-  }
-  return Math.min(Math.max(w, 3), 60)
-}
-
-function stripAnsi(s: string): string {
-  return s.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '')
-}
-
-function padCell(content: string, width: number, align: 'left' | 'right' | 'center' = 'left'): string {
-  const len = stripAnsi(content).length
-  if (len >= width) return content
-  const pad = width - len
-  if (align === 'right') return ' '.repeat(pad) + content
-  if (align === 'center') {
-    const left = Math.floor(pad / 2)
-    return ' '.repeat(left) + content + ' '.repeat(pad - left)
-  }
-  return content + ' '.repeat(pad)
-}
-
-function renderRow(values: string[], widths: number[], aligns: ('left' | 'right' | 'center')[], border: boolean, useBox: boolean): string {
-  const cells = values.map((v, i) => padCell(v, widths[i] ?? 0, aligns[i] ?? 'left'))
-  if (border) {
-    return (useBox ? SHARP : '|') + ' ' + cells.join(' ' + (useBox ? SHARP : '|') + ' ') + ' ' + (useBox ? SHARP : '|')
-  }
-  return '  ' + cells.join('  ')
-}
-
-function renderSep(widths: number[], border: boolean, left: string, mid: string, right: string, useBox: boolean): string {
-  if (!border) return dim(widths.map((w) => '─'.repeat(w)).join('  '))
-  const sep = (useBox ? THIN : '-').repeat
-  const parts = widths.map((w) => sep(w + 2))
-  const j = useBox ? TMID : '+'
-  return left + parts.join(j) + right
-}
-
 export function table<T extends Record<string, unknown>>(
   rows: T[],
   columns: TableColumn<T>[],
@@ -234,68 +239,72 @@ export function table<T extends Record<string, unknown>>(
     const msg = '(no results)'
     if (opts.title !== undefined) {
       console.log()
-      console.log(C.muted(opts.title))
+      const accent = useColor ? chalk.bold.cyan('◆ ') : '◆ '
+      console.log('  ' + accent + (useColor ? chalk.bold(opts.title) : opts.title))
     }
     console.log(dim('  ' + msg))
     return
   }
 
-  const rendered: string[][] = rows.map((row) =>
+  const cells: string[][] = rows.map((row) =>
     columns.map((col) => {
       try {
-        const v = col.format ? col.format(row) : row[col.key as string] == null ? '' : String(row[col.key as string])
-        return col.color ? col.color(row) ?? v : v
+        const v = col.format
+          ? col.format(row)
+          : row[col.key as string] == null ? '' : String(row[col.key as string])
+        return col.color ? (col.color(row) ?? v) : v
       } catch {
         return ''
       }
     })
   )
 
-  const aligns = columns.map((c) => c.align ?? 'left')
-  const widths = columns.map((c, i) => calcWidth(rendered.map((r) => [r[i] ?? '']), c.header, c.width))
-  const border = !opts.noBorder
-
-  if (opts.title !== undefined) {
-    const title = C.bold('  ' + opts.title)
-    if (border) {
-      const totalWidth = widths.reduce((a, b) => a + b + 3, -1)
-      console.log(TLCOR + THIN.repeat(totalWidth) + TRCOR)
-      console.log(SHARP + ' ' + C.emphasis(opts.title) + ' '.repeat(Math.max(0, totalWidth - stripAnsi(opts.title).length - 1)) + SHARP)
-      console.log(LMID + renderSep(widths, false, '', CROSS, RMID, true).slice(1, -1).replace(/[┌┐]/g, '├').replace(/[─┬]/g, '─'))
-    } else {
-      console.log(title)
+  // Column widths: honor explicit `width` as a floor, grow to fit the widest
+  // cell (ANSI/emoji-aware via string-width), and cap at 40 to keep any one
+  // column from dominating the table. cli-table3's colWidths includes padding.
+  const MAX_COL_WIDTH = 40
+  const colWidths: Array<number | null> = columns.map((c, i) => {
+    let maxLen = c.header.length
+    for (const row of cells) {
+      const len = stringWidth(row[i] ?? '')
+      if (len > maxLen) maxLen = len
     }
+    const target = c.width !== undefined ? Math.max(c.width, maxLen) : maxLen
+    const capped = Math.min(target, MAX_COL_WIDTH)
+    return capped + 2
+  })
+  const colAligns = columns.map((c) => c.align ?? 'left')
+
+  const t = new Table({
+    head: columns.map((c) => useColor ? chalk.bold.cyan(c.header) : c.header),
+    colWidths,
+    colAligns,
+    wordWrap: true,
+    wrapOnWordBoundary: true,
+    style: { head: [], border: [] },
+    chars: opts.noBorder === true
+      ? NO_BORDER_CHARS
+      : (!useColor ? ASCII_CHARS : ROUNDED_CHARS)
+  })
+
+  for (const row of cells) {
+    t.push(row)
   }
 
-  const headerRow = renderRow(columns.map((c) => c.header), widths, aligns, border, true)
-  console.log(border ? SHARP + ' ' + columns.map((c, i) => C.emphasis(padCell(c.header, widths[i] ?? 0, aligns[i] ?? 'left'))).join(' ' + SHARP + ' ') + ' ' + SHARP : '  ' + columns.map((c, i) => C.emphasis(padCell(c.header, widths[i] ?? 0, aligns[i] ?? 'left'))).join('  '))
-
-  if (border) {
-    const sep = widths.map((w) => (useColor ? '─' : '-').repeat(w + 2))
-    const j = useColor ? '┼' : '+'
-    console.log(LMID + sep.join(j) + RMID)
-  } else {
-    console.log(renderSep(widths, false, '', '', '', true))
+  const out: string[] = []
+  if (opts.title !== undefined) {
+    const accent = useColor ? chalk.bold.cyan('◆ ') : '◆ '
+    out.push('  ' + accent + (useColor ? chalk.bold(opts.title) : opts.title))
   }
-
-  for (const r of rendered) {
-    console.log(renderRow(r, widths, aligns, border, true))
-  }
-
-  if (border) {
-    const sep = widths.map((w) => (useColor ? '─' : '-').repeat(w + 2))
-    const j = useColor ? '┴' : '+'
-    console.log(BLCOR + sep.join(j) + BRCOR)
-  }
-
+  out.push(grayBorders(t.toString()))
   if (opts.count === true) {
     const countText = `${rows.length} ${rows.length === 1 ? 'result' : 'results'}`
-    console.log(C.muted('  ' + countText))
+    out.push(C.muted('  ' + countText))
   }
-
   if (opts.footer !== undefined) {
-    console.log(C.muted('  ' + opts.footer))
+    out.push(C.muted('  ' + opts.footer))
   }
+  console.log(out.join('\n'))
 }
 
 export function kv(rows: Array<[string, string | undefined | null]>, opts: { title?: string } = {}): void {
@@ -426,10 +435,7 @@ export const COLUMNS = {
       const t = trim((r as Record<string, unknown>).title, 80)
       return t || C.muted('(untitled)')
     } },
-    { key: 'status', header: 'STATUS', width: 14, format: (r) => {
-      const s = (r as Record<string, unknown>).status
-      return `${statusGlyph(String(s ?? ''))} ${colorizeStatus(String(s ?? ''))}`
-    } },
+    { key: 'status', header: 'STATUS', format: (r) => statusBadge(String((r as Record<string, unknown>).status ?? '')) },
     { key: 'priority', header: 'PRIORITY', width: 11, align: 'center', format: (r) => {
       const p = (r as Record<string, unknown>).priority
       return priorityGlyph(String(p ?? ''))
