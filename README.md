@@ -1535,7 +1535,7 @@ will do when you don't.
 |---|---|---|
 | `huly document create` | A `General` teamspace (type `space-type:default`, members `[]`, description "Default teamspace (auto-created)") | Workspace has zero teamspaces. |
 | `huly issue create` | 5 default `IssueStatus` records (`Backlog`, `To do`, `In progress`, `Done`, `Canceled`) in `core:space:Model` | Workspace has zero `IssueStatus`. |
-| `huly issue create` | First `ProjectToDo` (classic projects only) | `--assignee` set OR assignee defaulted to current user, status category `ToDo`/`Active`. See cascade table. |
+| `huly issue create` | First `ProjectToDo` (classic projects only) | `--assignee` is non-empty (explicitly set, or defaulted to the current user by the opinionated default) AND status category is `ToDo`/`Active`. An explicit `--assignee ''` suppresses the cascade. See cascade table. |
 | `huly dm create --person <email>` / `huly dm send --person <email>` | A DM with that person (resolves via `resolvePersonId`) | No existing DM with that person. |
 | `huly issue label add <ref> --label <name>` | A `TagElement` in `tags:space:Tag` (first `TagCategory`) | Label doesn't exist yet. |
 | `huly project create` | The current user is added as a `members: [<uuid>]` | Always (security invariant — required by `SpaceSecurityMiddleware` so the creator can `findAll` their own project). Not gated by `--minimal` or `HULY_OPINIONATED=0`. |
