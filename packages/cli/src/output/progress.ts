@@ -23,7 +23,7 @@ export async function withSpinner<T>(
     if (s) s.stop()
     return result
   } catch (err) {
-    if (s) s.stop()
+    if (s) s.fail((err as Error)?.message ?? String(err))
     throw err
   }
 }

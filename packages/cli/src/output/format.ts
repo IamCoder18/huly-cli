@@ -62,7 +62,18 @@ const ASCII_CHARS: Record<string, string> = {
   right: '|', 'right-mid': '+', middle: '|'
 }
 
-const ROUNDED_CHARS: Record<string, string> = {
+// Rounded unicode borders. Each char is pre-wrapped in chalk.gray() so the
+// table frame renders gray directly — no regex post-processing, so any
+// box-drawing chars that legitimately appear inside user-supplied cell
+// content (titles, descriptions, etc.) are left untouched. cli-table3 emits
+// these chars verbatim; ANSI codes are zero-width so column alignment is
+// preserved.
+const ROUNDED_CHARS: Record<string, string> = useColor ? {
+  top: chalk.gray('─'), 'top-mid': chalk.gray('┬'), 'top-left': chalk.gray('╭'), 'top-right': chalk.gray('╮'),
+  bottom: chalk.gray('─'), 'bottom-mid': chalk.gray('┴'), 'bottom-left': chalk.gray('╰'), 'bottom-right': chalk.gray('╯'),
+  left: chalk.gray('│'), 'left-mid': chalk.gray('├'), mid: chalk.gray('─'), 'mid-mid': chalk.gray('┼'),
+  right: chalk.gray('│'), 'right-mid': chalk.gray('┤'), middle: chalk.gray('│')
+} : {
   top: '─', 'top-mid': '┬', 'top-left': '╭', 'top-right': '╮',
   bottom: '─', 'bottom-mid': '┴', 'bottom-left': '╰', 'bottom-right': '╯',
   left: '│', 'left-mid': '├', mid: '─', 'mid-mid': '┼',
@@ -74,12 +85,6 @@ const NO_BORDER_CHARS: Record<string, string> = {
   bottom: '', 'bottom-mid': '', 'bottom-left': '', 'bottom-right': '',
   left: '', 'left-mid': '', mid: '', 'mid-mid': '',
   right: '', 'right-mid': '', middle: ''
-}
-
-const BORDER_REGEX = /[─│╭╮╰╯┬┴├┤┼]/g
-function grayBorders(s: string): string {
-  if (!useColor) return s
-  return s.replace(BORDER_REGEX, (m) => chalk.gray(m))
 }
 
 const SHARP = useColor ? '│' : '|'
@@ -168,12 +173,12 @@ function colorizeStatus(s: string): string {
   return stripped
 }
 
-const STATUS_BADGE: Record<string, { bg: string; fg: string; glyph: string }> = {
-  todo:      { bg: 'bgYellow', fg: 'black', glyph: '○' },
-  active:    { bg: 'bgCyan',   fg: 'black', glyph: '●' },
-  won:       { bg: 'bgGreen',  fg: 'black', glyph: '✓' },
-  lost:      { bg: 'bgRed',    fg: 'white', glyph: '✗' },
-  unstarted: { bg: 'bgWhite',  fg: 'gray',  glyph: '◌' }
+const STATUS_BADGE: Record<string, { color: (s: string) => string; glyph: string }> = {
+  todo:      { color: chalk.bgYellow.black, glyph: '○' },
+  active:    { color: chalk.bgCyan.black,   glyph: '●' },
+  won:       { color: chalk.bgGreen.black,  glyph: '✓' },
+  lost:      { color: chalk.bgRed.white,    glyph: '✗' },
+  unstarted: { color: chalk.bgWhite.gray,   glyph: '◌' }
 }
 
 export function statusBadge(s: string): string {
@@ -182,9 +187,7 @@ export function statusBadge(s: string): string {
   const style = STATUS_BADGE[stripped.toLowerCase()]
   if (!style) return stripped
   if (!useColor) return `${style.glyph} ${stripped}`
-  const bgFn = (chalk as unknown as Record<string, Record<string, (s: string) => string>>)[style.bg]
-  const colorized = bgFn[style.fg](` ${style.glyph} ${stripped} `)
-  return colorized
+  return style.color(` ${style.glyph} ${stripped} `)
 }
 
 function colorizePriority(s: string): string {
@@ -264,7 +267,7 @@ export function table<T extends Record<string, unknown>>(
   // column from dominating the table. cli-table3's colWidths includes padding.
   const MAX_COL_WIDTH = 40
   const colWidths: Array<number | null> = columns.map((c, i) => {
-    let maxLen = c.header.length
+    let maxLen = stringWidth(c.header)
     for (const row of cells) {
       const len = stringWidth(row[i] ?? '')
       if (len > maxLen) maxLen = len
@@ -296,7 +299,7 @@ export function table<T extends Record<string, unknown>>(
     const accent = useColor ? chalk.bold.cyan('◆ ') : '◆ '
     out.push('  ' + accent + (useColor ? chalk.bold(opts.title) : opts.title))
   }
-  out.push(grayBorders(t.toString()))
+  out.push(t.toString())
   if (opts.count === true) {
     const countText = `${rows.length} ${rows.length === 1 ? 'result' : 'results'}`
     out.push(C.muted('  ' + countText))
