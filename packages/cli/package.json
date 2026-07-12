@@ -1,6 +1,6 @@
 {
   "name": "@iamcoder18/huly-cli",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "CLI and AI-agent skill for self-hosted Huly — manage issues, projects, channels, documents, calendar, time tracking, and more from the terminal or CI/CD",
   "keywords": [
     "huly",
