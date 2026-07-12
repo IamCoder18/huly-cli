@@ -27,6 +27,7 @@
     "huly": "./bin/huly"
   },
   "main": "./dist/index.js",
+  "readme": "../../README.md",
   "files": [
     "dist",
     "bin"
