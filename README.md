@@ -9,30 +9,9 @@
 [![License: AGPL-3.0-or-later](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue?style=flat-square)](LICENSE)
 [![Self-Hosted](https://img.shields.io/badge/self--hosted-first-6f42c1?style=flat-square)](#why-huly-cli-not-the-mcp-wrappers)
 
-> **Drive your Huly workspace from any LLM coding agent.** Ships a drop-in
-> `SKILL.md` plus a curated `references/` bundle, and works just as well
-> from your terminal, CI pipeline, or cron job.
->
-> **Manually verified against every Huly product area** — accounts,
-> workspaces, Tracker (projects, issues, components, milestones,
-> templates), Collaboration (channels, DMs, threads, comments, activity),
-> Knowledge (cards, documents, master-tags, teamspaces), Planning
-> (actions, scheduling, time tracking), Calendar (events, recurrence),
-> Platform (spaces, types, relations, approvals, notifications).
-
----
-
-## Why huly-cli (not the MCP wrappers)
-
-| | **huly-cli** | MCP-based wrappers |
-|---|---|---|
-| Talks to Huly via | **Direct SDK** (no extra runtime) | huly-mcp process + JSON-RPC |
-| Browser / Playwright | **None — fully headless** | Often required for auth/UI flows |
-| Employee / user creation | **Works** (including the fields MCP stops at) | Often half-implemented |
-| Time tracking / calendar recurrence | **First-class** (durations, recurring rules) | Frequently missing or stubbed |
-| Output formats | `table`, `json`, `jsonl`, `markdown` — same flags everywhere | Varies per wrapper |
-| Agent install | `npx skills add IamCoder18/huly-cli` (one command) | Manual MCP server config |
-| Polish | Every command has `--yes`, `--json`, idempotency, ref-resolution | Inconsistent |
+> **Drive your Huly workspace from any AI agent.** Automate
+> issues, projects, channels, docs, calendar & time tracking — no browser,
+> no MCP, no Playwright.
 
 ---
 
@@ -43,21 +22,28 @@ npm i -g @iamcoder18/huly-cli
 huly --version
 ```
 
+Other package managers:
+
+```bash
+pnpm add -g @iamcoder18/huly-cli
+yarn global add @iamcoder18/huly-cli
+bun add -g @iamcoder18/huly-cli
+```
+
 Or try it without installing:
 
 ```bash
 npx @iamcoder18/huly-cli --version
 ```
 
-Other package managers (`pnpm`, `yarn`, `bun`) work with the same package name.
 To build from source, see [Development](docs/development.md).
 
 ---
 
-## Agent Skill (LLM agents / OpenClaw)
+## Agent Skill (AI coding agents / OpenClaw)
 
 The CLI ships a drop-in **Agent Skill** — a curated `SKILL.md` plus a
-`references/` bundle that teaches an LLM coding agent (or OpenClaw) how
+`references/` bundle that teaches an AI coding agent (or OpenClaw) how
 to drive your Huly workspace end-to-end without a browser.
 
 ```bash
@@ -72,6 +58,27 @@ The install gives the agent the skill's `SKILL.md` and `references/*.md`
 so it can pick the correct surface on the first try. See
 [Getting started — Agent Skill](docs/getting-started.md#agent-skill)
 for verification and the canonical skill source path.
+
+---
+
+## Why huly-cli (not the MCP wrappers)
+
+| | **huly-cli** | MCP-based wrappers |
+|---|---|---|
+| Talks to Huly via | **Direct SDK** (no separate MCP server or runtime) | huly-mcp process + JSON-RPC |
+| Browser / Playwright | **None — fully headless** | Often required for auth/UI flows |
+| Employee / user creation | **Works** (including the fields MCP stops at) | Often half-implemented |
+| Time tracking / calendar recurrence | **First-class** (durations, recurring rules) | Frequently missing or stubbed |
+| Output formats | `table`, `json`, `jsonl`, `markdown` — same flags everywhere | Varies per wrapper |
+| Agent install | `npx skills add IamCoder18/huly-cli` (one command) | Manual MCP server config |
+| Polish | Every command has `--yes`, `--json`, idempotency, ref-resolution | Inconsistent |
+
+> **Manually verified against every Huly product area** — accounts,
+> workspaces, Tracker (projects, issues, components, milestones,
+> templates), Collaboration (channels, DMs, threads, comments, activity),
+> Knowledge (cards, documents, master-tags, teamspaces), Planning
+> (actions, scheduling, time tracking), Calendar (events, recurrence),
+> Platform (spaces, types, relations, approvals, notifications).
 
 ---
 

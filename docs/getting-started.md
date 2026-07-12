@@ -1,6 +1,6 @@
 ---
 title: Getting started
-description: Install huly-cli, configure your self-hosted Huly workspace, log in, and run your first command — including the Agent Skill install for LLM coding agents.
+description: Install huly-cli, configure your self-hosted Huly workspace, log in, and run your first command — including the Agent Skill install for AI coding agents.
 ---
 
 # Getting started
@@ -155,10 +155,10 @@ accidentally drop credentials during a long automation run.
 
 <a id="agent-skill"></a>
 
-## Agent Skill (LLM agents / OpenClaw)
+## Agent Skill (AI coding agents / OpenClaw)
 
 In addition to being a CLI, `huly-cli` ships a drop-in **Agent Skill** —
-a curated `SKILL.md` plus a `references/` bundle that teaches an LLM
+a curated `SKILL.md` plus a `references/` bundle that teaches an AI
 coding agent (or OpenClaw) how to drive your Huly workspace end-to-end
 without a browser. The skill encodes the surface map, the cascade
 side effects (Issue ↔ Action state machine, WorkSlot mirrors, parent-chain
