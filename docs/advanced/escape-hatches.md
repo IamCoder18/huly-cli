@@ -1,3 +1,8 @@
+---
+title: Escape hatches
+description: When huly-cli doesn't have a flag for what you need — `huly api` and `huly ws` for raw SDK RPCs against your self-hosted Huly workspace.
+---
+
 # Escape hatches
 
 When a CLI command doesn't exist for what you need, or the flag you

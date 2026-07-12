@@ -1,3 +1,8 @@
+---
+title: CLI architecture
+description: How huly-cli is wired together internally — command routing, SDK wiring, output pipeline, markup handling, and connection flow.
+---
+
 # CLI architecture
 
 How the CLI is wired together internally. Useful when debugging, when

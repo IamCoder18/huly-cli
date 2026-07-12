@@ -1,3 +1,8 @@
+---
+title: Environment variables
+description: Every HULY_* env var the CLI honors, credential file locations, and the reset recipe for self-hosted Huly workspaces.
+---
+
 # Environment variables
 
 Every flag and env var the CLI honors. Pair this with

@@ -1,3 +1,8 @@
+---
+title: Server architecture (deep dive)
+description: How huly-cli talks to the Huly server — services, database, transactions, backups, and upgrades for self-hosted workspaces.
+---
+
 # Server architecture (deep dive)
 
 How the CLI interacts with the Huly server. Useful for debugging,

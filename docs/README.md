@@ -1,3 +1,8 @@
+---
+title: Documentation
+description: Full reference index for huly-cli — every command, guide, and reference page for the AI-agent-first CLI for self-hosted Huly.
+---
+
 # Documentation
 
 This index lists every file in `docs/`. The README lives at the repo

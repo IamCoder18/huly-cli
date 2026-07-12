@@ -1,3 +1,8 @@
+---
+title: Collaboration commands
+description: huly-cli commands for comments, channels, direct messages, threads, and activity feeds in self-hosted Huly.
+---
+
 # Commands — Collaboration
 
 Comments, channels, direct messages, threads, and activity messages.

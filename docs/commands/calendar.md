@@ -1,3 +1,8 @@
+---
+title: Calendar commands
+description: huly-cli commands for calendars, calendar events, and recurring events in your self-hosted Huly workspace.
+---
+
 # Commands — Calendar
 
 Calendars, calendar events, and recurring events.

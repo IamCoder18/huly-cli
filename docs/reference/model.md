@@ -1,3 +1,8 @@
+---
+title: Model surface
+description: Huly class IDs and plugin-to-CLI mapping — the canonical reference for every model huly-cli touches in a self-hosted workspace.
+---
+
 # Model surface
 
 Class IDs and plugin-to-CLI mapping. The CLI's canonical class IDs

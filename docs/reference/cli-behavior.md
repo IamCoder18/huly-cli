@@ -1,3 +1,8 @@
+---
+title: CLI behavior
+description: Smart defaults, caches, filtering, idempotency, error exits, prompts, and connection lifecycle that huly-cli silently applies across every command.
+---
+
 # CLI behavior
 
 Everything the CLI silently applies for you — auto-creations, smart

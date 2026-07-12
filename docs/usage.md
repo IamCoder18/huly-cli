@@ -1,3 +1,8 @@
+---
+title: Usage
+description: Global flags, output modes (table, json, jsonl, markdown), ref resolution, and markup conventions for every command in huly-cli.
+---
+
 # Usage
 
 Conventions that apply to every command in `huly-cli`. Anything
