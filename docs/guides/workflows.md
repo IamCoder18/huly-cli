@@ -1,3 +1,8 @@
+---
+title: Workflows
+description: End-to-end huly-cli recipes that combine multiple commands — bootstrap a project, bulk-archive, daily report, copy issues, orphan cleanup.
+---
+
 # Workflows
 
 End-to-end recipes that combine multiple commands. For per-command

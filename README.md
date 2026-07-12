@@ -1,14 +1,38 @@
-# huly-cli - AI-agent-first CLI for self-hosted Huly.
+# huly-cli — AI-agent-first CLI for self-hosted Huly.
 
 [![npm version](https://img.shields.io/npm/v/@iamcoder18/huly-cli?style=flat-square&color=cb3837&logo=npm&logoColor=white)](https://www.npmjs.com/package/@iamcoder18/huly-cli)
 [![npm downloads](https://img.shields.io/npm/dm/@iamcoder18/huly-cli?style=flat-square&color=cb3837&logo=npm&logoColor=white)](https://www.npmjs.com/package/@iamcoder18/huly-cli)
-[![Node](https://img.shields.io/badge/node-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
+[![Node](https://img.shields.io/badge/node-%3E%3D22.13-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.x-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![Agent Skill](https://img.shields.io/badge/skills-compatible-6f42c1?style=flat-square&logo=openai&logoColor=white)](https://github.com/IamCoder18/huly-cli/tree/main/packages/huly-skill)
 [![GitHub](https://img.shields.io/badge/github-IamCoder18%2Fhuly--cli-181717?style=flat-square&logo=github&logoColor=white)](https://github.com/IamCoder18/huly-cli)
+[![License: AGPL-3.0-or-later](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue?style=flat-square)](LICENSE)
+[![Self-Hosted](https://img.shields.io/badge/self--hosted-first-6f42c1?style=flat-square)](#why-huly-cli-not-the-mcp-wrappers)
 
-`huly` wraps the Huly SDK into scriptable commands so you can automate workspace tasks or operate Huly from agents without a browser.
-Any AI agent can drive the CLI; no browser, no messy Playwright scripts.
+> **Drive your Huly workspace from any LLM coding agent.** Ships a drop-in
+> `SKILL.md` plus a curated `references/` bundle, and works just as well
+> from your terminal, CI pipeline, or cron job.
+>
+> **Manually verified against every Huly product area** — accounts,
+> workspaces, Tracker (projects, issues, components, milestones,
+> templates), Collaboration (channels, DMs, threads, comments, activity),
+> Knowledge (cards, documents, master-tags, teamspaces), Planning
+> (actions, scheduling, time tracking), Calendar (events, recurrence),
+> Platform (spaces, types, relations, approvals, notifications).
+
+---
+
+## Why huly-cli (not the MCP wrappers)
+
+| | **huly-cli** | MCP-based wrappers |
+|---|---|---|
+| Talks to Huly via | **Direct SDK** (no extra runtime) | huly-mcp process + JSON-RPC |
+| Browser / Playwright | **None — fully headless** | Often required for auth/UI flows |
+| Employee / user creation | **Works** (including the fields MCP stops at) | Often half-implemented |
+| Time tracking / calendar recurrence | **First-class** (durations, recurring rules) | Frequently missing or stubbed |
+| Output formats | `table`, `json`, `jsonl`, `markdown` — same flags everywhere | Varies per wrapper |
+| Agent install | `npx skills add IamCoder18/huly-cli` (one command) | Manual MCP server config |
+| Polish | Every command has `--yes`, `--json`, idempotency, ref-resolution | Inconsistent |
 
 ---
 
@@ -19,7 +43,14 @@ npm i -g @iamcoder18/huly-cli
 huly --version
 ```
 
-Other package managers (`pnpm`, `yarn`, `bun`) work with the same package name. To build from source, see [Development](docs/development.md).
+Or try it without installing:
+
+```bash
+npx @iamcoder18/huly-cli --version
+```
+
+Other package managers (`pnpm`, `yarn`, `bun`) work with the same package name.
+To build from source, see [Development](docs/development.md).
 
 ---
 
@@ -70,7 +101,7 @@ huly issue  create --project DEMO --title "Set up CI pipeline" --yes
 # 5. Create a Planner todo + schedule it (note: --start and --duration are required)
 huly action    create --title "Implement login screen" --owner you@example.com --yes
 huly action    list --assignee you@example.com --completed false
-huly action    schedule <ref> --start "$(date -u +%Y-%m-%dT09:00:00Z)" --duration 30
+huly action    schedule <ref> --start "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --duration 30
 ```
 
 > Want the full narrative? See
@@ -143,6 +174,4 @@ huly action    schedule <ref> --start "$(date -u +%Y-%m-%dT09:00:00Z)" --duratio
 
 ## License
 
-This project follows the upstream Huly platform license. See the source
-header in `src/cli.ts` for attribution and `LICENSE` at the repo root if
-present.
+GNU Affero General Public License v3.0 or later — see [LICENSE](LICENSE).

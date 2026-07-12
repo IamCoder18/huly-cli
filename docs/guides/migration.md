@@ -1,3 +1,8 @@
+---
+title: Migration guides
+description: Switch to huly-cli from huly-mcp, the SDK directly, the REST API, or the web UI — with side-by-side command translations.
+---
+
 # Migration guides
 
 Switching **to** `huly-cli` from another way of driving Huly. Most of

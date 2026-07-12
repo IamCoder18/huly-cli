@@ -1,3 +1,8 @@
+---
+title: Platform commands
+description: huly-cli commands for lower-level Huly surfaces — spaces, space types, associations, relations, project/task types, statuses, notifications, and approvals.
+---
+
 # Commands — Platform
 
 Lower-level surfaces — spaces, types, relations, notifications, and

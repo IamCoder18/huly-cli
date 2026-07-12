@@ -1,3 +1,8 @@
+---
+title: Accounts & workspaces commands
+description: huly-cli commands for login, signup, whoami, workspace management, and user/identity operations against self-hosted Huly.
+---
+
 # Commands — Accounts & workspaces
 
 Login, signup, workspace, and user/identity operations.

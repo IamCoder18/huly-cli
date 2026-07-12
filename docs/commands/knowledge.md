@@ -1,3 +1,8 @@
+---
+title: Knowledge commands
+description: huly-cli commands for cards, card-spaces, master-tags, documents, and teamspaces in self-hosted Huly.
+---
+
 # Commands — Knowledge
 
 Cards, card-spaces, master-tags, documents, and teamspaces.

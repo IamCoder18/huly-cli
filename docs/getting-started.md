@@ -1,3 +1,8 @@
+---
+title: Getting started
+description: Install huly-cli, configure your self-hosted Huly workspace, log in, and run your first command — including the Agent Skill install for LLM coding agents.
+---
+
 # Getting started
 
 Install → configure → log in → first command. Anything reusable across

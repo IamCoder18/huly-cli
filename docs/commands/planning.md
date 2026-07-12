@@ -1,3 +1,8 @@
+---
+title: Planning commands
+description: huly-cli commands for Planner actions (todos), availability schedules, and time tracking in self-hosted Huly.
+---
+
 # Commands — Planning
 
 Planner actions (todos), availability schedules, and time tracking.

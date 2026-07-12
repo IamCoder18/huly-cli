@@ -1,3 +1,8 @@
+---
+title: Security model
+description: What huly-cli does and doesn't do — credential storage, the threat model, headless auth, and how secrets are handled.
+---
+
 # Security model
 
 The CLI is a thin shell over the Huly SDK with one job: make workspace

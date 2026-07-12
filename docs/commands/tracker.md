@@ -1,3 +1,8 @@
+---
+title: Tracker commands
+description: huly-cli commands for Tracker — projects, issues, components, milestones, and issue templates in self-hosted Huly.
+---
+
 # Commands — Tracker
 
 Projects, issues, components, milestones, and issue templates — the

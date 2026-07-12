@@ -1,3 +1,8 @@
+---
+title: Development
+description: Build huly-cli from source, conventions for adding new commands, testing, and publishing @iamcoder18/huly-cli to npm.
+---
+
 # Development
 
 How the CLI is built, how to add a new command, and the conventions

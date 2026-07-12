@@ -1,3 +1,8 @@
+---
+title: Platform behavior
+description: Server-side cascades, triggers, permissions, integrations, calendar quirks, and locking behavior that huly-cli surfaces in self-hosted Huly.
+---
+
 # Platform behavior
 
 Server-side cascades, triggers, permissions, and integrations. The

@@ -1,27 +1,39 @@
 {
   "name": "@iamcoder18/huly-cli",
   "version": "0.1.7",
-  "description": "CLI and AI-agent skill for self-hosted Huly — manage issues, projects, channels, documents, calendar, time tracking, and more from the terminal or CI/CD",
+  "description": "AI-agent-first CLI for self-hosted Huly. Automate issues, projects, channels, docs, calendar & time tracking — no browser, no MCP, no Playwright.",
   "keywords": [
     "huly",
     "huly-cli",
+    "huly platform",
+    "huly sdk",
+    "agent-skill",
+    "openclaw",
+    "ai-agent",
     "cli",
+    "headless",
+    "playwright-alternative",
+    "mcp-alternative",
+    "self-hosted",
     "project-management",
     "issue-tracker",
-    "self-hosted",
-    "ai-agent",
-    "devops",
+    "linear-cli",
+    "jira-cli",
     "ci-cd",
     "automation",
     "task-management",
     "time-tracking",
     "document-management",
-    "channel",
     "calendar",
     "terminal",
-    "command-line",
+    "typescript",
     "sdk"
   ],
+  "license": "AGPL-3.0-or-later",
+  "homepage": "https://github.com/IamCoder18/huly-cli#readme",
+  "bugs": {
+    "url": "https://github.com/IamCoder18/huly-cli/issues"
+  },
   "type": "module",
   "bin": {
     "huly": "./bin/huly"
@@ -29,15 +41,16 @@
   "main": "./dist/index.js",
   "files": [
     "dist",
-    "bin"
+    "bin",
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json && chmod +x dist/index.js",
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "node -e \"require('fs').copyFileSync('../../README.md','./README.md')\"",
-    "postpublish": "node -e \"require('fs').rmSync('./README.md',{force:true})\""
+    "prepublishOnly": "node -e \"const fs=require('fs'); fs.copyFileSync('../../README.md','./README.md'); fs.copyFileSync('../../LICENSE','./LICENSE')\"",
+    "postpublish": "node -e \"require('fs').rmSync('./README.md',{force:true}); require('fs').rmSync('./LICENSE',{force:true})\""
   },
   "repository": {
     "type": "git",
