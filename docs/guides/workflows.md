@@ -45,17 +45,29 @@ semantics.
 The CLI doesn't expose an `issue archive` operation. The script
 below re-parents each `Won` issue to the top level so it sorts under
 the project's "Done" view; it does **not** change status or delete
-the issue. For workspaces with >1000 matching issues, paginate with
-`--limit N --offset M` in batches.
+the issue.
+
+Because `issue list` slices in-memory after a single `findAll`
+(see [Pagination](../reference/cli-behavior.md#pagination)), snapshot
+**all** matching `_id`s first, then move them. Re-listing with an
+`--offset` after a batch of moves would skip rows whose relative
+position changed.
 
 ```bash
-huly issue list --status-category Won --limit 1000 --json \
-  | jq -r '.[]._id' \
-  | xargs -I{} huly issue move {} --parent null --yes
+# Capture every Won issue _id once. Filter with --project/--label as
+# needed to keep the result set bounded.
+huly issue list --status-category Won --json \
+  | jq -r '.[]._id' > /tmp/won-ids.txt
+
+# Then move each. --yes is required for every single-ref delete; the
+# move itself does not need it, but skipping the prompt is friendlier.
+xargs -a /tmp/won-ids.txt -I{} huly issue move {} --parent null
 ```
 
-This re-parents every batch of up to 1000 `Won` issues to the top
-level. Run again with `--offset 1000` for the next batch.
+The captured list is a snapshot — running the same move loop a
+second time is safe (the second pass is a no-op for already-top-level
+issues), but the data may have shifted in the meantime (new `Won`
+issues, deletions, etc.).
 
 ---
 

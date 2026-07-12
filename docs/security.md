@@ -6,8 +6,11 @@ filesystem, and your Huly server — not the CLI itself.
 
 ## What the CLI does
 
-- Loads credentials from env or `~/.config/huly/.env` (mode 0600).
-- Caches JWTs to `~/.config/huly/credentials.json` (mode 0600).
+- Loads credentials from env, or from `~/.config/huly/.env` for
+  convenience. The CLI does **not** chmod `.env` — the 0600
+  permission is a user-side recommendation only.
+- Caches JWTs to `${XDG_CONFIG_HOME:-$HOME/.config}/huly/credentials.json`
+  with mode 0600 (enforced on every write by the CLI).
 - Connects over TLS to the server (no plaintext HTTP).
 - Never logs tokens (not even at debug level).
 - Validates server certs (no self-signed bypass) unless

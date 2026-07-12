@@ -110,9 +110,9 @@ warning to stderr, and — if `HULY_MARKDOWN_FALLBACK_FAIL=1` is set
 prosemirror-JSON directly.
 
 For rich-text round-trip features (mention nodes, embeds) that
-don't survive the JSON round-trip, use the raw escape hatch:
-`huly ws tx '[{"method":"createDoc", ...}]'` — see
-[Escape hatches](escape-hatches.md#websocket-huly-ws).
+don't survive the JSON round-trip, use the raw escape hatch with a
+direct transaction object: `huly ws tx '[{"_class":"core:class:TxCreateDoc",...}]'`
+— see [Escape hatches](escape-hatches.md#websocket-huly-ws).
 
 For the layout rules your input HTML must follow, see
 [Usage — Writing markup](../usage.md#writing-markup-body-description-layout-rules).

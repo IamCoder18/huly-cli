@@ -83,9 +83,7 @@ If you're used to clicking around in the web UI:
 | Move issue to "Done" | `huly issue update TSK-1 --status Done` |
 | Add label "bug" | `huly issue label TSK-1 add --label bug` |
 | Comment on issue | `huly comment add --issue TSK-1 --body "..."` |
-| Send DM | `huly dm send placeholder --person alice@... --body "..."` |
-              (use any placeholder for `<dm>` when using `--person`; the
-              CLI auto-creates the DM as needed) |
+| Send DM | `huly dm send placeholder --person alice@... --body "..."` (use any placeholder for `<dm>` when `--person` is set; the CLI auto-creates the DM as needed) |
 | Create channel | `huly channel create --name engineering` |
 | Create calendar event | `huly calendar create --title "Standup" --start ... --end ...` |
 | Log time | `huly time log --issue TSK-1 --minutes 30` |

@@ -223,7 +223,7 @@ whether the action came from the CLI, the web UI, or an integration.
 | Soft delete | `Card.removed:boolean`, `Project.archived`, `Vacancy.archived`, `Document.state ∈ {Deleted, Obsolete, Archived}`. Other entities are hard-deleted (`TxRemoveDoc`). |
 | Workspace states | `pending-creation` → `creating` → `active`; `pending-upgrade` → `upgrading` → `active`; `pending-deletion` → `deleting`; `archiving-*` chain; `migration-*` chain; `pending-restore` → `restoring` → `active`. |
 | `WS_OPERATION` env var (server-side) | `upgrade` (default) covers `pending-upgrade` (re-applies model-upgrade txs); `all` adds `pending-creation` + `pending-deletion`; `all+backup` adds archiving, migration, and `pending-restore`. For selfhost single-pod, set `all+backup` on the workspace pod. |
-| Read-only guest data | The CLI's resolver cache is **client-scoped via a `WeakMap<PlatformClient, …>`**, so each connected workspace gets its own cache automatically and entries die with the connection. No cross-workspace data leakage. |
+| Resolver cache isolation | The CLI's resolver cache is **client-scoped via a `WeakMap<PlatformClient, …>`**, so each connected workspace gets its own cache automatically and entries die with the connection. No cross-workspace data leakage. |
 
 ---
 

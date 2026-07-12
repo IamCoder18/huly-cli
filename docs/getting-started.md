@@ -15,20 +15,29 @@ every command lives in [Usage](usage.md) and
 
 ## Configuration
 
-Configuration comes from (in precedence order):
+Configuration comes from (in precedence order — a lower layer only
+applies when every higher layer is absent):
 
 1. CLI flags (highest)
 2. Shell environment variables
-3. `~/.config/huly/.env` (loaded automatically if present)
+3. `~/.config/huly/.env` (loaded automatically if present; values
+   that are already set in the shell environment are not overridden).
+   The path is `HULY_ENV_FILE` if set, otherwise
+   `~/.config/huly/.env` (the CLI does not honor `XDG_CONFIG_HOME`
+   for this file).
+4. Cached files where applicable — `~/.config/huly/active-workspace`
+   and `~/.config/huly/active-account` are XDG-aware (`$XDG_CONFIG_HOME`
+   if set, else `~/.config`).
+5. Hardcoded defaults (last-resort values the CLI ships with).
 
 ### Config files
 
 | Path | Purpose |
 |---|---|
-| `~/.config/huly/.env` | Login + URL config (mode 0600 recommended) |
-| `~/.config/huly/credentials.json` | Cached JWT tokens (mode 0600) |
-| `~/.config/huly/bootstrap.json` | Per-`(host, workspace, accountUuid)` marker for completed workspace-identity bootstrap (mode 0600). Delete the file (or just the affected `host -> workspace -> accountUuid` entry) to force a re-bootstrap. |
-| `~/.config/huly/active-workspace` | Last-used workspace name |
+| `~/.config/huly/.env` | Login + URL config (mode 0600 recommended). The CLI does **not** chmod this file — the permission is a user-side recommendation only. The dotenv path is hardcoded to `~/.config/huly/.env`; `HULY_ENV_FILE` overrides it, but `XDG_CONFIG_HOME` does not change it. |
+| `${XDG_CONFIG_HOME:-$HOME/.config}/huly/credentials.json` | Cached JWT tokens (mode 0600, enforced by the CLI on write). XDG-aware. |
+| `${XDG_CONFIG_HOME:-$HOME/.config}/huly/bootstrap.json` | Per-`(host, workspace, accountUuid)` marker for completed workspace-identity bootstrap (mode 0600). XDG-aware. Delete the file (or just the affected `host -> workspace -> accountUuid` entry) to force a re-bootstrap. |
+| `${XDG_CONFIG_HOME:-$HOME/.config}/huly/active-workspace` | Last-used workspace name (mode 0600). XDG-aware. |
 
 The CLI creates these on first run. Deleting `credentials.json` forces
 re-login on the next invocation. See
@@ -58,8 +67,11 @@ HULY_NONINTERACTIVE=1                  # disable all prompts
 
 ## Authentication
 
-The CLI supports three auth modes. Pick one — they all produce the
-same cached credentials on disk.
+The CLI supports three auth modes. **Password-based login** (modes
+1 and 2) writes JWTs to `~/.config/huly/credentials.json`. The
+**pre-issued token** mode (mode 3) reads `HULY_TOKEN` directly from
+the environment each invocation and never touches the credentials
+cache — there is nothing to clear if you rotate the token.
 
 ### 1. Password login (interactive)
 
@@ -102,15 +114,17 @@ case use an invite link (`huly workspace access-link --role GUEST`).
 ### Token caching
 
 After login, the CLI stores the **account token** and
-**workspace tokens** in `~/.config/huly/credentials.json`. Each
+**workspace tokens** in
+`${XDG_CONFIG_HOME:-$HOME/.config}/huly/credentials.json`. Each
 subsequent invocation reuses the cache until tokens expire.
 
 ```bash
-# clear cache
-rm ~/.config/huly/credentials.json
+# clear cache (XDG-aware)
+config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/huly"
+rm -f "$config_dir/credentials.json"
 
-# inspect cache keys without printing JWTs
-jq 'keys' ~/.config/huly/credentials.json
+# inspect cache keys without printing JWTs (XDG-aware)
+jq 'keys' "${XDG_CONFIG_HOME:-$HOME/.config}/huly/credentials.json"
 ```
 
 ### Logout

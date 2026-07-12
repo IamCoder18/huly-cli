@@ -46,11 +46,16 @@ default.
 
 ## Auth caching
 
-- Tokens are persisted at `~/.config/huly/credentials.json` (mode 0600).
+- Tokens are persisted at
+  `${XDG_CONFIG_HOME:-$HOME/.config}/huly/credentials.json` (mode
+  0600). The CLI honors `XDG_CONFIG_HOME`; `~/.config/huly` is the
+  default.
 - Account token + per-workspace tokens are stored separately.
 - Re-login **preserves existing workspace tokens** when the account
   token is refreshed.
-- `HULY_TOKEN` bypasses all caching (account-level pre-issued JWT).
+- `HULY_TOKEN` bypasses all caching (account-level pre-issued JWT) —
+  it is read from the environment each invocation and never written
+  to `credentials.json`.
 - The CLI will NOT re-login if a cached account token exists for the
   given email — this avoids clobbering workspace tokens.
 - Workspace-scoped tokens are re-fetched via `selectWorkspace` on
@@ -61,9 +66,11 @@ default.
 ## Reset the CLI
 
 ```bash
-rm -f ~/.config/huly/credentials.json \
-      ~/.config/huly/active-account \
-      ~/.config/huly/active-workspace
+# XDG-aware — resolves $XDG_CONFIG_HOME if set, else ~/.config.
+config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/huly"
+rm -f "$config_dir/credentials.json" \
+      "$config_dir/active-account" \
+      "$config_dir/active-workspace"
 huly login --headless
 ```
 
@@ -136,9 +143,12 @@ env var on the account pod or delete some workspaces (use
 ## Model upgrade queue
 
 New plugin versions ship new `model-upgrade txs`. The workspace
-pod applies them automatically when `WS_OPERATION=all` and the
-workspace's `version_major/minor/patch` is below the current. On
-a fresh workspace, this takes ~30 seconds. If `findAll` returns 0
-for classes that should have data, the model may not have applied
-yet — wait or restart the workspace pod with `WS_OPERATION=upgrade`
-to force a re-apply.
+pod applies them automatically **with the default `WS_OPERATION=upgrade`**
+when the workspace's `version_major/minor/patch` is below the current
+— model upgrades are the responsibility of the default mode; setting
+`all` or `all+backup` does not change upgrade behavior, it just adds
+the additional phases (`pending-creation`, `pending-deletion`,
+archiving, migration, restore). On a fresh workspace, this takes
+~30 seconds. If `findAll` returns 0 for classes that should have
+data, the model may not have applied yet — wait or restart the
+workspace pod to force a re-apply.

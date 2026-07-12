@@ -149,9 +149,9 @@ Reserved keys (silently stripped): `set`, `unset`, `json`, `ci`,
 |---|---|---|
 | Resolver index (`PlatformClient` → `Map<classId, Map<key, _id>>`, backed by a `WeakMap`) | In-memory, **no TTL**; dies with the `PlatformClient` | Explicit `invalidateIndex(client, classId)` after every write. |
 | Account `_accounts` URL cache | In-memory, per-host | Never invalidated; restart the CLI process to refresh. |
-| `~/.config/huly/credentials.json` (account + workspace tokens) | On disk, mode 0600, no expiry | Refreshed on re-login. Delete the file to reset. |
-| `~/.config/huly/active-workspace` | On disk, mode 0600 | Updated on `huly workspace use <name>` or `--workspace`. |
-| `~/.config/huly/active-account` | On disk, mode 0600 | One line per host, updated on login. |
+| `${XDG_CONFIG_HOME:-$HOME/.config}/huly/credentials.json` (account + workspace tokens) | On disk, mode 0600, no expiry | Refreshed on re-login. Delete the file to reset. |
+| `${XDG_CONFIG_HOME:-$HOME/.config}/huly/active-workspace` | On disk, mode 0600 | Updated on `huly workspace use <name>` or `--workspace`. |
+| `${XDG_CONFIG_HOME:-$HOME/.config}/huly/active-account` | On disk, mode 0600 | One line per host, updated on login. |
 
 > **Stale-cache gotcha:** the resolver index never expires. If
 > someone deletes or renames a project between two CLI commands in

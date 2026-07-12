@@ -47,7 +47,7 @@ Type is undeletable; uploading a file to a File Card is permanent.
 huly card-space list
 huly card-space get <ref>
 huly card-space create --name "Engineering" [--description]
-huly card-space delete <ref...> [--yes]```
+huly card-space delete <ref...> [--yes]
 ```
 
 
