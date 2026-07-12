@@ -33,9 +33,10 @@ filesystem, and your Huly server — not the CLI itself.
 
 ### Personal use (default)
 
-The defaults are fine. Tokens live at `~/.config/huly/credentials.json`
-with mode 0600. `.env` ships at 0600 recommended (the CLI does not
-chmod it for you).
+The defaults are fine. Tokens live at
+`${XDG_CONFIG_HOME:-$HOME/.config}/huly/credentials.json` with mode
+0600 (CLI-enforced on write). For `.env`, mode 0600 is
+recommended; the CLI does **not** chmod it for you.
 
 ### Shared CI runners
 

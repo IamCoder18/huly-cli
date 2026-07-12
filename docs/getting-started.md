@@ -38,6 +38,7 @@ applies when every higher layer is absent):
 | `${XDG_CONFIG_HOME:-$HOME/.config}/huly/credentials.json` | Cached JWT tokens (mode 0600, enforced by the CLI on write). XDG-aware. |
 | `${XDG_CONFIG_HOME:-$HOME/.config}/huly/bootstrap.json` | Per-`(host, workspace, accountUuid)` marker for completed workspace-identity bootstrap (mode 0600). XDG-aware. Delete the file (or just the affected `host -> workspace -> accountUuid` entry) to force a re-bootstrap. |
 | `${XDG_CONFIG_HOME:-$HOME/.config}/huly/active-workspace` | Last-used workspace name (mode 0600). XDG-aware. |
+| `${XDG_CONFIG_HOME:-$HOME/.config}/huly/active-account` | One `host|email` line per server the CLI has logged into; used as a hint for which account to authenticate when multiple are cached. (mode 0600). XDG-aware. |
 
 The CLI creates these on first run. Deleting `credentials.json` forces
 re-login on the next invocation. See
@@ -68,10 +69,12 @@ HULY_NONINTERACTIVE=1                  # disable all prompts
 ## Authentication
 
 The CLI supports three auth modes. **Password-based login** (modes
-1 and 2) writes JWTs to `~/.config/huly/credentials.json`. The
-**pre-issued token** mode (mode 3) reads `HULY_TOKEN` directly from
-the environment each invocation and never touches the credentials
-cache — there is nothing to clear if you rotate the token.
+1 and 2) writes JWTs to the credential cache at
+`${XDG_CONFIG_HOME:-$HOME/.config}/huly/credentials.json` (mode
+0600). The **pre-issued token** mode (mode 3) reads `HULY_TOKEN`
+directly from the environment each invocation and never touches the
+credential cache — there is nothing to clear if you rotate the
+token.
 
 ### 1. Password login (interactive)
 
@@ -119,24 +122,29 @@ After login, the CLI stores the **account token** and
 subsequent invocation reuses the cache until tokens expire.
 
 ```bash
-# clear cache (XDG-aware)
 config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/huly"
-rm -f "$config_dir/credentials.json"
 
-# inspect cache keys without printing JWTs (XDG-aware)
-jq 'keys' "${XDG_CONFIG_HOME:-$HOME/.config}/huly/credentials.json"
+# Inspect cache shape first (no JWTs printed):
+jq 'keys' "$config_dir/credentials.json"
+
+# Then clear the cache when you're done:
+rm -f "$config_dir/credentials.json"
 ```
 
 ### Logout
 
-There's no `huly logout` command. Either:
+There's no `huly logout` command. The most direct way to log out is
+to delete the cached credentials (XDG-aware):
 
 ```bash
-rm ~/.config/huly/credentials.json
+config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/huly"
+rm -f "$config_dir/credentials.json"
 ```
 
-Or unset the tokens in the file. Logout is intentionally manual so you
-don't accidentally drop credentials during a long automation run.
+If you want to preserve the cache file but invalidate the tokens,
+edit the JSON manually and replace each token field with an empty
+string or null. Logout is intentionally manual so you don't
+accidentally drop credentials during a long automation run.
 
 ---
 

@@ -47,27 +47,34 @@ below re-parents each `Won` issue to the top level so it sorts under
 the project's "Done" view; it does **not** change status or delete
 the issue.
 
-Because `issue list` slices in-memory after a single `findAll`
-(see [Pagination](../reference/cli-behavior.md#pagination)), snapshot
-**all** matching `_id`s first, then move them. Re-listing with an
-`--offset` after a batch of moves would skip rows whose relative
-position changed.
+`issue list` loads the full `findAll` result into memory and then
+slices with `--limit`/`--offset` (see
+[Pagination](../reference/cli-behavior.md#pagination)). To reliably
+enumerate every matching `_id`, fetch the full result set in one
+call, filter client-side, and page through the captured list —
+**not** through re-running `issue list` with `--offset` (which would
+skip rows whose relative position changed after a batch of moves).
 
 ```bash
-# Capture every Won issue _id once. Filter with --project/--label as
-# needed to keep the result set bounded.
+# Snapshot every Won issue _id once. Narrow with --project/--label
+# to keep the JSON response small; pagination is in-memory so each
+# call still fetches all rows before slicing.
 huly issue list --status-category Won --json \
   | jq -r '.[]._id' > /tmp/won-ids.txt
+
+wc -l /tmp/won-ids.txt   # sanity-check the bounded result set
 
 # Then move each. --yes is required for every single-ref delete; the
 # move itself does not need it, but skipping the prompt is friendlier.
 xargs -a /tmp/won-ids.txt -I{} huly issue move {} --parent null
 ```
 
-The captured list is a snapshot — running the same move loop a
-second time is safe (the second pass is a no-op for already-top-level
-issues), but the data may have shifted in the meantime (new `Won`
-issues, deletions, etc.).
+If the result set is too large for one `findAll` (very large
+workspaces), narrow with `--project` or another filter first, then
+run the script per project. The captured list is a static snapshot —
+re-running the move loop a second time is safe (the second pass is a
+no-op for already-top-level issues), but the data may have shifted
+in the meantime (new `Won` issues, deletions, etc.).
 
 ---
 

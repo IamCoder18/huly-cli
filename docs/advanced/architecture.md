@@ -111,8 +111,29 @@ prosemirror-JSON directly.
 
 For rich-text round-trip features (mention nodes, embeds) that
 don't survive the JSON round-trip, use the raw escape hatch with a
-direct transaction object: `huly ws tx '[{"_class":"core:class:TxCreateDoc",...}]'`
-— see [Escape hatches](escape-hatches.md#websocket-huly-ws).
+direct transaction object. The `params` argument is a JSON array
+containing a single `TxCreateDoc` transaction object — every field
+shown below is required by `core:class:TxCreateDoc`:
+
+```text
+huly ws tx '[{
+  "_class": "core:class:TxCreateDoc",
+  "objectId": "document:example:replace-with-id",
+  "objectClass": "document:class:Document",
+  "objectSpace": "document:space:Default",
+  "attributes": {
+    "title": "API spec",
+    "content": "..."
+  },
+  "modifiedBy": "core:account:CurrentUser",
+  "modifiedOn": 0,
+  "createOn": 0
+}]'
+```
+
+Field shape is illustrative — fill in your own ids and timestamps.
+See [Escape hatches — WebSocket (`huly ws`)](escape-hatches.md#websocket-huly-ws)
+for the full RPC contract.
 
 For the layout rules your input HTML must follow, see
 [Usage — Writing markup](../usage.md#writing-markup-body-description-layout-rules).

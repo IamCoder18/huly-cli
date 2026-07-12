@@ -70,9 +70,14 @@ default.
 config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/huly"
 rm -f "$config_dir/credentials.json" \
       "$config_dir/active-account" \
-      "$config_dir/active-workspace"
+      "$config_dir/active-workspace" \
+      "$config_dir/bootstrap.json"
 huly login --headless
 ```
+
+Removing `bootstrap.json` forces a re-run of the workspace-identity
+bootstrap on the next connect (see [Getting started — Config files](../getting-started.md#config-files)).
+For a full local-state wipe, also delete `~/.config/huly/.env`.
 
 ---
 

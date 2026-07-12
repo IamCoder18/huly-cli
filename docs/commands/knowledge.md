@@ -100,10 +100,12 @@ teamspaces, the CLI auto-creates a default `General` teamspace.
 - Documents created from `huly document create` are nested under a
   teamspace; if you want flat-by-Type organization, use cards
   instead (see the [card](#card) section above).
-- For controlled documents, `--state` transitions are gated by an
-  approval workflow: Author → Reviewer → Approver e-signatures are
+- For controlled documents, state transitions are handled via the
+  approval workflow (the `approval` command group), not as a flag on
+  `document update`. Author → Reviewer → Approver e-signatures are
   enforced in that order, and inline comments must be resolved
   before approval. See
+  [Platform — approval](../commands/platform.md#approval) and
   [Platform behavior — Documents](../reference/platform-behavior.md#documents-controlled-documents-training).
 
 ---

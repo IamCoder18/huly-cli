@@ -48,10 +48,15 @@ huly issue list --json | jq '{ result: . }'
 ### Auth
 
 Both use the same `account-token` JWT. You can reuse the MCP server's
-credentials cache by symlinking it:
+credentials cache by symlinking it (XDG-aware on the destination
+side; the MCP server's directory lives at `~/.config/huly-mcp` in
+practice and is the usual source path):
 
 ```bash
-ln -s ~/.config/huly-mcp/credentials.json ~/.config/huly/credentials.json
+src="$HOME/.config/huly-mcp/credentials.json"
+dst_dir="${XDG_CONFIG_HOME:-$HOME/.config}/huly"
+mkdir -p "$dst_dir"
+ln -s "$src" "$dst_dir/credentials.json"
 ```
 
 ### Tool naming
