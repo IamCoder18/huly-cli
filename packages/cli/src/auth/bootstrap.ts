@@ -6,32 +6,49 @@ import { normalizeHost } from './cache.js'
 
 // In-memory short-circuit so a CLI process that runs many commands in a
 // row (e.g. `huly issue list`, then `huly action list`, then `huly user
-// get`) does not re-read bootstrap.json on every call. Keyed on the
-// normalized host + workspace; presence of any account entry under that
-// host/workspace counts as "workspace bootstrapped".
-const bootstrappedWorkspaces = new Set<string>()
-const unknownWorkspaces = new Set<string>()
+// get`) does not re-read bootstrap.json or re-run bootstrap on every
+// call. Keyed on (normalized host, workspace, accountUuid) so a second
+// account connecting in the same process is never treated as having
+// bootstrapped under a different account.
+const bootstrappedAccounts = new Set<string>()
+const unknownAccounts = new Set<string>()
 
-function workspaceKey(host: string, workspace: string): string {
-  return `${normalizeHost(host)}\n${workspace}`
+function accountKey(host: string, workspace: string, accountUuid: string): string {
+  return `${normalizeHost(host)}\n${workspace}\n${accountUuid}`
 }
 
-function isWorkspaceKnownBootstrapped(host: string, workspace: string): boolean {
-  return bootstrappedWorkspaces.has(workspaceKey(host, workspace))
+function isWorkspaceAccountKnownBootstrapped(
+  host: string,
+  workspace: string,
+  accountUuid: string
+): boolean {
+  return bootstrappedAccounts.has(accountKey(host, workspace, accountUuid))
 }
 
-function isWorkspaceKnownAbsent(host: string, workspace: string): boolean {
-  return unknownWorkspaces.has(workspaceKey(host, workspace))
+function isWorkspaceAccountKnownAbsent(
+  host: string,
+  workspace: string,
+  accountUuid: string
+): boolean {
+  return unknownAccounts.has(accountKey(host, workspace, accountUuid))
 }
 
-function rememberWorkspaceBootstrapped(host: string, workspace: string): void {
-  bootstrappedWorkspaces.add(workspaceKey(host, workspace))
-  unknownWorkspaces.delete(workspaceKey(host, workspace))
+function rememberWorkspaceAccountBootstrapped(
+  host: string,
+  workspace: string,
+  accountUuid: string
+): void {
+  bootstrappedAccounts.add(accountKey(host, workspace, accountUuid))
+  unknownAccounts.delete(accountKey(host, workspace, accountUuid))
 }
 
-function rememberWorkspaceAbsent(host: string, workspace: string): void {
-  unknownWorkspaces.add(workspaceKey(host, workspace))
-  bootstrappedWorkspaces.delete(workspaceKey(host, workspace))
+function rememberWorkspaceAccountAbsent(
+  host: string,
+  workspace: string,
+  accountUuid: string
+): void {
+  unknownAccounts.add(accountKey(host, workspace, accountUuid))
+  bootstrappedAccounts.delete(accountKey(host, workspace, accountUuid))
 }
 
 /**
@@ -53,7 +70,9 @@ function rememberWorkspaceAbsent(host: string, workspace: string): void {
  * cache keyed on (host, workspace, accountUuid), so an unrelated account
  * on the same workspace will still trigger a full bootstrap on first
  * connect. The next call from the same account returns early after a
- * `getAccount()` round-trip and a `bootstrap.json` read.
+ * `bootstrap.json` read; subsequent calls within the same process
+ * short-circuit on the in-memory cache and never touch disk or the
+ * network.
  *
  * Failures are returned to the caller; the caller (`connectCli`) decides
  * whether to log/warn or propagate.
@@ -161,18 +180,20 @@ function employeeRoleFor(accountRole: string): 'GUEST' | 'USER' {
 }
 
 export async function bootstrapEmployee(args: BootstrapArgs): Promise<BootstrapResult> {
-  // Short-circuit so repeated calls within the same process (after at
-  // least one successful bootstrap for this workspace) skip both the
-  // disk read of bootstrap.json AND the getAccount() transactor
-  // round-trip. Keyed on (host, workspace) — see known limitation
-  // below around multi-account same-process scenarios.
-  if (isWorkspaceKnownBootstrapped(args.url, args.workspace)) {
-    return { state: 'already-bootstrapped' }
-  }
-
-  // We need account.uuid BEFORE we can check the on-disk marker
-  // account-scoped, so fetch the account first. A bootstrap for a
-  // different account on the same (host, workspace) does not count.
+  // Two-level short-circuit, keyed on (host, workspace, accountUuid):
+  //
+  //   1. In-memory hit  — repeated calls within the same process for
+  //      THIS account skip the disk read AND the bootstrap transactors.
+  //      A different account on the same workspace in this process
+  //      misses this cache and falls through to the disk check, so it
+  //      cannot inherit another account's bootstrap state.
+  //   2. In-memory miss + known-absent — skip the disk read but still
+  //      need to do the bootstrap transactors.
+  //   3. First time seen — read bootstrap.json from disk once.
+  //
+  // `PlatformClient.getAccount()` is a cached property accessor on the
+  // SDK client (no network), so pulling it up here to key the in-memory
+  // cache by accountUuid is free.
   let account
   try {
     account = await args.client.getAccount()
@@ -186,7 +207,11 @@ export async function bootstrapEmployee(args: BootstrapArgs): Promise<BootstrapR
     return { state: 'no-account' }
   }
 
-  if (!isWorkspaceKnownAbsent(args.url, args.workspace)) {
+  if (isWorkspaceAccountKnownBootstrapped(args.url, args.workspace, account.uuid)) {
+    return { state: 'already-bootstrapped' }
+  }
+
+  if (!isWorkspaceAccountKnownAbsent(args.url, args.workspace, account.uuid)) {
     const file = await loadBootstrap()
     // Scope by (host, workspace, accountUuid) — a sibling account's
     // marker under the same workspace must NOT short-circuit this
@@ -195,10 +220,10 @@ export async function bootstrapEmployee(args: BootstrapArgs): Promise<BootstrapR
     const accountHasMarker =
       file[hostKey]?.[args.workspace]?.[account.uuid] !== undefined
     if (accountHasMarker) {
-      rememberWorkspaceBootstrapped(args.url, args.workspace)
+      rememberWorkspaceAccountBootstrapped(args.url, args.workspace, account.uuid)
       return { state: 'already-bootstrapped' }
     }
-    rememberWorkspaceAbsent(args.url, args.workspace)
+    rememberWorkspaceAccountAbsent(args.url, args.workspace, account.uuid)
   }
 
   const { tx, txFactory } = getConnection(args.client)
@@ -324,6 +349,6 @@ export async function bootstrapEmployee(args: BootstrapArgs): Promise<BootstrapR
   }
 
   await markBootstrapped(args.url, args.workspace, account.uuid)
-  rememberWorkspaceBootstrapped(args.url, args.workspace)
+  rememberWorkspaceAccountBootstrapped(args.url, args.workspace, account.uuid)
   return { state: 'bootstrapped', personId }
 }
