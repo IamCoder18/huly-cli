@@ -77,7 +77,20 @@ huly login --headless
 
 Removing `bootstrap.json` forces a re-run of the workspace-identity
 bootstrap on the next connect (see [Getting started — Config files](../getting-started.md#config-files)).
-For a full local-state wipe, also delete `~/.config/huly/.env`.
+
+For a full local-state wipe, also delete the dotenv file the CLI
+loaded last — `HULY_ENV_FILE` if set, otherwise
+`~/.config/huly/.env`:
+
+```bash
+env_file="${HULY_ENV_FILE:-$HOME/.config/huly/.env}"
+rm -f "$env_file"
+```
+
+`HULY_ENV_FILE` is honored only for the dotenv loader; the cached
+files (`credentials.json`, `active-workspace`, `active-account`,
+`bootstrap.json`) always live in `$XDG_CONFIG_HOME`-aware
+`configDir()`.
 
 ---
 

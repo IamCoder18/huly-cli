@@ -56,7 +56,16 @@ practice and is the usual source path):
 src="$HOME/.config/huly-mcp/credentials.json"
 dst_dir="${XDG_CONFIG_HOME:-$HOME/.config}/huly"
 mkdir -p "$dst_dir"
-ln -s "$src" "$dst_dir/credentials.json"
+
+# Back up any existing CLI credentials and link to the MCP cache.
+# Re-running this block is safe: the existing file is preserved
+# as credentials.json.bak before the symlink overwrites it.
+dst="$dst_dir/credentials.json"
+if [ -e "$dst" ] && [ ! -L "$dst" ]; then
+  mv "$dst" "$dst.bak"
+fi
+[ -L "$dst" ] && rm "$dst"
+ln -s "$src" "$dst"
 ```
 
 ### Tool naming

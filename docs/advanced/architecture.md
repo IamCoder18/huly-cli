@@ -112,28 +112,44 @@ prosemirror-JSON directly.
 For rich-text round-trip features (mention nodes, embeds) that
 don't survive the JSON round-trip, use the raw escape hatch with a
 direct transaction object. The `params` argument is a JSON array
-containing a single `TxCreateDoc` transaction object — every field
-shown below is required by `core:class:TxCreateDoc`:
+containing a single `TxCreateDoc` transaction object.
+
+The fields below use literal `<...>` placeholders. Replace every
+one before running the command — including `<modifiedBy>`, which
+must resolve to a real `core:account:<uuid>` ref (the CLI sets
+this automatically when you call `client.createDoc`; you only
+need to set it manually for raw `huly ws tx` calls). The
+`attributes.content` field must be a prosemirror-JSON document,
+not a string.
 
 ```text
 huly ws tx '[{
   "_class": "core:class:TxCreateDoc",
-  "objectId": "document:example:replace-with-id",
+  "objectId": "<document:example:replace-with-uuid>",
   "objectClass": "document:class:Document",
-  "objectSpace": "document:space:Default",
+  "objectSpace": "<document:space:replace-with-ref>",
   "attributes": {
     "title": "API spec",
-    "content": "..."
+    "content": {
+      "type": "doc",
+      "content": [
+        { "type": "paragraph", "content": [
+          { "type": "text", "text": "Body" }
+        ] }
+      ]
+    }
   },
-  "modifiedBy": "core:account:CurrentUser",
+  "modifiedBy": "<core:account:replace-with-uuid>",
   "modifiedOn": 0,
   "createOn": 0
 }]'
 ```
 
-Field shape is illustrative — fill in your own ids and timestamps.
 See [Escape hatches — WebSocket (`huly ws`)](escape-hatches.md#websocket-huly-ws)
-for the full RPC contract.
+for the full RPC contract. The `tx` RPC accepts every transaction
+type — `TxCreateDoc`, `TxUpdateDoc`, `TxRemoveDoc`, `TxMixin`,
+`TxApplyIf` — with the same JSON shape as the `core:class:*`
+platform classes.
 
 For the layout rules your input HTML must follow, see
 [Usage — Writing markup](../usage.md#writing-markup-body-description-layout-rules).

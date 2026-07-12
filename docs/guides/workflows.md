@@ -56,17 +56,29 @@ call, filter client-side, and page through the captured list —
 skip rows whose relative position changed after a batch of moves).
 
 ```bash
+set -euo pipefail
+
 # Snapshot every Won issue _id once. Narrow with --project/--label
 # to keep the JSON response small; pagination is in-memory so each
 # call still fetches all rows before slicing.
 huly issue list --status-category Won --json \
   | jq -r '.[]._id' > /tmp/won-ids.txt
 
+# Bail out before invoking `move` on an empty list — `huly issue
+# move {}` without a real ref would reject with ExitCode.Validation,
+# not silently succeed.
+if [ ! -s /tmp/won-ids.txt ]; then
+  echo "no Won issues to re-parent"
+  exit 0
+fi
 wc -l /tmp/won-ids.txt   # sanity-check the bounded result set
 
-# Then move each. --yes is required for every single-ref delete; the
-# move itself does not need it, but skipping the prompt is friendlier.
-xargs -a /tmp/won-ids.txt -I{} huly issue move {} --parent null
+# Move each. Portable loop (no GNU-only `xargs -a`).
+# `read` exits non-zero at EOF; that's expected — guard with `|| true`
+# so `set -e` doesn't trip. Move itself does not require --yes.
+while IFS= read -r id; do
+  huly issue move "$id" --parent null
+done < /tmp/won-ids.txt || true
 ```
 
 If the result set is too large for one `findAll` (very large
