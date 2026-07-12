@@ -8,7 +8,7 @@ every command lives in [Usage](usage.md) and
 
 1. [Configuration](#configuration)
 2. [Authentication](#authentication)
-3. [Agent Skill (LLM agents / OpenClaw)](#agent-skill-llm-agents-openclaw)
+3. [Agent Skill](#agent-skill)
 4. [Troubleshooting first-run](#troubleshooting-first-run)
 
 ---
@@ -36,22 +36,22 @@ re-login on the next invocation. See
 every flag/env var the CLI honors, including cache directories and
 auth bypass.
 
-### Minimal `.env`
+### Minimal `.env` (dotenv format — `KEY=value`, no `export` prefix)
 
-```bash
-export HULY_URL=https://huly.example.com
-export HULY_EMAIL=you@example.com
-export HULY_PASSWORD=your-password
+```ini
+HULY_URL=https://huly.example.com
+HULY_EMAIL=you@example.com
+HULY_PASSWORD=your-password
 ```
 
 ### Strict-mode `.env` (CI-friendly)
 
-```bash
-export HULY_URL=https://huly.example.com
-export HULY_TOKEN=eyJ0eXAiOiJKV1Q...   # pre-issued account JWT, skip login
-export HULY_WORKSPACE=production
-export HULY_PROJECT=BACKEND            # for bare-number issue refs
-export HULY_NONINTERACTIVE=1           # disable all prompts
+```ini
+HULY_URL=https://huly.example.com
+HULY_TOKEN=<account-jwt>               # pre-issued account JWT; skip login
+HULY_WORKSPACE=production
+HULY_PROJECT=BACKEND                   # for bare-number issue refs
+HULY_NONINTERACTIVE=1                  # disable all prompts
 ```
 
 ---
@@ -79,7 +79,7 @@ huly login --headless
 ### 3. Pre-issued token
 
 ```bash
-export HULY_TOKEN=eyJ0...
+export HULY_TOKEN=<account-jwt>
 huly whoami
 ```
 
@@ -90,9 +90,9 @@ Useful for service accounts and CI where you don't want a stored password.
 Create a new account directly:
 
 ```bash
-huly signup --email you@example.com --password '***' --first You --last Name
+huly signup --email you@example.com --password "$HULY_PASSWORD" --first You --last Name
 huly signup --headless                      # uses HULY_* env vars, no prompts
-huly signup --email ... --password ... --create-workspace my-ws   # signup + workspace
+huly signup --email ... --password "$HULY_PASSWORD" --create-workspace my-ws   # signup + workspace
 ```
 
 On selfhost the signup endpoint is open. On hosted/invite-only
@@ -109,8 +109,8 @@ subsequent invocation reuses the cache until tokens expire.
 # clear cache
 rm ~/.config/huly/credentials.json
 
-# verify cache contents
-cat ~/.config/huly/credentials.json | jq .
+# inspect cache keys without printing JWTs
+jq 'keys' ~/.config/huly/credentials.json
 ```
 
 ### Logout
@@ -125,6 +125,8 @@ Or unset the tokens in the file. Logout is intentionally manual so you
 don't accidentally drop credentials during a long automation run.
 
 ---
+
+<a id="agent-skill"></a>
 
 ## Agent Skill (LLM agents / OpenClaw)
 

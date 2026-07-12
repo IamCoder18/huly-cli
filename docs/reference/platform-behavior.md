@@ -95,7 +95,7 @@ whether the action came from the CLI, the web UI, or an integration.
 
 | User action | Side effect |
 |---|---|
-| `huly document create` | Body is stored as raw Markdown string. |
+| `huly document create` | Body is provided as Markdown (`--body` / `--body-file`) and converted by the CLI into a prosemirror-JSON markup blob stored as a `MarkupRef` in MinIO; collaborative reads use the lazily-created y-doc. See [CLI architecture — Markup handling](../advanced/architecture.md#markup-handling) for the round-trip. |
 | `huly document update --state effective` (ControlledDocument → `Effective`) | All older `Effective` versions of the same template are auto-archived; `DocumentMeta.title` is rewritten to `"<code> <title>"`; if the document has `documents.mixin.DocumentTraining` enabled, `training.class.TrainingRequest` is auto-created per trainee. |
 | Edit a ControlledDocument after review | The document must be re-reviewed before it can be approved (`OnDocTitleChanged` / `OnDocHasBecomeEffective`). Inline comments must be resolved before approval. |
 | Author / Reviewer / Approver e-signatures | Order is enforced: **Author must sign before Reviewer/Approver** can sign. |
@@ -188,8 +188,8 @@ whether the action came from the CLI, the web UI, or an integration.
 | Behavior | Notes |
 |---|---|
 | `--rrule` accepted on `huly calendar create` | iCalendar RRULE string (e.g. `FREQ=DAILY;COUNT=3`). Server coerces `BYDAY` / `BYMONTH` / `BYMONTHDAY` / `BYSETPOS` to numeric arrays. |
-| Recurring exceptions (EXDATE) | **Not implemented.** The `ReccuringEvent` model has no `exdates` field; exception dates are silently ignored. There is no UI to skip a single occurrence. |
-| Recurring instance model | Each instance is a `ReccuringInstance` carrying `recurringEventId` + `originalStartTime`. To list instances, query by `recurringEventId`. |
+| Recurring exceptions (EXDATE) | **Not implemented.** The upstream class is misspelled `ReccuringEvent` in the SDK; it has no `exdates` field. Exception dates are silently ignored. There is no UI to skip a single occurrence. |
+| Recurring instance model | Each instance is `RecurringInstance` (spelled `ReccuringInstance` in the SDK), carrying `recurringEventId` + `originalStartTime`. To list instances, query by `recurringEventId`. |
 | `blockTime` defaults to false | Events don't block the user's calendar by default. Pass `--block-time` to set. |
 | `visibility` mapping for Google sync | Google `transparency:transparent` ↔ Huly `visibility:freeBusy`; Huly `private` ↔ Google `private`. |
 | Visibility levels | `public` (everyone sees title+time), `freeBusy` (only "Busy"), `private` (only you). Title is always shown to those with view rights. |
@@ -206,7 +206,7 @@ whether the action came from the CLI, the web UI, or an integration.
 | Searchable fields | Determined by `FullTextSearchContext` per class; default includes title, description, body. Custom attribute opt-in via `isFullTextAttribute: true`. |
 | Operators | No Huly-specific DSL. ES `query_string` passes through: `AND`, `OR`, `NOT`, `+`, `-`, `"…"`, `*`, `~`, `field:value`. The CLI does not wrap queries. |
 | Index cap | `fulltextSummary` capped at `textLimit` (~1 MB); huge bodies are truncated server-side. |
-| Reindex | `fullReindex` workspace event triggers a clean rebuild (the CLI has no direct hook — you can call `huly ws` with `{"method":"triggerReindex","params":[...]}` if needed). |
+| Reindex | `fullReindex` workspace event triggers a clean rebuild (the CLI has no direct hook — you can call `huly ws` with `'[{"method":"triggerReindex","params":[…]}]'` if needed). |
 | `domain: fulltext-blob` is excluded from backups | Transient; not restorable. |
 | Indexing is per-workspace | Each workspace gets its own pipeline; queries are workspace-scoped. |
 
@@ -222,7 +222,7 @@ whether the action came from the CLI, the web UI, or an integration.
 | Activity feed | User-visible summaries built from the tx stream by `ActivityMessagesHandler`. Excludes ActivityMessage / InboxNotification / DocNotifyContext. |
 | Soft delete | `Card.removed:boolean`, `Project.archived`, `Vacancy.archived`, `Document.state ∈ {Deleted, Obsolete, Archived}`. Other entities are hard-deleted (`TxRemoveDoc`). |
 | Workspace states | `pending-creation` → `creating` → `active`; `pending-upgrade` → `upgrading` → `active`; `pending-deletion` → `deleting`; `archiving-*` chain; `migration-*` chain; `pending-restore` → `restoring` → `active`. |
-| `WS_OPERATION` env var (server-side) | `all` (default) covers `pending-creation` + `pending-upgrade`; `all+backup` adds `pending-deletion`, archiving, migration, restoring. For selfhost single-pod, set `all+backup` on the workspace pod. |
+| `WS_OPERATION` env var (server-side) | `upgrade` (default) covers `pending-upgrade` (re-applies model-upgrade txs); `all` adds `pending-creation` + `pending-deletion`; `all+backup` adds archiving, migration, and `pending-restore`. For selfhost single-pod, set `all+backup` on the workspace pod. |
 | Read-only guest data | The CLI's resolver cache is **client-scoped via a `WeakMap<PlatformClient, …>`**, so each connected workspace gets its own cache automatically and entries die with the connection. No cross-workspace data leakage. |
 
 ---

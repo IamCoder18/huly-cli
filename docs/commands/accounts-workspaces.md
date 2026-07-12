@@ -24,7 +24,7 @@ huly whoami --json                  # machine-readable
 
 `whoami` output:
 
-```
+```text
 URL:        https://huly.example.com
 Account:    you@example.com
 Workspace:  production  (uuid=..., mode=active)
@@ -64,9 +64,9 @@ account-server UI or the `accountClient` SDK call directly.
 **Destructive:** `delete` requires `--yes`. Deleting the active
 workspace additionally requires `--force`.
 
-**Permissions:** `delete`, `member`, `rename`, `guests`, `access-link`
-require OWNER role. `info`, `members`, `list`, `use`, `current`,
-`regions` require membership.
+**Permissions:** `delete`, `member add`, `rename`, `guests`,
+`access-link` require OWNER role. `members` (list), `info`, `list`,
+`use`, `current`, `regions` require membership.
 
 **Workspace lifecycle modes** — `pending-creation → creating → active`,
 `pending-upgrade → upgrading → active`, `pending-deletion → deleting`,

@@ -25,7 +25,7 @@ the CLI itself is wired together internally, see
 
 ## Service map
 
-The selfhost has ~16 services. The CLI talks to **four** of them:
+The selfhost has ~16 services. The CLI talks to **three** of them:
 
 | Service | What the CLI does with it |
 |---|---|
@@ -119,7 +119,7 @@ The model's `findAll` behavior depends on the class's domain:
 
 A workspace goes through these states (mode column):
 
-```
+```text
 [created]      → pending-creation → creating → active
 [upgraded]     → pending-upgrade → upgrading → active
 [deleted]      → pending-deletion → deleting → [gone]
@@ -135,8 +135,8 @@ The workspace pod polls for pending workspaces and processes them.
 
 | `WS_OPERATION` value | Processes |
 |---|---|
-| `upgrade` (default) | only `pending-upgrade` |
-| `all` (after Fix #5) | `pending-creation` + `pending-upgrade` + `pending-deletion` |
+| `upgrade` (default) | only `pending-upgrade` (re-applies model-upgrade txs) |
+| `all` | `pending-creation` + `pending-upgrade` + `pending-deletion` |
 | `all+backup` | all of `all` + `migration-pending-*` + `archiving-pending-*` + `pending-restore` |
 
 For self-hosted single-pod deployments, use `WS_OPERATION=all+backup`.
@@ -145,8 +145,10 @@ For self-hosted single-pod deployments, use `WS_OPERATION=all+backup`.
 
 ## The WebSocket protocol
 
-The CLI speaks Huly's binary RPC protocol over WebSocket. Key
-methods:
+The SDK connection speaks Huly's binary RPC protocol over WebSocket.
+The CLI's raw `huly ws` escape hatch is a separate **text-JSON**
+channel — the two are different transports to the transactor. Key
+methods on the binary SDK side:
 
 | Method | Direction | Purpose |
 |---|---|---|
@@ -283,10 +285,16 @@ events for that workspace. Or just leave the workspace in
 
 Backups are stored in the MinIO bucket `huly-backups`. The
 CLI/server doesn't configure MinIO lifecycle, so backups
-accumulate forever unless you set up ILM externally:
+accumulate forever unless you set up ILM externally. **Before
+running these commands in a real deployment, set non-default
+credentials and rotate them** — the defaults below are examples
+only:
 
 ```bash
-docker exec huly_v7-minio-1 mc alias set local http://localhost:9000 minioadmin minioadmin
+# Configure MinIO credentials via env (NOT inline defaults in a real deploy)
+export MC_HOST_local="http://${MINIO_USER}:${MINIO_PASSWORD}@localhost:9000"
+
+docker exec huly_v7-minio-1 mc alias set local "$MC_HOST_local"
 docker exec huly_v7-minio-1 mc mb --ignore-existing local/huly-backups
 docker exec huly_v7-minio-1 mc ilm add local/huly-backups --expiry-days 14
 ```
@@ -325,7 +333,7 @@ The transactor and workspace pod must be at the same
 `~/platform/common/scripts/version.txt`). If they drift, the
 transactor's `sessionManager` rejects WebSocket connections:
 
-```
+```text
 version mismatch: transactor 0.7.422 != workspace 0.7.423
 ```
 

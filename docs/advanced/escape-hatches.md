@@ -29,28 +29,31 @@ is appended to the workspace's API URL.
 
 ## WebSocket (`huly ws`)
 
-The Huly RPC protocol uses WebSocket. Use the `ws` command for
-direct method calls:
+The Huly RPC protocol uses WebSocket for the SDK connection, but the
+raw `huly ws` escape hatch is **text JSON only**. Use it for direct
+method calls without opening the SDK's binary transport:
 
 ```bash
 # findAll
-huly ws findAll '{"_class":"tracker:class:Project"}' '{}'
+huly ws findAll '[{"_class":"tracker:class:Project"},{}]'
 
 # findOne
-huly ws findOne '{"_class":"tracker:class:Project"}' '{"identifier":"TSK"}'
+huly ws findOne '[{"_class":"tracker:class:Project"},{"identifier":"TSK"}]'
 
 # createDoc
-huly ws createDoc 'tracker:class:Project' 'core:space:Space' \
-  '{"identifier":"NEW","name":"New project"}'
+huly ws createDoc '["tracker:class:Project","core:space:Space",{"identifier":"NEW","name":"New project"}]'
 
 # tx (raw transaction)
-huly ws tx '{"_class":"core:class:TxCreateDoc",...}'
+huly ws tx '[{"_class":"core:class:TxCreateDoc",...}]'
 ```
 
-Method names mirror the SDK's `PlatformClient` interface. See
-`node_modules/@hcengineering/api-client/lib/client.js` for the full
-list.
-
+> `huly ws` accepts a single positional `<method>` followed by an
+> optional `[params]` argument that is a **JSON-encoded array of
+> positional parameters** for that method. Method names mirror the
+> SDK's `PlatformClient` interface. See
+> `node_modules/@hcengineering/api-client/lib/client.js` for the full
+> list.
+>
 > The `tx` RPC supports every transaction type — `TxCreateDoc`,
 > `TxUpdateDoc`, `TxRemoveDoc`, `TxMixin`, `TxApplyIf`. Build the
 > payload directly; the CLI doesn't validate. Use this for things

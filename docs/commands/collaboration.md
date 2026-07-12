@@ -45,8 +45,8 @@ huly channel members <ref>
 huly channel join <ref>                       # join self
 huly channel join <ref> --member alice@...   # join specific user
 huly channel leave <ref>
-huly channel add-member <ref> alice@...      # one or more members
-huly channel remove-member <ref> alice@...
+huly channel add-member <ref> --members <email...>      # one or more members
+huly channel remove-member <ref> --members <email...>
 
 huly channel message list <channelRef>
 huly channel message send <channelRef> --body "hello" [--body-file <path>]

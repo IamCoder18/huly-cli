@@ -15,7 +15,7 @@ For the **server** side, see
 
 ## Source layout
 
-```
+```text
 src/
   cli.ts              # top-level command registration
   index.ts            # entry point + Node shims (window, localStorage)
@@ -111,8 +111,8 @@ prosemirror-JSON directly.
 
 For rich-text round-trip features (mention nodes, embeds) that
 don't survive the JSON round-trip, use the raw escape hatch:
-`huly ws tx '{"method":"createDoc", ...}'` — see
-[Escape hatches](escape-hatches.md).
+`huly ws tx '[{"method":"createDoc", ...}]'` — see
+[Escape hatches](escape-hatches.md#websocket-huly-ws).
 
 For the layout rules your input HTML must follow, see
 [Usage — Writing markup](../usage.md#writing-markup-body-description-layout-rules).

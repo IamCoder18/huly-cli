@@ -59,7 +59,7 @@ one-liners. Most can be disabled with `--minimal` /
 | `huly issue create` | `--task-type` | First available TaskType for the project; if none, falls back to `tracker:taskTypes:Issue` (NOT `tracker:issue:default` — that ref is invalid and the create errors) |
 | `huly issue create` | `parent` | `null` (top-level), unless `--minimal` / `HULY_OPINIONATED=0` |
 | `huly issue create` | `space` | `project._id` (unless `--minimal` / `HULY_OPINIONATED=0`) |
-| `huly card create` | `--card-space` | First available, non-archived `CardSpace` (resolved with `findAll({ archived: false }, { sort: { createdOn: 1 }, limit: 1 })` — the oldest by `createdOn`). Falls back to literal `card:space:Default` if zero exist. With `HULY_OPINIONATED=0` or `--minimal`, uses the literal `card:space:Default` directly (which often does not exist). |
+| `huly card create` | `--card-space` | First available, non-archived `CardSpace` (resolved with `findAll({ archived: false }, { sort: { createdOn: 1 }, limit: 1 })` — the oldest by `createdOn`). Falls back to literal `card:space:Default` only when zero `CardSpace`s exist. With `HULY_OPINIONATED=0` or `--minimal`, the literal `card:space:Default` is used directly (which often does not exist). |
 | `huly calendar create-calendar` | `--access` | `public` (one of `owner` / `team` / `public`) |
 | `huly calendar create-calendar` | `--private` | `false` |
 | `huly schedule create` | `--duration` | `30` (minutes) |
@@ -73,9 +73,7 @@ one-liners. Most can be disabled with `--minimal` /
 | `huly action create` | `rank` | `0\|aaaaa:` |
 | `huly time log` | `--date` | `Date.now()` |
 | `huly time log` | value conversion | minutes → man-hours (`value = minutes/60`); rounds to nearest 15 min |
-| `huly card create` | `--card-space` | `card:space:Default` (may not exist; create one first) |
 | `huly teamspace create` | `--type` | `public` |
-| `huly card-space create` | `--private` | `false` |
 
 `--minimal` / `HULY_OPINIONATED=0` removes every default that is not
 a security-invariant (the only one the CLI refuses to drop is the
@@ -124,6 +122,8 @@ order:
 
 ---
 
+<a id="auto-coercion-in-set-keyvalue"></a>
+
 ## Auto-coercion in `--set key=value`
 
 `huly project update --set key=value` (and `huly issue update
@@ -141,6 +141,8 @@ Reserved keys (silently stripped): `set`, `unset`, `json`, `ci`,
 
 ---
 
+<a id="cache-index-behavior"></a>
+
 ## Cache & index behavior
 
 | Cache | Lifetime | Invalidation |
@@ -148,8 +150,8 @@ Reserved keys (silently stripped): `set`, `unset`, `json`, `ci`,
 | Resolver index (`PlatformClient` → `Map<classId, Map<key, _id>>`, backed by a `WeakMap`) | In-memory, **no TTL**; dies with the `PlatformClient` | Explicit `invalidateIndex(client, classId)` after every write. |
 | Account `_accounts` URL cache | In-memory, per-host | Never invalidated; restart the CLI process to refresh. |
 | `~/.config/huly/credentials.json` (account + workspace tokens) | On disk, mode 0600, no expiry | Refreshed on re-login. Delete the file to reset. |
-| `~/.config/huly/active-workspace` | On disk, mode 0606 | Updated on `huly workspace use <name>` or `--workspace`. |
-| `~/.config/huly/active-account` | On disk, mode 0606 | One line per host, updated on login. |
+| `~/.config/huly/active-workspace` | On disk, mode 0600 | Updated on `huly workspace use <name>` or `--workspace`. |
+| `~/.config/huly/active-account` | On disk, mode 0600 | One line per host, updated on login. |
 
 > **Stale-cache gotcha:** the resolver index never expires. If
 > someone deletes or renames a project between two CLI commands in
@@ -183,6 +185,8 @@ drops mid-call, the error bubbles up. See
 for the server-side window when a workspace is being upgraded.
 
 ---
+
+<a id="filtering-matching-semantics"></a>
 
 ## Filtering & matching semantics
 
@@ -241,6 +245,8 @@ piping to `jq`. See
 [Environment — Large lists and fulltext](environment.md#large-lists-and-fulltext).
 
 ---
+
+<a id="confirmation-prompts-yes"></a>
 
 ## Confirmation prompts (`--yes`)
 

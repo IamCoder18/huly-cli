@@ -9,7 +9,7 @@ specific to a single surface lives under
 1. [Global flags](#global-flags)
 2. [Output modes](#output-modes)
 3. [Ref resolution](#ref-resolution)
-4. [Writing markup: `--body` / `--description` layout rules](#writing-markup-body-description-layout-rules)
+4. [Writing markup: `--body` / `--description` layout rules](#writing-markup)
 
 ---
 
@@ -44,17 +44,22 @@ huly issue list --workspace prod        # equivalent
 
 ### Exit codes
 
-| Code | Meaning |
-|---|---|
-| 0 | Success |
-| 1 | Generic error (uncaught exception, network failure, etc.) |
-| 2 | Validation error (missing required arg, invalid ref, etc.) |
-| 3 | Not found (ref doesn't exist) |
-| 4 | Forbidden (insufficient permissions) |
-| 64 | Usage error (no command given, unknown subcommand) |
-
+These are the values defined in `ExitCode` (`packages/cli/src/output/errors.ts`).
 All errors are exit-coded; pipe-friendly. `set -e` works as expected.
-For the full error-hint table, see
+
+| Code | Name | Meaning |
+|---|---|---|
+| 0 | `Ok` | Success |
+| 1 | `Generic` | Generic error (uncaught exception, network failure, etc.) |
+| 2 | `NotFound` | Ref doesn't exist (`PLATFORM_NOT_FOUND` / 404) |
+| 3 | `Auth` | Unauthorized (`PLATFORM_UNAUTHORIZED` / 401) **or** forbidden (`PLATFORM_FORBIDDEN` / 403) |
+| 4 | `Validation` | Bad input (`PLATFORM_VALIDATION` / 400), unknown priority, etc. |
+| 5 | `RateLimited` | Rate-limited (`429`); retries exhausted |
+| 6 | `Conflict` | Resource already exists (`PLATFORM_ALREADY_EXISTS` / 409) |
+| 7 | `Server` | Server-side failure (`>=500`) |
+| 8 | `Ambiguous` | A ref matched more than one document and the resolver couldn't pick one |
+
+For the per-error hint text, see
 [CLI behavior — Error messages](reference/cli-behavior.md#error-messages-include-next-step-hints).
 
 ---
@@ -66,7 +71,7 @@ For the full error-hint table, see
 Designed for humans. Auto-sizes columns, truncates long fields, hides
 uninteresting ones:
 
-```
+```text
 ID    NAME       DESCRIPTION              _ID
 ────  ─────────  ───────────────────────  ────────────
 TSK   Default    Default project          faultProject
@@ -210,6 +215,8 @@ order used by `--assignee`, `--owner`, `--person`, and friends, see
 [CLI behavior — Ref resolution order](reference/cli-behavior.md#ref-resolution-order-how-flag-values-resolve).
 
 ---
+
+<a id="writing-markup"></a>
 
 ## Writing markup: `--body` / `--description` layout rules
 

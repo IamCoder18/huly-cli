@@ -56,8 +56,9 @@ ln -s ~/.config/huly-mcp/credentials.json ~/.config/huly/credentials.json
 
 ### Tool naming
 
-MCP uses `snake_case` (e.g. `list_issues`); CLI uses `kebab-case`
-(e.g. `issue list`). The MCP names map to CLI as:
+MCP uses `snake_case` (e.g. `list_issues`); the CLI uses
+space-separated resource/verb syntax (`issue list`). The MCP names map
+to CLI as:
 
 | MCP | CLI |
 |---|---|
@@ -80,9 +81,11 @@ If you're used to clicking around in the web UI:
 | Open issue TSK-1 | `huly issue get TSK-1 --markdown` |
 | Create new issue | `huly issue create --project TSK --title "..."` |
 | Move issue to "Done" | `huly issue update TSK-1 --status Done` |
-| Add label "bug" | `huly issue label TSK-1 add bug` |
+| Add label "bug" | `huly issue label TSK-1 add --label bug` |
 | Comment on issue | `huly comment add --issue TSK-1 --body "..."` |
-| Send DM | `huly dm send --person alice@... --body "..."` |
+| Send DM | `huly dm send placeholder --person alice@... --body "..."` |
+              (use any placeholder for `<dm>` when using `--person`; the
+              CLI auto-creates the DM as needed) |
 | Create channel | `huly channel create --name engineering` |
 | Create calendar event | `huly calendar create --title "Standup" --start ... --end ...` |
 | Log time | `huly time log --issue TSK-1 --minutes 30` |

@@ -12,8 +12,8 @@ that keep it consistent.
 - **New class IDs** go in `src/transport/identifiers.ts`.
 - **Help text MUST describe each flag**, even if obvious — designers
   ship `--help` output verbatim to docs.
-- **Errors throw `CliError(ExitCode.X, msg, hint?)`** — never raw
-  `Error`. See `src/output/errors.ts` for the enum.
+- **Errors throw `throw new CliError(ExitCode.X, msg, hint?)`** —
+  never raw `Error`. See `src/output/errors.ts` for the enum.
 
 ## Build commands
 
@@ -44,8 +44,9 @@ bash scripts/smoke.sh
    `program.command(...)` block for the surface).
 4. Document it — add the surface group to
    [docs/commands/](commands/) (or update the existing entry) and
-   link it from [docs/README.md](README.md).
+   link it from the [docs index](README.md).
 5. Build and verify:
+
    ```bash
    pnpm --filter @iamcoder18/huly-cli build
    pnpm --filter @iamcoder18/huly-cli start -- <resource> --help
@@ -53,7 +54,7 @@ bash scripts/smoke.sh
 
 ## Repository layout
 
-```
+```text
 src/
   cli.ts              # top-level command registration
   index.ts            # entry point + Node shims (window, localStorage)

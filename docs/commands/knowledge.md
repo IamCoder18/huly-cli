@@ -46,9 +46,10 @@ Type is undeletable; uploading a file to a File Card is permanent.
 ```bash
 huly card-space list
 huly card-space get <ref>
-huly card-space create --name "Engineering" [--description] [--private]
-huly card-space delete <ref...> [--yes]
+huly card-space create --name "Engineering" [--description]
+huly card-space delete <ref...> [--yes]```
 ```
+
 
 See [CLI behavior — Smart defaults](../reference/cli-behavior.md#smart-defaults-values-the-cli-fills-for-you)
 for the auto-pick of the oldest non-archived CardSpace on
@@ -78,7 +79,7 @@ huly document update <ref> [--title] [--body] [--body-file]
                          [--old-text] [--new-text] [--replace-all] [--archived]
 huly document delete <ref...> [--yes]
 huly document snapshots <ref>    # list version snapshots
-huly document snapshot <ref>     # get a specific snapshot (by --snapshot-id)
+huly document snapshot <ref> --snapshot-id <id>     # get a specific snapshot
 huly document inline-comments <ref>
 ```
 

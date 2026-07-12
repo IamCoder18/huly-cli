@@ -20,8 +20,9 @@ filesystem, and your Huly server — not the CLI itself.
 - Does NOT enforce workspace-level RBAC — the server does. The CLI
   surfaces 403s as `ExitCode.Forbidden(4)`.
 - Does NOT store secrets in source control. Use `.env` outside git.
-- Does NOT support OAuth or SSO — password login only.
+- Does NOT support OAuth or SSO.
 - Does NOT support TOTP / 2FA login (server-side only).
+- Authenticates via password login **or** a pre-issued `HULY_TOKEN` (see [Getting started — Authentication](getting-started.md#authentication)).
 - Does NOT auto-reconnect a dropped WebSocket mid-command — a long
   ping timeout means the call may fail with no retry.
 

@@ -42,14 +42,20 @@ semantics.
 
 ## Bulk-archive old issues
 
+The CLI doesn't expose an `issue archive` operation. The script
+below re-parents each `Won` issue to the top level so it sorts under
+the project's "Done" view; it does **not** change status or delete
+the issue. For workspaces with >1000 matching issues, paginate with
+`--limit N --offset M` in batches.
+
 ```bash
 huly issue list --status-category Won --limit 1000 --json \
   | jq -r '.[]._id' \
   | xargs -I{} huly issue move {} --parent null --yes
 ```
 
-This re-parents each `Won` issue to the top level, effectively
-archiving them under the project's "Done" view without deleting.
+This re-parents every batch of up to 1000 `Won` issues to the top
+level. Run again with `--offset 1000` for the next batch.
 
 ---
 
@@ -139,7 +145,9 @@ jobs:
           HULY_WORKSPACE: ${{ vars.HULY_WORKSPACE }}
         run: |
           COMMIT_MSG=$(git log -1 --pretty=%B)
-          BRANCH=$(git rev-parse --abbrev-ref HEAD)
+          # Use the GitHub-provided source branch — git rev-parse returns
+          # HEAD in detached checkouts, which is not the PR branch.
+          BRANCH="${{ github.event.pull_request.head.ref || github.ref_name }}"
           huly issue create --project CI --title "$BRANCH: $COMMIT_MSG" \
                             --label auto --label ci --yes
 ```
@@ -151,10 +159,14 @@ jobs:
 # standup.sh — runs daily, posts to #standup channel
 set -e
 
-# Get yesterday's issues you closed
-CLOSED=$(huly issue list --json | \
-  jq -r --arg date "$(date -u -d 'yesterday' +%Y-%m-%d)" \
-    '.[] | select(.modifiedOn > ($date | strptime("%Y-%m-%d") | mktime * 1000)) | select(.status == "Done") | "- #\(.identifier) \(.title)"')
+# Get issues modified into "Done" during yesterday's window.
+# (The platform doesn't expose a closure timestamp, so this is a
+# "recently-modified Done" report — rename if that's misleading.)
+YESTERDAY_START_MS=$(date -u -d 'yesterday 00:00:00' +%s)000
+TODAY_START_MS=$(date -u -d 'today 00:00:00' +%s)000
+CLOSED=$(huly issue list --status Done --json | \
+  jq -r --argjson y "$YESTERDAY_START_MS" --argjson t "$TODAY_START_MS" \
+    '.[] | select(.modifiedOn >= $y and .modifiedOn < $t) | "- #\(.identifier) \(.title)"')
 
 # Post to channel
 huly channel message send "standup" --body "Yesterday I closed:
@@ -171,7 +183,7 @@ set -e
 
 SOURCE=$1
 DEST=$2
-STATUS="open"
+STATUS="ToDo"   # --status-category accepts: UnStarted | ToDo | Active | Won | Lost
 
 IDS=$(huly issue list --project "$SOURCE" --status-category "$STATUS" --json | jq -r '.[]._id')
 
@@ -231,15 +243,17 @@ huly document list --json | jq -r '.[] | select(.createdBy == null) | ._id' | \
   xargs -I{} echo "no-author doc: {}"
 ```
 
-### Recipe: Backup via cron
+### Recipe: Workspace health check via cron
+
+This runs every night and logs a line if `huly` can reach the
+workspace. It is a **health check, not a backup** — for actual data
+export, use the Huly server's own backup mechanism (see
+[Server architecture — Backup strategy](../advanced/server-architecture.md#backup-strategy)).
 
 ```cron
-# /etc/cron.d/huly-backup
+# /etc/cron.d/huly-health
 0 2 * * * huly user get > /dev/null && echo "workspace OK at $(date)" >> /var/log/huly-health.log
 ```
-
-Or use the Huly server's own backup mechanism — see
-[Server architecture — Backup strategy](../advanced/server-architecture.md#backup-strategy).
 
 ### Recipe: Generate report for management
 
@@ -256,6 +270,6 @@ Open issues: $(huly issue list --status-category Active --json | jq length)
 Top contributors (issues created this week):
 $(huly issue list --limit 1000 --json | \
   jq -r --argjson t "$(date -u -d '7 days ago' +%s)000" \
-    '[.[] | select(.createdOn >= $t) | .assignee // "(unassigned)"] | group_by(.) | map({k:.[0], n:length}) | sort_by(-.n) | .[0:5] | .[] | "  \(.n)\t\(.k)")')
+    '[.[] | select(.createdOn >= $t) | .assignee // "(unassigned)"] | group_by(.) | map({k:.[0], n:length}) | sort_by(-.n) | .[0:5] | .[] | "  \(.n)\t\(.k)"')
 EOF
 ```

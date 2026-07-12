@@ -113,7 +113,7 @@ so ES query string operators (`AND`, `OR`, `NOT`, `+`, `-`, `"…"`,
 The `tx` domain is the audit log. To see who changed what:
 
 ```bash
-huly ws findAll core.class.Tx '{"objectId":"<doc-id>","modifiedOn":{"$gte":<start-ms>,"$lte":<end-ms>}}' --json
+huly ws findAll '[{"_class":"core.class.Tx"},{"objectId":"<doc-id>","modifiedOn":{"$gte":<start-ms>,"$lte":<end-ms>}}]' --json
 ```
 
 Each tx carries `modifiedBy`, `modifiedOn`, `space`, `objectId`,

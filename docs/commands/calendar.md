@@ -48,9 +48,11 @@ got materialized.
 - `--rrule` is iCalendar RFC 5545. Server coerces `BYDAY` /
   `BYMONTH` / `BYMONTHDAY` / `BYSETPOS` to numeric arrays.
 - **Recurring exceptions (EXDATE) are not implemented.** The
-  `ReccuringEvent` model has no `exdates` field; exception dates are
+  upstream `RecurringEvent` model class is misspelled `ReccuringEvent`
+  in the SDK; that class has no `exdates` field. Exception dates are
   silently ignored. There is no UI to skip a single occurrence.
-- Each materialized instance is a `ReccuringInstance` carrying
+- Each materialized instance is a `RecurringInstance` class
+  (`ReccuringInstance` in the SDK) carrying
   `recurringEventId` + `originalStartTime`. To list instances, query
   by `recurringEventId`.
 - `WorkSlot` visibility mirrors back to the parent `ToDo` and the

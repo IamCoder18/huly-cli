@@ -55,7 +55,7 @@ openclaw skills install @iamcoder18/huly
 
 The install gives the agent the skill's `SKILL.md` and `references/*.md`
 so it can pick the correct surface on the first try. See
-[Getting started — Agent Skill](docs/getting-started.md#agent-skill-llm-agents-openclaw)
+[Getting started — Agent Skill](docs/getting-started.md#agent-skill)
 for verification and the canonical skill source path.
 
 ---
@@ -63,13 +63,17 @@ for verification and the canonical skill source path.
 ## Quickstart
 
 ```bash
-# 1. Configure (or export HULY_URL/HULY_EMAIL/HULY_PASSWORD in your shell)
-echo 'export HULY_URL=https://huly.example.com' > ~/.config/huly/.env
-echo 'export HULY_EMAIL=you@example.com'        >> ~/.config/huly/.env
-echo 'export HULY_PASSWORD=your-password'        >> ~/.config/huly/.env
+# 1. Write your config (dotenv format — KEY=value, NO `export` prefix)
+mkdir -p ~/.config/huly
+cat > ~/.config/huly/.env <<'EOF'
+HULY_URL=https://huly.example.com
+HULY_EMAIL=you@example.com
+HULY_PASSWORD=your-password
+EOF
 
 # 2. Create an account + first workspace (skip if you already have one)
-huly signup --email you@example.com --password '***' \
+#    The CLI reads HULY_PASSWORD from the dotenv file automatically.
+huly signup --email you@example.com --password "$HULY_PASSWORD" \
             --first You --last Name --create-workspace my-ws --yes
 
 # 3. Log in
@@ -79,10 +83,10 @@ huly login --headless
 huly project create --name "Demo" --identifier DEMO
 huly issue  create --project DEMO --title "Set up CI pipeline" --yes
 
-# 5. Create a Planner todo + schedule it
+# 5. Create a Planner todo + schedule it (note: --start and --duration are required)
 huly action    create --title "Implement login screen" --owner you@example.com --yes
 huly action    list --assignee you@example.com --completed false
-huly action    schedule <ref>
+huly action    schedule <ref> --start "$(date -u +%Y-%m-%dT09:00:00Z)" --duration 30
 ```
 
 > Want the full narrative? See

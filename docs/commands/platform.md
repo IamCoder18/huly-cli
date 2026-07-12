@@ -15,6 +15,8 @@ the platform primitives directly.
 
 ---
 
+<a id="space-space-type"></a>
+
 ## space / space-type
 
 Core `Space` containers (typed buckets that hold issues, channels,
@@ -41,6 +43,8 @@ huly space-type get <ref>
 
 ---
 
+<a id="association-relation"></a>
+
 ## association / relation
 
 Bi-directional associations between any two docs (A↔B). Underlying
@@ -64,6 +68,8 @@ huly relation delete <ref...> [--yes]
 ```
 
 ---
+
+<a id="project-type-task-type-issue-status"></a>
 
 ## project-type / task-type / issue-status
 

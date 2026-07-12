@@ -10,6 +10,8 @@ Planner actions (todos), availability schedules, and time tracking.
 
 ---
 
+<a id="action-planner-tasks-todos"></a>
+
 ## action (Planner tasks / ToDos)
 
 ```bash
@@ -25,8 +27,8 @@ huly action create --title "..." [--description] [--body] [--body-file] \
 huly action update <ref> [--title] [--description] [--body] [--body-file]
 huly action complete <ref>       # sets doneOn=now
 huly action reopen <ref>         # clears doneOn
-huly action schedule <ref>       # creates a WorkSlot for the task
-huly action unschedule <ref>     # removes WorkSlots for the task
+huly action schedule <ref> --start <iso> --duration <minutes>     # creates a WorkSlot for the task
+huly action unschedule <ref> [--slot-id <id>]                       # removes WorkSlots for the task
 huly action delete <ref...> [--yes]
 ```
 
@@ -34,8 +36,8 @@ huly action delete <ref...> [--yes]
 `false` match the value of `doneOn`; `all` returns both.
 
 **Priority:** accepts any of `Urgent | High | Medium | Low |
-NoPriority`. Match is case-insensitive. Unknown priorities throw
-NotFound.
+NoPriority`. Match is case-insensitive. Unknown priorities throw a
+**Validation** error (exit code 4).
 
 **Best practices & side effects:**
 

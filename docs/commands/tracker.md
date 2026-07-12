@@ -27,7 +27,7 @@ huly project update <ref> --set private=true
 huly project delete <ref...> [--yes]
 huly project statuses --project TSK
 huly project target-preferences --project TSK
-huly project target-preference upsert --project TSK --key ... --value ...
+huly project target-preference upsert --project TSK --props key=value [--props ...]   # --props is repeatable
 ```
 
 **Identifier rules:**
@@ -49,10 +49,13 @@ Anything else is left unchanged. See
 - `delete` is **destructive**: cascade-deletes all `Issue`, `Component`,
   `Milestone`, and `IssueTemplate` in the project (`OnProjectRemove`).
   Use `huly project get <ref> --json` first to inspect the project.
-- The CLI does not expose project/status/task-type creation. Custom
-  space types and custom task types can only be applied to **new**
-  projects — you cannot migrate an existing project to a different
-  type.
+- The CLI does not expose **project-type** creation. (`status` and
+  `task-type` creation are exposed — see
+[Platform — issue-status](platform.md#project-type-task-type-issue-status)
+and [task-type](platform.md#project-type-task-type-issue-status).)
+  Custom space types and custom task types can only be applied to
+  **new** projects — you cannot migrate an existing project to a
+  different type.
 - New projects are created with `ProjectType.classic = true` (Tracker
   default); Recruit/Lead space types set `classic: false`, which
   disables the issue/todo cascade automation. See
@@ -79,15 +82,15 @@ huly issue update <ref> --title "..."  # any combination of updatable fields
 huly issue delete <ref...> [--yes]
 huly issue preview-delete <ref...>     # show what delete would affect
 
-huly issue label <ref> add <name>
-huly issue label <ref> remove <name>
+huly issue label <ref> add --label <name>
+huly issue label <ref> remove --label <name>
 
-huly issue relation <ref> add <type> <targetRef>      # type: blocks|isBlockedBy|relatesTo
-huly issue relation <ref> remove <type> <targetRef>
+huly issue relation <ref> add --type <t> --target <ref>      # type: blocks|isBlockedBy|relatesTo
+huly issue relation <ref> remove --type <t> --target <ref>
 huly issue relation <ref> list
 
-huly issue link-document <ref> <docRef>
-huly issue unlink-document <ref> <docRef>
+huly issue link-document <ref> --document <docRef>
+huly issue unlink-document <ref> --document <docRef>
 
 huly issue move <ref> --parent <parentRef>      # set parent
 huly issue move <ref> --parent null             # clear parent
@@ -172,6 +175,6 @@ huly issue-template get <ref>
 huly issue-template create --project TSK --title "Bug template"
 huly issue-template update <ref> --title "..."
 huly issue-template delete <ref...> [--yes]
-huly issue-template add-child <templateRef> <childRef>    # template refs can include other templates
-huly issue-template remove-child <templateRef> <childRef>
+huly issue-template add-child <templateRef> --child <childRef>    # template refs can include other templates
+huly issue-template remove-child <templateRef> --child <childRef>
 ```

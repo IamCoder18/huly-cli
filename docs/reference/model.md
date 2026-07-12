@@ -7,6 +7,8 @@ escape-hatch use ([`huly ws findAll ...`](../advanced/escape-hatches.md#websocke
 ## Table of contents
 
 - [Class ID reference](#class-id-reference)
+<a id="plugin-cli-surface-map"></a>
+
 - [Plugin / CLI surface map](#plugin-cli-surface-map)
 
 ---
