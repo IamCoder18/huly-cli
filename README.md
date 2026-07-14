@@ -2,6 +2,7 @@
 
 [![npm version](https://img.shields.io/npm/v/@iamcoder18/huly-cli?style=flat-square&color=cb3837&logo=npm&logoColor=white)](https://www.npmjs.com/package/@iamcoder18/huly-cli)
 [![npm downloads](https://img.shields.io/npm/dm/@iamcoder18/huly-cli?style=flat-square&color=cb3837&logo=npm&logoColor=white)](https://www.npmjs.com/package/@iamcoder18/huly-cli)
+[![npm version](https://img.shields.io/npm/v/@huly-cli/cli?style=flat-square&color=cb3837&logo=npm&logoColor=white)](https://www.npmjs.com/package/@huly-cli/cli)
 [![Node](https://img.shields.io/badge/node-%3E%3D22.13-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.x-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![Agent Skill](https://img.shields.io/badge/skills-compatible-6f42c1?style=flat-square&logo=openai&logoColor=white)](https://github.com/IamCoder18/huly-cli/tree/main/packages/huly-skill)
@@ -18,22 +19,29 @@
 ## Install
 
 ```bash
+# Preferred — legacy canonical name
 npm i -g @iamcoder18/huly-cli
+
+# New name — same tarball, also maintained
+npm i -g @huly-cli/cli
+
 huly --version
 ```
 
 Other package managers:
 
 ```bash
-pnpm add -g @iamcoder18/huly-cli
-yarn global add @iamcoder18/huly-cli
-bun add -g @iamcoder18/huly-cli
+pnpm add -g @iamcoder18/huly-cli   # or @huly-cli/cli
+yarn global add @iamcoder18/huly-cli   # or @huly-cli/cli
+bun add -g @iamcoder18/huly-cli   # or @huly-cli/cli
 ```
 
 Or try it without installing:
 
 ```bash
 npx @iamcoder18/huly-cli --version
+# or
+npx @huly-cli/cli --version
 ```
 
 To build from source, see [Development](docs/development.md).

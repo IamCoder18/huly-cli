@@ -105,13 +105,38 @@ jobs:
       - name: Build
         run: pnpm --filter @iamcoder18/huly-cli build
 
-      - name: Publish to npm
+      # The committed `packages/cli/package.json` keeps the legacy
+      # `@iamcoder18/huly-cli` name (the preferred one) so internal scripts
+      # and the monorepo filter keep working. The preferred publish runs
+      # first from the unchanged manifest. The second publish temporarily
+      # rewrites the name to `@huly-cli/cli`, publishes, and an EXIT trap
+      # restores only the `name` field — leaving the version bump in place
+      # so the `Commit & tag version bump` step below can commit it.
+
+      - name: Publish @iamcoder18/huly-cli (preferred)
+        id: publish_legacy
         if: ${{ !inputs.dry_run }}
-        # OIDC trusted publishing — npm exchanges a short-lived GitHub
-        # OIDC token for a publish token. No NPM_TOKEN secret required.
+        env:
+          TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          pnpm publish --filter @iamcoder18/huly-cli --access public --tag "${{ inputs.tag }}" --no-git-checks
+          pnpm publish --filter @iamcoder18/huly-cli --access public --tag "$TAG" --no-git-checks
+
+      - name: Publish @huly-cli/cli
+        id: publish_new
+        if: ${{ !inputs.dry_run }}
+        env:
+          TAG: ${{ inputs.tag }}
+          ORIGINAL_NAME: '@iamcoder18/huly-cli'
+        run: |
+          set -euo pipefail
+          # Always restore the original `name` field on exit (success or
+          # failure) so a failed publish can't leak the temporary rename
+          # into the subsequent `Commit & tag version bump` step.
+          trap 'cd "$GITHUB_WORKSPACE/packages/cli" && npm pkg set "name=$ORIGINAL_NAME" >/dev/null 2>&1 || true' EXIT
+          cd "$GITHUB_WORKSPACE/packages/cli"
+          npm pkg set name=@huly-cli/cli
+          npm publish --access public --tag "$TAG"
 
       - name: Commit & tag version bump
         if: ${{ !inputs.dry_run && steps.version.outputs.target != steps.version.outputs.current }}
@@ -127,6 +152,10 @@ jobs:
 
       - name: Summary
         if: always()
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+          LEGACY_RESULT: ${{ steps.publish_legacy.conclusion }}
+          NEW_RESULT: ${{ steps.publish_new.conclusion }}
         run: |
           {
             echo "### Publish summary"
@@ -136,4 +165,17 @@ jobs:
             echo "- Bump kind:        \`${{ steps.version.outputs.bump }}\`"
             echo "- Tag:              \`${{ inputs.tag }}\`"
             echo "- Dry run:          \`${{ inputs.dry_run }}\`"
+            published=()
+            if [ "$DRY_RUN" != "true" ] && [ "$LEGACY_RESULT" = "success" ]; then
+              published+=("\`@iamcoder18/huly-cli\` (preferred)")
+            fi
+            if [ "$DRY_RUN" != "true" ] && [ "$NEW_RESULT" = "success" ]; then
+              published+=("\`@huly-cli/cli\`")
+            fi
+            if [ "${#published[@]}" -eq 0 ]; then
+              echo "- Published names:  _none_"
+            else
+              joined=$(IFS=', '; echo "${published[*]}")
+              echo "- Published names:  ${joined}"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"

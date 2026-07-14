@@ -1,6 +1,6 @@
 {
   "name": "@iamcoder18/huly-cli",
-  "version": "0.1.8",
+  "version": "1.0.0",
   "description": "AI-agent-first CLI for self-hosted Huly. Automate issues, projects, channels, docs, calendar & time tracking — no browser, no MCP, no Playwright.",
   "keywords": [
     "huly",
