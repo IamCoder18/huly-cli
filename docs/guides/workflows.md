@@ -174,6 +174,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: npm install -g @iamcoder18/huly-cli
+      # or: npm install -g @huly-cli/cli
       - name: Sync status to Huly
         env:
           HULY_URL: ${{ secrets.HULY_URL }}

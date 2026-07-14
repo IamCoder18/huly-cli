@@ -2,7 +2,7 @@
   "name": "huly-cli-monorepo",
   "version": "0.1.4",
   "private": true,
-  "description": "Monorepo for @iamcoder18/huly-cli and the huly-skill Agent Skill",
+  "description": "Monorepo for @iamcoder18/huly-cli (preferred) / @huly-cli/cli and the huly-skill Agent Skill",
   "type": "module",
   "scripts": {
     "build": "pnpm --filter @iamcoder18/huly-cli build",

@@ -1,6 +1,6 @@
 ---
 title: Development
-description: Build huly-cli from source, conventions for adding new commands, testing, and publishing @iamcoder18/huly-cli to npm.
+description: Build huly-cli from source, conventions for adding new commands, testing, and publishing `@iamcoder18/huly-cli` (preferred) / `@huly-cli/cli` to npm.
 ---
 
 # Development
@@ -111,7 +111,7 @@ see [CLI architecture](advanced/architecture.md).
 
 The publish pipeline uses the monorepo root README as the npm package
 README. The CLI lives in `packages/cli/` and is published as
-`@iamcoder18/huly-cli`. See `commit history` for the most recent
+`@iamcoder18/huly-cli` (preferred, also `@huly-cli/cli`). See `commit history` for the most recent
 publish-fix commits (`fix: copy monorepo README into package before
 publish`, etc.) if you need to bump the README on npm.
 

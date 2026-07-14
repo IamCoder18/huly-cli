@@ -18,16 +18,19 @@ This skill teaches you how to drive a self-hosted Huly workspace through the `hu
 Install the CLI, then **stop and ask the user to configure credentials** — the agent must not write credentials on the user's behalf.
 
 ```bash
-# preferred
+# preferred — legacy canonical name
 npm i -g @iamcoder18/huly-cli
 
-# alternatives
-pnpm add -g @iamcoder18/huly-cli
+# new name — same tarball, also maintained
+npm i -g @huly-cli/cli
+
+# alternatives (either name works)
+pnpm add -g @iamcoder18/huly-cli   # or @huly-cli/cli
 # yarn classic
-yarn global add @iamcoder18/huly-cli
+yarn global add @iamcoder18/huly-cli   # or @huly-cli/cli
 # yarn berry / modern
-yarn dlx @iamcoder18/huly-cli --version  # or use corepack
-bun add -g @iamcoder18/huly-cli
+yarn dlx @iamcoder18/huly-cli --version   # or: yarn dlx @huly-cli/cli --version   # or use corepack
+bun add -g @iamcoder18/huly-cli   # or @huly-cli/cli
 ```
 
 ### If you get auth/network/credentials errors
