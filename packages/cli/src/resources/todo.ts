@@ -54,7 +54,11 @@ const PRIMARY_CALENDAR_PREF = 'calendar:class:PrimaryCalendar' as Ref<Class<Doc>
  * from real network/auth failures, which must surface to the caller.
  */
 function isDomainNotFound (err: unknown): boolean {
-  return err instanceof Error && err.message.includes('domain not found')
+  // Hierarchy throws `Error('domain not found: <class>')` when the queried
+  // class isn't in the workspace model. Match case-insensitively so a
+  // future SDK message tweak (casing, translation) doesn't silently break
+  // the discriminator.
+  return err instanceof Error && /domain not found/i.test(err.message)
 }
 
 /**
@@ -209,7 +213,7 @@ async function resolveEmployeeId(
   // Throws if neither class is provisioned (the bootstrap step should
   // create one).
   const account = await client.getAccount()
-  for (const classId of ['contact:class:Person', 'contact:class:Employee']) {
+  for (const classId of ['contact:class:Employee', 'contact:class:Person']) {
     try {
       const doc = (await client.findOne(
         classId as Ref<Class<Doc>>,
