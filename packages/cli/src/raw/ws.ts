@@ -65,7 +65,10 @@ export async function wsCommand(method: string, paramsRaw: string | undefined, o
 
   const sessionId = Math.random().toString(36).slice(2, 12)
   const host = wsLoginEndpoint.replace(/^https?:\/\//, '').replace(/^wss?:\/\//, '')
-  const wsUrl = `${scheme}://${host}/_transactor/${wsToken}?sessionId=${sessionId}`
+  // Self-hosted deployments advertise the transactor endpoint with the path
+  // already included (wss://host/_transactor) — don't append it twice.
+  const wsPath = host.endsWith('/_transactor') ? '' : '/_transactor'
+  const wsUrl = `${scheme}://${host}${wsPath}/${wsToken}?sessionId=${sessionId}`
   const wsOpts: WebSocket.ClientOptions = insecure ? { rejectUnauthorized: false } : {}
   const ws = new WebSocket(wsUrl, wsOpts)
 
@@ -123,6 +126,14 @@ export async function wsCommand(method: string, paramsRaw: string | undefined, o
 
       let m: { id?: number; result?: unknown; error?: unknown; chunk?: { index: number; final: boolean } }
       try { m = JSON.parse(text) } catch { return }
+
+      if (m.id === -1 && m.error !== undefined && !helloDone) {
+        // The server replies to hello with result: 'hello' even when auth
+        // fails — the error field is the only signal. Proceeding would send
+        // the RPC into an unauthorized session and hang until timeout.
+        done(new CliError(ExitCode.Server, `hello failed: ${JSON.stringify(m.error)}`))
+        return
+      }
 
       if (m.id === -1 && m.result === 'hello' && !helloDone) {
         helloDone = true
