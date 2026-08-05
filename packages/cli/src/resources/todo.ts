@@ -44,22 +44,30 @@ const CALENDAR_SPACE = 'calendar:space:Calendar' as Ref<Space>
 const TODO_PRIORITIES = new Set(['High', 'Medium', 'Low', 'NoPriority', 'Urgent'])
 const TODO_VISIBILITIES = new Set(['public', 'busy', 'private'])
 const CALENDAR_CLASS = 'calendar:class:Calendar' as Ref<Class<Doc>>
+const EXTERNAL_CALENDAR_CLASS = 'calendar:class:ExternalCalendar' as Ref<Class<Doc>>
 const PRIMARY_CALENDAR_PREF = 'calendar:class:PrimaryCalendar' as Ref<Class<Doc>>
 
 /**
  * Resolve the user's PersonalCalendar the same way the web UI's
- * `findPrimaryCalendar` does (plugins/time-resources/src/utils.ts). The
- * preference document's `attachedTo` is the user-selected Calendar; if
- * none, fall back to the first Calendar owned or writable by the current
- * user. Returns `undefined` if the workspace has no Calendar for this
- * user (rare — fresh workspace).
+ * `findPrimaryCalendar` / `getPrimaryCalendar` does
+ * (plugins/time-resources/src/utils.ts, plugins/calendar/src/utils.ts).
+ * Mirrors the platform's selection order:
+ *   1. PrimaryCalendar preference's `attachedTo` (the user-picked Calendar).
+ *   2. First ExternalCalendar with `default: true` and `hidden: false`.
+ *   3. Synthetic `${accountUuid}_calendar` (matches the platform's fallback
+ *      so the WorkSlot lands in the same calendar the UI would use).
+ *
+ * The shared `getPrimaryCalendar` helper from `@hcengineering/calendar`
+ * is not reused because the CLI does not depend on that package; the
+ * logic is small enough to inline and the platform contract is the source
+ * of truth.
  */
 async function resolvePrimaryCalendar(
   client: Awaited<ReturnType<typeof connectCli>>,
   primarySocialId: string,
   accountUuid: string
-): Promise<Ref<Doc> | undefined> {
-  let calendars: Array<Doc & { _id: Ref<Doc>; user?: string; hidden?: boolean; access?: string }>
+): Promise<Ref<Doc>> {
+  let calendars: Array<Doc & { _id: Ref<Doc>; _class?: Ref<Class<Doc>>; user?: string; hidden?: boolean; access?: string; default?: boolean }>
   try {
     calendars = (await client.findAll(CALENDAR_CLASS, {
       user: primarySocialId,
@@ -67,12 +75,10 @@ async function resolvePrimaryCalendar(
       access: { $in: ['owner', 'writer'] }
     })) as typeof calendars
   } catch {
-    return undefined
+    return `${accountUuid}_calendar` as Ref<Doc>
   }
-  if (calendars.length === 0) return undefined
 
-  // PrimaryCalendar preference (single instance) names the chosen Calendar
-  // via its `attachedTo` field. See models/calendar PrimaryCalendar model.
+  // 1. PrimaryCalendar preference names the chosen Calendar via attachedTo.
   try {
     const pref = (await client.findOne(PRIMARY_CALENDAR_PREF, {})) as (Doc & { attachedTo?: Ref<Doc> }) | undefined
     if (pref?.attachedTo !== undefined) {
@@ -82,7 +88,17 @@ async function resolvePrimaryCalendar(
   } catch {
     // preference not yet created for this workspace
   }
-  return calendars[0]._id
+
+  // 2. Eligible ExternalCalendar default.
+  for (const c of calendars) {
+    if (c._class === EXTERNAL_CALENDAR_CLASS && !c.hidden && c.default === true) {
+      return c._id
+    }
+  }
+
+  // 3. Synthetic account-default Calendar — matches what getPrimaryCalendar
+  //    returns so the WorkSlot lands in the same calendar the UI would use.
+  return `${accountUuid}_calendar` as Ref<Doc>
 }
 
 function parseDate(value: string, field: string): number {
@@ -166,9 +182,23 @@ async function resolveEmployeeId(
     }
     throw new CliError(ExitCode.NotFound, `no person matching ${email} in this workspace`)
   }
-  // Default: current user
+  // Default: current user. Look up the workspace-local Person linked to the
+  // current account by `personUuid` — account.uuid is the account-level UUID
+  // and may not be a valid Person doc _id in this workspace. Throw if no
+  // Person was provisioned (the bootstrap step should create one).
   const account = await client.getAccount()
-  return { ref: account.uuid as Ref<Doc>, class: 'contact:class:Person' as Ref<Class<Doc>> }
+  const person = (await client.findOne(
+    'contact:class:Person' as Ref<Class<Doc>>,
+    { personUuid: account.uuid }
+  )) as Doc | undefined
+  if (person === undefined) {
+    throw new CliError(
+      ExitCode.NotFound,
+      `no contact:class:Person provisioned for current account`,
+      'open the workspace once in the browser, or re-run without omitting --owner'
+    )
+  }
+  return { ref: person._id, class: 'contact:class:Person' as Ref<Class<Doc>> }
 }
 
 // ---- list ----
@@ -589,13 +619,13 @@ export async function scheduleAction(ref: string, opts: ScheduleActionOpts): Pro
     // invisible to the Schedule Calendar UI, which filters by Calendar ref.
     const calendarRef = account.primarySocialId !== undefined
       ? await resolvePrimaryCalendar(client, account.primarySocialId, account.uuid)
-      : undefined
+      : (`${account.uuid}_calendar` as Ref<Doc>)
     const data: Record<string, unknown> = {
       title: todo.title,
       date: startMs,
       dueDate: dueMs,
       allDay: !!opts.allDay,
-      calendar: calendarRef ?? todo.user,
+      calendar: calendarRef,
       eventId: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
       access: 'owner',
       visibility: todo.visibility ?? 'public',
