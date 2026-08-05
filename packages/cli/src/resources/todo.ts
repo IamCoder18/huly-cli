@@ -43,6 +43,47 @@ const CALENDAR_SPACE = 'calendar:space:Calendar' as Ref<Space>
 
 const TODO_PRIORITIES = new Set(['High', 'Medium', 'Low', 'NoPriority', 'Urgent'])
 const TODO_VISIBILITIES = new Set(['public', 'busy', 'private'])
+const CALENDAR_CLASS = 'calendar:class:Calendar' as Ref<Class<Doc>>
+const PRIMARY_CALENDAR_PREF = 'calendar:class:PrimaryCalendar' as Ref<Class<Doc>>
+
+/**
+ * Resolve the user's PersonalCalendar the same way the web UI's
+ * `findPrimaryCalendar` does (plugins/time-resources/src/utils.ts). The
+ * preference document's `attachedTo` is the user-selected Calendar; if
+ * none, fall back to the first Calendar owned or writable by the current
+ * user. Returns `undefined` if the workspace has no Calendar for this
+ * user (rare — fresh workspace).
+ */
+async function resolvePrimaryCalendar(
+  client: Awaited<ReturnType<typeof connectCli>>,
+  primarySocialId: string,
+  accountUuid: string
+): Promise<Ref<Doc> | undefined> {
+  let calendars: Array<Doc & { _id: Ref<Doc>; user?: string; hidden?: boolean; access?: string }>
+  try {
+    calendars = (await client.findAll(CALENDAR_CLASS, {
+      user: primarySocialId,
+      hidden: false,
+      access: { $in: ['owner', 'writer'] }
+    })) as typeof calendars
+  } catch {
+    return undefined
+  }
+  if (calendars.length === 0) return undefined
+
+  // PrimaryCalendar preference (single instance) names the chosen Calendar
+  // via its `attachedTo` field. See models/calendar PrimaryCalendar model.
+  try {
+    const pref = (await client.findOne(PRIMARY_CALENDAR_PREF, {})) as (Doc & { attachedTo?: Ref<Doc> }) | undefined
+    if (pref?.attachedTo !== undefined) {
+      const match = calendars.find((c) => c._id === pref.attachedTo)
+      if (match !== undefined) return match._id
+    }
+  } catch {
+    // preference not yet created for this workspace
+  }
+  return calendars[0]._id
+}
 
 function parseDate(value: string, field: string): number {
   const t = new Date(value).getTime()
@@ -64,16 +105,22 @@ async function readBodyText(opts: { body?: string; bodyFile?: string }): Promise
 /**
  * Resolves a workspace user reference for an email address or the current account.
  *
+ * Returns both the doc `_id` and the class it belongs to. Callers that build
+ * `attachedTo` / `attachedToClass` pairs (e.g. `addCollection`) MUST use the
+ * returned class — ToDo `user` accepts either Employee or Person refs depending
+ * on the workspace model, and a mismatch between ref and class will be
+ * rejected by the server or land the todo in the wrong collection.
+ *
  * @param email - The person to resolve
  * @param resolveOpts - Optional `--url` / `--workspace` to thread through to the account-service fallback
- * @returns The matching person or employee reference, or the current account UUID when `email` is omitted
+ * @returns The matching `_id` paired with its class, or the current account UUID with `contact:class:Person` when `email` is omitted
  * @throws {CliError} When no matching person is found in the workspace
  */
 async function resolveEmployeeId(
   client: Awaited<ReturnType<typeof connectCli>>,
   email?: string,
   resolveOpts: ResolveOpts = {}
-): Promise<Ref<Doc>> {
+): Promise<{ ref: Ref<Doc>, class: Ref<Class<Doc>> }> {
   if (email) {
     // Todo `user` accepts either an Employee or a Person ref depending on
     // the workspace model, so try Employee first then Person via the shared
@@ -85,33 +132,43 @@ async function resolveEmployeeId(
         ['contact:class:Employee', 'contact:class:Person'],
         resolveOpts
       )
-      if (id !== undefined) return id
+      if (id !== undefined) {
+        // The helper returns only the _id, not the class. Probe to find
+        // which class it belongs to so `attachedToClass` matches the ref.
+        for (const classId of ['contact:class:Employee', 'contact:class:Person']) {
+          try {
+            const doc = await client.findOne(classId as Ref<Class<Doc>>, { _id: id })
+            if (doc) return { ref: id, class: classId as Ref<Class<Doc>> }
+          } catch {
+            // class not in this workspace's model
+          }
+        }
+      }
     }
     // Workspace-local fallback for name-based lookups or when the
     // cross-workspace lookup doesn't match anything in this workspace.
     // Scan both Employee and Person so users who exist only as Employee
-    // are still matched by name.
+    // are still matched by name. Track the class each candidate came from
+    // so callers can mirror it into `attachedToClass`.
     const lower = email.toLowerCase()
-    const candidates: Array<Doc & { name?: string; email?: string }> = []
     for (const classId of ['contact:class:Employee', 'contact:class:Person']) {
       try {
         const docs = (await client.findAll(
           classId as Ref<Class<Doc>>, {}, { limit: 500 }
         )) as Array<Doc & { name?: string; email?: string }>
-        candidates.push(...docs)
+        const hit = docs.find(
+          (p) => (p.name ?? '').toLowerCase() === lower || (p.email ?? '').toLowerCase() === lower
+        )
+        if (hit) return { ref: hit._id, class: classId as Ref<Class<Doc>> }
       } catch {
         // class not in this workspace's model; try the next one
       }
     }
-    const hit = candidates.find(
-      (p) => (p.name ?? '').toLowerCase() === lower || (p.email ?? '').toLowerCase() === lower
-    )
-    if (!hit) throw new CliError(ExitCode.NotFound, `no person matching ${email} in this workspace`)
-    return hit._id
+    throw new CliError(ExitCode.NotFound, `no person matching ${email} in this workspace`)
   }
   // Default: current user
   const account = await client.getAccount()
-  return account.uuid as Ref<Doc>
+  return { ref: account.uuid as Ref<Doc>, class: 'contact:class:Person' as Ref<Class<Doc>> }
 }
 
 // ---- list ----
@@ -137,7 +194,7 @@ export async function listActions(opts: ListActionsOpts = {}): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const query: Record<string, unknown> = {}
-    if (opts.owner) query.user = await resolveEmployeeId(client, opts.owner, { url: opts.url, workspace: opts.workspace })
+    if (opts.owner) query.user = (await resolveEmployeeId(client, opts.owner, { url: opts.url, workspace: opts.workspace })).ref
     if (opts.priority) {
       if (!TODO_PRIORITIES.has(opts.priority)) {
         throw new CliError(ExitCode.Validation, `invalid --priority: ${opts.priority}`, `expected one of ${[...TODO_PRIORITIES].join(' | ')}`)
@@ -275,7 +332,7 @@ export async function createAction(opts: CreateActionOpts): Promise<void> {
     : (opts.description ? opts.description : '')
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const user = await resolveEmployeeId(client, opts.owner, { url: opts.url, workspace: opts.workspace })
+    const { ref: user, class: userClass } = await resolveEmployeeId(client, opts.owner, { url: opts.url, workspace: opts.workspace })
     if (opts.priority && !TODO_PRIORITIES.has(opts.priority)) {
       throw new CliError(ExitCode.Validation, `invalid --priority: ${opts.priority}`, `expected one of ${[...TODO_PRIORITIES].join(' | ')}`)
     }
@@ -295,7 +352,7 @@ export async function createAction(opts: CreateActionOpts): Promise<void> {
       attachedToClass = opts.attachedToClass as Ref<Class<Doc>>
     } else {
       attachedTo = user
-      attachedToClass = 'contact:class:Person' as Ref<Class<Doc>>
+      attachedToClass = userClass
     }
 
     const data: Record<string, unknown> = {
@@ -373,7 +430,7 @@ export async function updateAction(ref: string, opts: UpdateActionOpts): Promise
       }
       ops.visibility = opts.visibility
     }
-    if (opts.owner) ops.user = await resolveEmployeeId(client, opts.owner, { url: opts.url, workspace: opts.workspace })
+    if (opts.owner) ops.user = (await resolveEmployeeId(client, opts.owner, { url: opts.url, workspace: opts.workspace })).ref
 
     if (Object.keys(ops).length === 0) {
       throw new CliError(ExitCode.Validation, 'nothing to update', 'pass --title, --description, --due, --priority, --visibility, or --owner')
@@ -526,12 +583,19 @@ export async function scheduleAction(ref: string, opts: ScheduleActionOpts): Pro
     const account = await client.getAccount()
     const startMs = parseDate(opts.start, '--start')
     const dueMs = startMs + opts.duration * 60 * 1000
+    // Resolve the user's PersonalCalendar the same way the web UI does
+    // (see time-resources/utils.ts: findPrimaryCalendar). `todo.user` is an
+    // Employee ref — using it as the `calendar` field makes the WorkSlot
+    // invisible to the Schedule Calendar UI, which filters by Calendar ref.
+    const calendarRef = account.primarySocialId !== undefined
+      ? await resolvePrimaryCalendar(client, account.primarySocialId, account.uuid)
+      : undefined
     const data: Record<string, unknown> = {
       title: todo.title,
       date: startMs,
       dueDate: dueMs,
       allDay: !!opts.allDay,
-      calendar: todo.user,
+      calendar: calendarRef ?? todo.user,
       eventId: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
       access: 'owner',
       visibility: todo.visibility ?? 'public',
