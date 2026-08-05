@@ -48,6 +48,16 @@ const EXTERNAL_CALENDAR_CLASS = 'calendar:class:ExternalCalendar' as Ref<Class<D
 const PRIMARY_CALENDAR_PREF = 'calendar:class:PrimaryCalendar' as Ref<Class<Doc>>
 
 /**
+ * True when the SDK error indicates the queried class doesn't exist in the
+ * workspace model (`Hierarchy` throws `Error('domain not found: <class>')`).
+ * Used to distinguish "this workspace doesn't model Employee/Person/Calendar"
+ * from real network/auth failures, which must surface to the caller.
+ */
+function isDomainNotFound (err: unknown): boolean {
+  return err instanceof Error && err.message.includes('domain not found')
+}
+
+/**
  * Resolve the user's PersonalCalendar the same way the web UI's
  * `findPrimaryCalendar` / `getPrimaryCalendar` does
  * (plugins/time-resources/src/utils.ts, plugins/calendar/src/utils.ts).
@@ -74,19 +84,27 @@ async function resolvePrimaryCalendar(
       hidden: false,
       access: { $in: ['owner', 'writer'] }
     })) as typeof calendars
-  } catch {
+  } catch (err) {
+    // "domain not found" means this workspace doesn't model Calendar — fall
+    // through to the synthetic default so the slot still lands somewhere
+    // visible. Any other error (network, auth, server) must propagate.
+    if (!isDomainNotFound(err)) throw err
     return `${accountUuid}_calendar` as Ref<Doc>
   }
 
   // 1. PrimaryCalendar preference names the chosen Calendar via attachedTo.
+  // The platform UI queries with an empty filter (Preference is treated as a
+  // workspace singleton there), so we match that contract instead of
+  // guessing a user-scoped filter.
   try {
     const pref = (await client.findOne(PRIMARY_CALENDAR_PREF, {})) as (Doc & { attachedTo?: Ref<Doc> }) | undefined
     if (pref?.attachedTo !== undefined) {
       const match = calendars.find((c) => c._id === pref.attachedTo)
       if (match !== undefined) return match._id
     }
-  } catch {
-    // preference not yet created for this workspace
+  } catch (err) {
+    if (!isDomainNotFound(err)) throw err
+    // preference class not in this workspace — fall through to ExternalCalendar scan
   }
 
   // 2. Eligible ExternalCalendar default.
@@ -155,8 +173,9 @@ async function resolveEmployeeId(
           try {
             const doc = await client.findOne(classId as Ref<Class<Doc>>, { _id: id })
             if (doc) return { ref: id, class: classId as Ref<Class<Doc>> }
-          } catch {
-            // class not in this workspace's model
+          } catch (err) {
+            if (!isDomainNotFound(err)) throw err
+            // class not in this workspace's model; try the next one
           }
         }
       }
@@ -176,29 +195,37 @@ async function resolveEmployeeId(
           (p) => (p.name ?? '').toLowerCase() === lower || (p.email ?? '').toLowerCase() === lower
         )
         if (hit) return { ref: hit._id, class: classId as Ref<Class<Doc>> }
-      } catch {
+      } catch (err) {
+        if (!isDomainNotFound(err)) throw err
         // class not in this workspace's model; try the next one
       }
     }
     throw new CliError(ExitCode.NotFound, `no person matching ${email} in this workspace`)
   }
-  // Default: current user. Look up the workspace-local Person linked to the
-  // current account by `personUuid` — account.uuid is the account-level UUID
-  // and may not be a valid Person doc _id in this workspace. Throw if no
-  // Person was provisioned (the bootstrap step should create one).
+  // Default: current user. Look up the workspace-local Person/Employee linked
+  // to the current account by `personUuid` — account.uuid is the
+  // account-level UUID and may not be a valid Person/Employee doc _id in
+  // this workspace. Probe both classes, matching the email branch above.
+  // Throws if neither class is provisioned (the bootstrap step should
+  // create one).
   const account = await client.getAccount()
-  const person = (await client.findOne(
-    'contact:class:Person' as Ref<Class<Doc>>,
-    { personUuid: account.uuid }
-  )) as Doc | undefined
-  if (person === undefined) {
-    throw new CliError(
-      ExitCode.NotFound,
-      `no contact:class:Person provisioned for current account`,
-      'open the workspace once in the browser, or re-run without omitting --owner'
-    )
+  for (const classId of ['contact:class:Person', 'contact:class:Employee']) {
+    try {
+      const doc = (await client.findOne(
+        classId as Ref<Class<Doc>>,
+        { personUuid: account.uuid }
+      )) as Doc | undefined
+      if (doc !== undefined) return { ref: doc._id, class: classId as Ref<Class<Doc>> }
+    } catch (err) {
+      if (!isDomainNotFound(err)) throw err
+      // class not in this workspace's model; try the next one
+    }
   }
-  return { ref: person._id, class: 'contact:class:Person' as Ref<Class<Doc>> }
+  throw new CliError(
+    ExitCode.NotFound,
+    `no contact:class:Person or contact:class:Employee provisioned for current account`,
+    'open the workspace once in the browser, or re-run without omitting --owner'
+  )
 }
 
 // ---- list ----
