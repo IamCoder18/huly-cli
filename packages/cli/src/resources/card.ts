@@ -101,6 +101,15 @@ export async function createCardSpace(opts: {
   }
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
+    // Add the current user as a member — a CardSpace is a Space, and
+    // SpaceSecurityMiddleware iterates `members` while registering the new
+    // space ("space.members is not iterable" without it). Mirrors the same
+    // handling in project create.
+    try {
+      data.members = [(await client.getAccount()).uuid]
+    } catch {
+      data.members = []
+    }
     const id = await withSpinner(
       'Creating card-space…',
       () => client.createDoc(CLASS.CardSpace as Ref<Class<CardSpace>>, 'core:space:Workspace' as Ref<Space>, data as any),
