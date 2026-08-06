@@ -42,22 +42,17 @@ method calls without opening the SDK's binary transport:
 # findAll
 huly ws findAll '[{"_class":"tracker:class:Project"},{}]'
 
-# findOne
-huly ws findOne '[{"_class":"tracker:class:Project"},{"identifier":"TSK"}]'
-
-# createDoc
-huly ws createDoc '["tracker:class:Project","core:space:Space",{"identifier":"NEW","name":"New project"}]'
-
 # tx (raw transaction)
 huly ws tx '[{"_class":"core:class:TxCreateDoc",...}]'
 ```
 
 > `huly ws` accepts a single positional `<method>` followed by an
 > optional `[params]` argument that is a **JSON-encoded array of
-> positional parameters** for that method. Method names mirror the
-> SDK's `PlatformClient` interface. See
-> `node_modules/@hcengineering/api-client/lib/client.js` for the full
-> list.
+> positional parameters** for that method. On Huly 0.7.x the raw
+> socket dispatches a small whitelist: `findAll`, `tx`, `hello`, and
+> `ping`. Do not rely on `findOne`, `createDoc`, `updateDoc`, or other
+> SDK methods through this escape hatch — use the high-level commands
+> for writes, or `tx` for raw transaction payloads.
 >
 > The `tx` RPC supports every transaction type — `TxCreateDoc`,
 > `TxUpdateDoc`, `TxRemoveDoc`, `TxMixin`, `TxApplyIf`. Build the
