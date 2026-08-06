@@ -44,15 +44,18 @@ function deriveWsScheme(endpoint: string): 'ws' | 'wss' {
 
 export function buildWsUrl(endpoint: string, token: string, sessionId: string): string {
   const scheme = deriveWsScheme(endpoint)
-  const host = endpoint.replace(/^https?:\/\//, '').replace(/^wss?:\/\//, '')
+  const host = endpoint
+    .replace(/^https?:\/\//, '')
+    .replace(/^wss?:\/\//, '')
+    .replace(/\/+$/, '')
   // Self-hosted deployments advertise the transactor endpoint with the path
   // already included (wss://host/_transactor) — don't append it twice.
   const wsPath = host.endsWith('/_transactor') ? '' : '/_transactor'
-  return `${scheme}://${host}${wsPath}/${token}?sessionId=${sessionId}`
+  return `${scheme}://${host}${wsPath}/${encodeURIComponent(token)}?sessionId=${encodeURIComponent(sessionId)}`
 }
 
 export function isHelloFailure(message: WsMessage, helloDone: boolean): boolean {
-  return message.id === -1 && message.error !== undefined && !helloDone
+  return message.id === -1 && message.error !== undefined && message.error !== null && !helloDone
 }
 
 const PING = 'ping'
@@ -139,8 +142,10 @@ export async function wsCommand(method: string, paramsRaw: string | undefined, o
       if (text === PING) { ws.send(PONG); return }
       if (text === PONG) return
 
-      let m: WsMessage
-      try { m = JSON.parse(text) } catch { return }
+      let raw: unknown
+      try { raw = JSON.parse(text) } catch { return }
+      if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return
+      const m = raw as WsMessage
 
       if (isHelloFailure(m, helloDone)) {
         // The server replies to hello with result: 'hello' even when auth
