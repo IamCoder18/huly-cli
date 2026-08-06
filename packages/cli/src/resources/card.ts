@@ -367,8 +367,7 @@ export async function createCard(opts: {
       content: contentRef,
       parentInfo,
       rank: '0|aaaaa:',
-      blobs: {},
-      _class: tagId
+      blobs: {}
     }
     if (parent !== undefined && parent !== null) data.parent = parent._id as Ref<Doc>
     if (opts.dryRun) {
@@ -378,7 +377,12 @@ export async function createCard(opts: {
     }
     const id = await withSpinner(
       'Creating card…',
-      () => client.createDoc(CLASS.Card as Ref<Class<CardDoc>>, space as Ref<Space>, data as any, newCardId),
+      // The card's type IS its class (MasterTag extends Class) — pass the
+      // resolved tag as objectClass. `_class` inside attributes is a system
+      // field the server does not honor, so the tag never took effect there.
+      // tagId is guaranteed non-undefined here: createCard throws on missing
+      // --master-tag and resolveRef throws on resolution failure.
+      () => client.createDoc(tagId as Ref<Class<CardDoc>>, space as Ref<Space>, data as any, newCardId),
       opts
     )
     invalidateIndex(client, CLASS.Card)
