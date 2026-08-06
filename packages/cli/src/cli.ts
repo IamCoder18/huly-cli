@@ -1807,7 +1807,7 @@ by OnIssueUpdate).`)
 
   const wsCmd = program.command('ws').description('Raw WebSocket escape hatch (text JSON only)')
     wsCmd
-    .argument('<method>', 'RPC method (e.g. findAll, tx)')
+    .argument('<method>', 'RPC method (whitelist: findAll | tx | hello | ping)')
     .argument('[params]', 'JSON-encoded array of positional params')
     .option('--no-ping', 'disable ping/pong')
     .action(async (method, params, opts) => {
