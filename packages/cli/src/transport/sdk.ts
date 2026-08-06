@@ -10,6 +10,12 @@ export interface ConnectOpts {
   token?: string
   email?: string
   password?: string
+  // Skip the auto-bootstrap of Person/Employee/SocialIdentity records.
+  // The bootstrap persists records on the server, so it must be bypassed
+  // for any read-only path that should remain side-effect free (e.g.
+  // --dry-run previews). HULY_SKIP_BOOTSTRAP=1 still works as a global
+  // override; this opt-in is the per-call way to opt out.
+  skipBootstrap?: boolean
 }
 
 export async function resolveWorkspace(opts: ConnectOpts): Promise<string> {
@@ -31,8 +37,9 @@ export async function connectCli(opts: ConnectOpts = {}): Promise<PlatformClient
   // so the CLI behaves like the web UI on first workbench connect. This is
   // what unblocks `--assignee <email>` lookups and the action cascade for
   // users who have never opened the workspace in a browser.
-  // Gated by HULY_SKIP_BOOTSTRAP=1; see `bootstrap.ts` for the trigger chain.
-  if (!skipBootstrap()) {
+  // Gated by HULY_SKIP_BOOTSTRAP=1 or opts.skipBootstrap; see
+  // `bootstrap.ts` for the trigger chain.
+  if (!opts.skipBootstrap && !skipBootstrap()) {
     const url = opts.url ?? readEnv().url
     if (url !== undefined && url !== '') {
       try {
