@@ -1,71 +1,49 @@
-# huly-cli — AI-agent-first CLI for self-hosted Huly.
+# huly-cli — Drive your self-hosted Huly from any AI agent.
 
-[![npm version](https://img.shields.io/npm/v/@iamcoder18/huly-cli?style=flat-square&color=cb3837&logo=npm&logoColor=white)](https://www.npmjs.com/package/@iamcoder18/huly-cli)
-[![npm downloads](https://img.shields.io/npm/dm/@iamcoder18/huly-cli?style=flat-square&color=cb3837&logo=npm&logoColor=white)](https://www.npmjs.com/package/@iamcoder18/huly-cli)
-[![npm version](https://img.shields.io/npm/v/@huly-cli/cli?style=flat-square&color=cb3837&logo=npm&logoColor=white)](https://www.npmjs.com/package/@huly-cli/cli)
+[![npm](https://img.shields.io/npm/v/@iamcoder18/huly-cli?style=flat-square&color=cb3837&logo=npm&logoColor=white)](https://www.npmjs.com/package/@iamcoder18/huly-cli)
+[![npm dl](https://img.shields.io/npm/dm/@iamcoder18/huly-cli?style=flat-square&color=cb3837&logo=npm&logoColor=white)](https://www.npmjs.com/package/@iamcoder18/huly-cli)
 [![Node](https://img.shields.io/badge/node-%3E%3D22.13-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
-[![TypeScript](https://img.shields.io/badge/TypeScript-6.x-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
-[![Agent Skill](https://img.shields.io/badge/skills-compatible-6f42c1?style=flat-square&logo=openai&logoColor=white)](https://github.com/IamCoder18/huly-cli/tree/main/packages/huly-skill)
-[![GitHub](https://img.shields.io/badge/github-IamCoder18%2Fhuly--cli-181717?style=flat-square&logo=github&logoColor=white)](https://github.com/IamCoder18/huly-cli)
-[![License: AGPL-3.0-or-later](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue?style=flat-square)](LICENSE)
-[![Self-Hosted](https://img.shields.io/badge/self--hosted-first-6f42c1?style=flat-square)](#why-huly-cli-not-the-mcp-wrappers)
+[![Agent Skill](https://img.shields.io/badge/skills-compatible-6f42c1?style=flat-square)](https://github.com/IamCoder18/huly-cli/tree/main/packages/huly-skill)
+[![License](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue?style=flat-square)](LICENSE)
 
-> **Drive your Huly workspace from any AI agent.** Automate
-> issues, projects, channels, docs, calendar & time tracking — no browser,
-> no MCP, no Playwright.
+**Issues, projects, channels, docs, calendar & time tracking — from the terminal,
+your AI agent, or OpenClaw.** No browser, no MCP, no Playwright.
 
 ---
 
-## Install
+## Quick start
 
 ```bash
-# Preferred — legacy canonical name
-npm i -g @iamcoder18/huly-cli
+# 1. Install the CLI
+npm i -g @iamcoder18/huly-cli # OR pnpm add -g @iamcoder18/huly-cli
 
-# New name — same tarball, also maintained
-npm i -g @huly-cli/cli
+# 2. (Optional) Install the Agent Skill for AI coding agents
+npx skills add IamCoder18/huly-cli
 
-huly --version
+# 3. (Optional) For OpenClaw
+openclaw skills install @iamcoder18/huly
 ```
 
-Other package managers:
+Then [configure & log in](docs/getting-started.md) — usually two minutes.
+
+<details>
+<summary><strong>Also: try without installing, or use the new package name</strong></summary>
 
 ```bash
-pnpm add -g @iamcoder18/huly-cli   # or @huly-cli/cli
-yarn global add @iamcoder18/huly-cli   # or @huly-cli/cli
-bun add -g @iamcoder18/huly-cli   # or @huly-cli/cli
-```
-
-Or try it without installing:
-
-```bash
+# Try it without installing
 npx @iamcoder18/huly-cli --version
-# or
-npx @huly-cli/cli --version
+
+# New package name — same tarball, also maintained
+npm i -g @huly-cli/cli        # OR  pnpm add -g @huly-cli/cli
+
+# Other package managers
+yarn global add @iamcoder18/huly-cli   # or @huly-cli/cli
+bun add -g @iamcoder18/huly-cli        # or @huly-cli/cli
 ```
 
 To build from source, see [Development](docs/development.md).
 
----
-
-## Agent Skill (AI coding agents / OpenClaw)
-
-The CLI ships a drop-in **Agent Skill** — a curated `SKILL.md` plus a
-`references/` bundle that teaches an AI coding agent (or OpenClaw) how
-to drive your Huly workspace end-to-end without a browser.
-
-```bash
-# Any agent consuming the open `skills` package format
-npx skills add IamCoder18/huly-cli
-
-# OpenClaw
-openclaw skills install @iamcoder18/huly
-```
-
-The install gives the agent the skill's `SKILL.md` and `references/*.md`
-so it can pick the correct surface on the first try. See
-[Getting started — Agent Skill](docs/getting-started.md#agent-skill)
-for verification and the canonical skill source path.
+</details>
 
 ---
 
