@@ -85,7 +85,14 @@ export async function createCardSpace(opts: {
   url?: string
 }): Promise<void> {
   if (!opts.name) throw new CliError(ExitCode.Validation, 'missing --name')
-  const client = await connectCli({ url: opts.url, workspace: opts.workspace })
+  // --dry-run must remain side-effect free: bootstrapEmployee persists
+  // Person/Employee/SocialIdentity records on first connect, so bypass it
+  // for previews. See ConnectOpts.skipBootstrap in transport/sdk.ts.
+  const client = await connectCli({
+    url: opts.url,
+    workspace: opts.workspace,
+    skipBootstrap: opts.dryRun === true
+  })
   // Add the current user as a member — a CardSpace is a Space, and
   // SpaceSecurityMiddleware iterates `members` while registering the new
   // space ("space.members is not iterable" without it). Mirrors the same
@@ -98,10 +105,12 @@ export async function createCardSpace(opts: {
     // Auth/workspace is required to create a space the user can then
     // access. Silently empty-members would create an unreachable space
     // (the same class of bug this PR fixes) and hide the real cause —
-    // surface the error instead.
+    // surface the error instead. Close the WebSocket first so the
+    // failure path doesn't leak the connection opened above.
+    await client.close().catch(() => {})
     throw new CliError(
       ExitCode.Auth,
-      `cannot resolve current account for card-space create: ${(err as Error).message}`
+      `cannot resolve current account for card-space create: ${err instanceof Error ? err.message : String(err)}`
     )
   }
   // CardSpace.description is a plain string field, not collaborative
