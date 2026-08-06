@@ -85,6 +85,25 @@ export async function createCardSpace(opts: {
   url?: string
 }): Promise<void> {
   if (!opts.name) throw new CliError(ExitCode.Validation, 'missing --name')
+  const client = await connectCli({ url: opts.url, workspace: opts.workspace })
+  // Add the current user as a member — a CardSpace is a Space, and
+  // SpaceSecurityMiddleware iterates `members` while registering the new
+  // space ("space.members is not iterable" without it). Mirrors the same
+  // handling in project create. Resolved before the dry-run branch so the
+  // preview reflects the actual wire payload.
+  let currentAccountUuid: string
+  try {
+    currentAccountUuid = (await client.getAccount()).uuid
+  } catch (err) {
+    // Auth/workspace is required to create a space the user can then
+    // access. Silently empty-members would create an unreachable space
+    // (the same class of bug this PR fixes) and hide the real cause —
+    // surface the error instead.
+    throw new CliError(
+      ExitCode.Auth,
+      `cannot resolve current account for card-space create: ${(err as Error).message}`
+    )
+  }
   // CardSpace.description is a plain string field, not collaborative
   // content — leave it as-is.
   const data: Record<string, unknown> = {
@@ -92,24 +111,16 @@ export async function createCardSpace(opts: {
     description: opts.description ?? '',
     private: false,
     archived: false,
-    types: []
+    types: [],
+    members: [currentAccountUuid]
   }
   if (opts.dryRun) {
     console.log('would create card-space:')
     console.log(JSON.stringify({ _class: CLASS.CardSpace, space: '<self>', data }, null, 2))
+    await client.close()
     return
   }
-  const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    // Add the current user as a member — a CardSpace is a Space, and
-    // SpaceSecurityMiddleware iterates `members` while registering the new
-    // space ("space.members is not iterable" without it). Mirrors the same
-    // handling in project create.
-    try {
-      data.members = [(await client.getAccount()).uuid]
-    } catch {
-      data.members = []
-    }
     const id = await withSpinner(
       'Creating card-space…',
       () => client.createDoc(CLASS.CardSpace as Ref<Class<CardSpace>>, 'core:space:Workspace' as Ref<Space>, data as any),
