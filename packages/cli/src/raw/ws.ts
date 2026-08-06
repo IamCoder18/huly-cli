@@ -12,6 +12,13 @@ interface WsOpts {
   url?: string
 }
 
+interface WsMessage {
+  id?: number
+  result?: unknown
+  error?: unknown
+  chunk?: { index: number; final: boolean }
+}
+
 function parseParams(raw: string | undefined): unknown[] {
   if (raw === undefined || raw === '') return []
   const trimmed = raw.trim()
@@ -33,6 +40,19 @@ function deriveWsScheme(endpoint: string): 'ws' | 'wss' {
   if (endpoint.startsWith('ws://')) return 'ws'
   if (endpoint.startsWith('https://')) return 'wss'
   return 'ws'
+}
+
+export function buildWsUrl(endpoint: string, token: string, sessionId: string): string {
+  const scheme = deriveWsScheme(endpoint)
+  const host = endpoint.replace(/^https?:\/\//, '').replace(/^wss?:\/\//, '')
+  // Self-hosted deployments advertise the transactor endpoint with the path
+  // already included (wss://host/_transactor) — don't append it twice.
+  const wsPath = host.endsWith('/_transactor') ? '' : '/_transactor'
+  return `${scheme}://${host}${wsPath}/${token}?sessionId=${sessionId}`
+}
+
+export function isHelloFailure(message: WsMessage, helloDone: boolean): boolean {
+  return message.id === -1 && message.error !== undefined && !helloDone
 }
 
 const PING = 'ping'
@@ -60,15 +80,10 @@ export async function wsCommand(method: string, paramsRaw: string | undefined, o
     wsToken = opts.token ?? env.token ?? await resolveToken({ url })
   }
 
-  const scheme = deriveWsScheme(wsLoginEndpoint)
   if (wsLoginEndpoint.startsWith('http://')) insecure = true
 
   const sessionId = Math.random().toString(36).slice(2, 12)
-  const host = wsLoginEndpoint.replace(/^https?:\/\//, '').replace(/^wss?:\/\//, '')
-  // Self-hosted deployments advertise the transactor endpoint with the path
-  // already included (wss://host/_transactor) — don't append it twice.
-  const wsPath = host.endsWith('/_transactor') ? '' : '/_transactor'
-  const wsUrl = `${scheme}://${host}${wsPath}/${wsToken}?sessionId=${sessionId}`
+  const wsUrl = buildWsUrl(wsLoginEndpoint, wsToken, sessionId)
   const wsOpts: WebSocket.ClientOptions = insecure ? { rejectUnauthorized: false } : {}
   const ws = new WebSocket(wsUrl, wsOpts)
 
@@ -124,10 +139,10 @@ export async function wsCommand(method: string, paramsRaw: string | undefined, o
       if (text === PING) { ws.send(PONG); return }
       if (text === PONG) return
 
-      let m: { id?: number; result?: unknown; error?: unknown; chunk?: { index: number; final: boolean } }
+      let m: WsMessage
       try { m = JSON.parse(text) } catch { return }
 
-      if (m.id === -1 && m.error !== undefined && !helloDone) {
+      if (isHelloFailure(m, helloDone)) {
         // The server replies to hello with result: 'hello' even when auth
         // fails — the error field is the only signal. Proceeding would send
         // the RPC into an unauthorized session and hang until timeout.
