@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { buildWsUrl, isHelloFailure, wsCommand } from './ws.js'
 
 const wsMock = vi.hoisted(() => ({ current: null as any }))
@@ -23,11 +23,36 @@ vi.mock('ws', () => {
 
     constructor(public url: string, public options?: unknown) {
       wsMock.current = this
-      setTimeout(() => this.onopen?.(), 0)
+      queueMicrotask(() => this.onopen?.())
     }
   }
   return { default: FakeWebSocket }
 })
+
+vi.mock('../auth/env.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../auth/env.js')>()
+  return {
+    ...actual,
+    readEnv: () => ({
+      url: 'wss://huly.example',
+      email: undefined,
+      password: undefined,
+      token: 'tok',
+      workspace: undefined
+    }),
+    requireUrl: (u?: string) => u ?? 'wss://huly.example',
+    insecureTLS: () => false
+  }
+})
+
+vi.mock('../auth/cache.js', () => ({
+  readActiveWorkspace: async () => undefined
+}))
+
+vi.mock('../auth/client.js', () => ({
+  resolveToken: async () => 'should-not-be-called',
+  accountClient: async () => ({ selectWorkspace: async () => ({}) })
+}))
 
 describe('buildWsUrl', () => {
   it('does not append /_transactor twice for self-hosted endpoints', () => {
@@ -86,6 +111,14 @@ describe('isHelloFailure', () => {
 })
 
 describe('wsCommand', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+  })
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
   it('rejects a hello error fast and closes the socket', async () => {
     const promise = wsCommand('test.method', '[]', {
       url: 'wss://huly.example',
@@ -94,6 +127,7 @@ describe('wsCommand', () => {
 
     await new Promise((resolve) => setTimeout(resolve, 0))
 
+    expect(wsMock.current).not.toBeNull()
     expect(wsMock.current.url).toContain('/_transactor/tok?')
     wsMock.current.onmessage?.({
       toString: () => JSON.stringify({ id: -1, error: { message: 'bad token' } })
@@ -104,5 +138,76 @@ describe('wsCommand', () => {
       message: /hello failed/
     })
     expect(wsMock.current.close).toHaveBeenCalled()
+  })
+
+  it('completes the happy path: hello -> RPC -> result', async () => {
+    const promise = wsCommand('test.method', '[]', {
+      url: 'wss://huly.example',
+      token: 'tok'
+    })
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(wsMock.current).not.toBeNull()
+    wsMock.current.onmessage?.({
+      toString: () => JSON.stringify({ id: -1, result: 'hello' })
+    })
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const sent = wsMock.current.send.mock.calls.map((c: unknown[]) => c[0] as string)
+    expect(sent[0]).toContain('"method":"hello"')
+    expect(sent[1]).toContain('"method":"test.method"')
+
+    wsMock.current.onmessage?.({
+      toString: () => JSON.stringify({ id: 1, result: { value: ['ok'], total: 1 } })
+    })
+
+    await expect(promise).resolves.toBeUndefined()
+  })
+
+  it('ignores non-object JSON payloads (null / array / number / string)', async () => {
+    const promise = wsCommand('test.method', '[]', {
+      url: 'wss://huly.example',
+      token: 'tok'
+    })
+    promise.catch(() => {})
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(wsMock.current).not.toBeNull()
+
+    for (const payload of ['null', '[1,2,3]', '42', '"a string"']) {
+      wsMock.current.onmessage?.({ toString: () => payload })
+    }
+
+    wsMock.current.onmessage?.({
+      toString: () => JSON.stringify({ id: -1, result: 'hello' })
+    })
+    wsMock.current.onmessage?.({
+      toString: () => JSON.stringify({ id: 1, result: { value: ['ok'] } })
+    })
+
+    await expect(promise).resolves.toBeUndefined()
+  })
+
+  it('ignores malformed JSON and keeps the connection alive', async () => {
+    const promise = wsCommand('test.method', '[]', {
+      url: 'wss://huly.example',
+      token: 'tok'
+    })
+    promise.catch(() => {})
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(wsMock.current).not.toBeNull()
+
+    wsMock.current.onmessage?.({ toString: () => 'not json {{{' })
+    wsMock.current.onmessage?.({
+      toString: () => JSON.stringify({ id: -1, result: 'hello' })
+    })
+    wsMock.current.onmessage?.({
+      toString: () => JSON.stringify({ id: 1, result: { value: ['ok'] } })
+    })
+
+    await expect(promise).resolves.toBeUndefined()
   })
 })
