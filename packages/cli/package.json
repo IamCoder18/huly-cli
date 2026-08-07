@@ -49,6 +49,8 @@
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "prepublishOnly": "node -e \"const fs=require('fs'); fs.copyFileSync('../../README.md','./README.md'); fs.copyFileSync('../../LICENSE','./LICENSE')\"",
     "postpublish": "node -e \"require('fs').rmSync('./README.md',{force:true}); require('fs').rmSync('./LICENSE',{force:true})\""
   },
@@ -78,6 +80,7 @@
     "@types/node": "^26.1.0",
     "@types/ws": "^8.5.12",
     "tsx": "^4.19.0",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.10"
   }
 }

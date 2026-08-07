@@ -9,6 +9,7 @@
     "dev": "pnpm --filter @iamcoder18/huly-cli dev",
     "start": "pnpm --filter @iamcoder18/huly-cli start",
     "typecheck": "pnpm -r typecheck",
+    "test": "pnpm --filter @iamcoder18/huly-cli test",
     "smoke": "bash scripts/smoke.sh all"
   },
   "engines": {
