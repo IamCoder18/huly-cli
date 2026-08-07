@@ -11,11 +11,11 @@ This skill teaches you how to drive a self-hosted Huly workspace through the `hu
 
 ## Setup (one-time)
 
-**Default assumption: the `huly` CLI is already installed on this machine and already configured with valid credentials.** Most users set this up once, then forget it. Do not run setup commands proactively — just execute the user's request normally. If a `huly` command fails because the CLI is missing or credentials are bad, **then** run the setup steps below.
+**Default assumption: the `huly` CLI is already installed on this machine and already configured with valid credentials.** Most users set this up once, then forget it. **Do not** inspect config files, env vars, or run `huly whoami` to "verify" the setup — just proceed with the user's request. If a `huly` command fails because the CLI is missing or credentials are bad, **then** run the setup steps below.
 
 ### If you get `command not found`
 
-Install the CLI, then **stop and ask the user to configure credentials** — the agent must not write credentials on the user's behalf.
+Install the CLI, then **stop and ask the user to configure credentials**.
 
 ```bash
 npm i -g @iamcoder18/huly-cli
@@ -63,7 +63,7 @@ Full env-var cheat sheet, the auth-state machine, and precedence rules live in `
 
 ## The 7 rules. Read these first.
 
-1. **Verify before you mutate.** Run `huly whoami` to confirm the workspace, and `huly <surface> list --json | jq` to discover refs when they aren't given to you explicitly. NEVER guess a ref, person, or status name.
+1. **Verify before you mutate.** Use a read action (e.g. `huly project list --json`, `huly action list --json`) to confirm context, workspace, and project, and to gain the context you need for the task. Run `huly <surface> list --json` to discover refs when they aren't given to you explicitly, then `huly issue get <ref> --json` (or the surface's `get`) to inspect the target before changing it. NEVER guess a ref, person, or status name.
 
 2. **Use `--json` for every programmatic read.** Tables are for humans. If you're piping, branching, or capturing an `_id`, use `--json` (or equivalently `--ci`). The CLI also auto-enables JSON when `CI=1`.
 
