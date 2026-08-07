@@ -33,12 +33,9 @@ Then [configure & log in](docs/getting-started.md) — usually two minutes.
 # Try it without installing
 npx @iamcoder18/huly-cli --version
 
-# New package name — same tarball, also maintained
-npm i -g @huly-cli/cli        # OR  pnpm add -g @huly-cli/cli
-
 # Other package managers
-yarn global add @iamcoder18/huly-cli   # or @huly-cli/cli
-bun add -g @iamcoder18/huly-cli        # or @huly-cli/cli
+yarn global add @iamcoder18/huly-cli
+bun add -g @iamcoder18/huly-cli
 ```
 
 To build from source, see [Development](docs/development.md).
