@@ -408,6 +408,46 @@ If the task is about a specific surface, load the matching reference file **befo
 
 ---
 
+## Reporting issues with the `huly` CLI
+
+If you run into a bug, unexpected behavior, or an error that traces back to the **`huly` CLI itself** — not the user's specific workflow and not something on their Huly instance (workspace, project setup, permissions, data shape, etc.) — summarize the issue to the user and ask them to report it via the `gh` CLI to [`github.com/IamCoder18/huly-cli`](https://github.com/IamCoder18/huly-cli):
+
+> **Do not run as-is — replace every `<...>` placeholder first.** This template is intentionally not pre-filled so the agent cannot accidentally file a malformed or sensitive upstream issue.
+
+```bash
+TITLE="<short summary — sanitized, no workspace/user/project names>"
+BODY="$(cat <<'EOF'
+## What happened
+<command(s) run, expected vs actual output, exit code>
+
+## Environment
+- huly --version (or: npm ls -g @iamcoder18/huly-cli)
+- Node version, OS
+- HULY_URL workspace URL (sanitized)
+
+## Repro
+<minimal steps to reproduce>
+
+## Anything else
+<relevant logs, --json output, --dry-run output>
+EOF
+)"
+
+gh issue create --repo IamCoder18/huly-cli \
+  --title "$TITLE" \
+  --body "$BODY"
+```
+
+Notes:
+- The `<<'EOF'` heredoc is single-quoted so `$`, backticks, and embedded quotes in logs/JSON are passed through literally — no shell expansion of pasted output.
+- Set `TITLE` and `BODY` from reviewed variables, never from raw `--json`/log output piped inline.
+
+Only suggest this for issues **with the CLI**. Workflow questions, workspace configuration problems, or instance-specific behavior should be debugged here — not filed upstream.
+
+**Redact PII and secrets before filing — in both the issue title and the body.** Do NOT include passwords, JWT tokens, API keys, session cookies, real email addresses of other users, real issue/document IDs from the user's workspace, or any internal hostnames/URLs anywhere in the issue. Sanitize the workspace URL (e.g. `huly.example.com`), use placeholder emails (`alice@example.com`), and strip anything from `--json` / `--dry-run` output that could identify a real person, project, or instance. If in doubt, leave it out.
+
+---
+
 ## Quick command reference (the verbs the CLI exposes)
 
 ```
