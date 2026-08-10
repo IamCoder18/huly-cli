@@ -117,6 +117,11 @@ export function skipBootstrap(env: NodeJS.ProcessEnv = process.env): boolean {
  *   - `card create`: --card-space defaults to the first available
  *     CardSpace instead of the literal `card:space:Default` (which the
  *     skill docs warn usually does not exist).
+ *   - `issue create` / `issue update`: when the workspace has zero
+ *     `tracker:class:TypeIssuePriority` records (e.g. created with
+ *     `INIT_REPO_DIR=/no-init-scripts` on a self-hosted install, HULY-7),
+ *     seed the 5 platform defaults (Urgent/High/Medium/Low/NoPriority)
+ *     into `core:space:Model` before resolving `--priority`. Self-healing.
  *   - All existing smart defaults previously gated by `--minimal`
  *     (skipping auto-Teamspace, auto-IssueStatus seeding, auto-fill of
  *     `parent: null` / `space: project._id` on issue create, omitting

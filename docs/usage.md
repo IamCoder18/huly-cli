@@ -28,17 +28,17 @@ huly --workspace prod issue list
 huly issue list --workspace prod        # equivalent
 ```
 
-| Flag                 | Description                                                                                                                                                                                                     |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--url <url>`        | Server URL (overrides `HULY_URL`)                                                                                                                                                                               |
-| `--workspace <name>` | Active workspace (overrides `HULY_WORKSPACE`). Name or UUID.                                                                                                                                                    |
-| `--json`             | Output machine-readable JSON                                                                                                                                                                                    |
-| `--ci`               | Alias for `--json`. Same effect; signals non-interactive intent.                                                                                                                                                |
-| `--markdown`         | Output body content as rendered Markdown (read commands). Falls back to raw prosemirror-JSON with a stderr warning if conversion fails.                                                                         |
-| `--dry-run`          | Print the tx that would be applied, do not apply                                                                                                                                                                |
-| `--minimal`          | Skip smart defaults (no auto-Teamspace, no auto-IssueStatus, no project-type pinning, no opinionated status/assignee/card-space defaults). Equivalent to setting `HULY_OPINIONATED=0` for this invocation only. |
-| `-y, --yes`          | Skip confirmation prompts (required for destructive ops)                                                                                                                                                        |
-| `--non-interactive`  | Same as `--yes` + disable any interactive prompts                                                                                                                                                               |
+| Flag                 | Description                                                                                                                                                                                                                                |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--url <url>`        | Server URL (overrides `HULY_URL`)                                                                                                                                                                                                          |
+| `--workspace <name>` | Active workspace (overrides `HULY_WORKSPACE`). Name or UUID.                                                                                                                                                                               |
+| `--json`             | Output machine-readable JSON                                                                                                                                                                                                               |
+| `--ci`               | Alias for `--json`. Same effect; signals non-interactive intent.                                                                                                                                                                           |
+| `--markdown`         | Output body content as rendered Markdown (read commands). Falls back to raw prosemirror-JSON with a stderr warning if conversion fails.                                                                                                    |
+| `--dry-run`          | Print the tx that would be applied, do not apply                                                                                                                                                                                           |
+| `--minimal`          | Skip smart defaults (no auto-Teamspace, no auto-IssueStatus, no auto-TypeIssuePriority, no project-type pinning, no opinionated status/assignee/card-space defaults). Equivalent to setting `HULY_OPINIONATED=0` for this invocation only. |
+| `-y, --yes`          | Skip confirmation prompts (required for destructive ops)                                                                                                                                                                                   |
+| `--non-interactive`  | Same as `--yes` + disable any interactive prompts                                                                                                                                                                                          |
 
 ### Precedence rules
 
