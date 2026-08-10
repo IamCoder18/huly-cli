@@ -47,7 +47,7 @@ NoPriority`. Match is case-insensitive. Unknown priorities throw a
 **Best practices & side effects:**
 
 - `--attached-to <ref>` + `--attached-to-class
-  tracker:class:Issue` attaches the todo to one parent only. Unlike
+tracker:class:Issue` attaches the todo to one parent only. Unlike
   server-auto-created todos (which use `createTxCollectionCUD` and
   live under both the issue and `time.space.ToDos`), a CLI-created
   todo appears under the issue but **not** in the assignee's personal
@@ -64,11 +64,11 @@ See
 for the full `OnToDoUpdate` / `OnToDoRemove` / `OnWorkSlotCreate`
 chain. The cascade you almost always care about:
 
-| What you do | What happens |
-|---|---|
-| `complete` last open todo on an issue | Issue may auto-advance past the last `Active` state. |
-| `delete` last open todo on an issue | Issue rolls back to the previous un-started status. |
-| `schedule` first `WorkSlot` on a `Backlog`/`Todo` issue | Issue auto-advances to the next `Active` status. |
+| What you do                                             | What happens                                         |
+| ------------------------------------------------------- | ---------------------------------------------------- |
+| `complete` last open todo on an issue                   | Issue may auto-advance past the last `Active` state. |
+| `delete` last open todo on an issue                     | Issue rolls back to the previous un-started status.  |
+| `schedule` first `WorkSlot` on a `Backlog`/`Todo` issue | Issue auto-advances to the next `Active` status.     |
 
 ---
 

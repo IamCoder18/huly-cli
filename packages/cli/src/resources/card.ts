@@ -2,12 +2,28 @@ import type { Doc, Ref, Space, Class } from '@hcengineering/core'
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, invalidateIndex } from '../transport/ref-resolver.js'
-import { shouldJson, json, table, COLUMNS, withTimeout, success, updated, bulkRemoved } from "../output/format.js"
+import {
+  shouldJson,
+  json,
+  table,
+  COLUMNS,
+  withTimeout,
+  success,
+  updated,
+  bulkRemoved,
+} from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { deleteDoc } from '../commands/dry-run.js'
 import { CliError, ExitCode } from '../output/errors.js'
 import { isOpinionated } from '../auth/env.js'
-import { generateId, uploadMarkup, updateMarkup, looksLikeRawMarkup, warnMarkdownFallback, readBodyText } from './_helpers.js'
+import {
+  generateId,
+  uploadMarkup,
+  updateMarkup,
+  looksLikeRawMarkup,
+  warnMarkdownFallback,
+  readBodyText,
+} from './_helpers.js'
 
 type CardDoc = Doc & {
   title: string
@@ -35,29 +51,54 @@ type CardSpace = Doc & {
   types?: Ref<MasterTag>[]
 }
 
-export async function listCardSpaces(opts: { limit?: number; offset?: number; json?: boolean; ci?: boolean; workspace?: string; url?: string } = {}): Promise<void> {
+export async function listCardSpaces(
+  opts: {
+    limit?: number
+    offset?: number
+    json?: boolean
+    ci?: boolean
+    workspace?: string
+    url?: string
+  } = {},
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const docs = (await withSpinner(
       'Loading card spaces…',
       () => client.findAll(CLASS.CardSpace as Ref<Class<CardSpace>>, {}),
-      opts
+      opts,
     )) as CardSpace[]
     let r = docs
     if (opts.offset && opts.offset > 0) r = r.slice(opts.offset)
     if (opts.limit && opts.limit > 0) r = r.slice(0, opts.limit)
-    if (shouldJson({ json: opts.json, ci: opts.ci })) { json(r); return }
-    table(r as unknown as Record<string, unknown>[], [
-      { key: 'name', header: 'NAME' },
-      { key: 'description', header: 'DESCRIPTION', format: (r) => String((r as CardSpace).description ?? '').slice(0, 60) },
-      { key: 'private', header: 'PRIVATE' },
-      { key: 'archived', header: 'ARCHIVED' },
-      { key: '_id', header: '_ID', format: (r) => String((r as CardSpace)._id).slice(-12) }
-    ], { count: true, title: 'card-spaces' })
-  } finally { await client.close() }
+    if (shouldJson({ json: opts.json, ci: opts.ci })) {
+      json(r)
+      return
+    }
+    table(
+      r as unknown as Record<string, unknown>[],
+      [
+        { key: 'name', header: 'NAME' },
+        {
+          key: 'description',
+          header: 'DESCRIPTION',
+          format: (r) => String((r as CardSpace).description ?? '').slice(0, 60),
+        },
+        { key: 'private', header: 'PRIVATE' },
+        { key: 'archived', header: 'ARCHIVED' },
+        { key: '_id', header: '_ID', format: (r) => String((r as CardSpace)._id).slice(-12) },
+      ],
+      { count: true, title: 'card-spaces' },
+    )
+  } finally {
+    await client.close()
+  }
 }
 
-export async function getCardSpace(ref: string, opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string }): Promise<void> {
+export async function getCardSpace(
+  ref: string,
+  opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string },
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const id = await resolveRef(ref, {
@@ -66,13 +107,21 @@ export async function getCardSpace(ref: string, opts: { json?: boolean; ci?: boo
     })
     const doc = await client.findOne(CLASS.CardSpace as Ref<Class<CardSpace>>, { _id: id as Ref<CardSpace> })
     if (!doc) throw new CliError(ExitCode.NotFound, `card-space ${ref} not found`)
-    if (shouldJson({ json: opts.json, ci: opts.ci })) { json(doc); return }
-    table([doc as unknown as Record<string, unknown>], [
-      { key: 'name', header: 'NAME' },
-      { key: 'description', header: 'DESCRIPTION' },
-      { key: '_id', header: '_ID' }
-    ])
-  } finally { await client.close() }
+    if (shouldJson({ json: opts.json, ci: opts.ci })) {
+      json(doc)
+      return
+    }
+    table(
+      [doc as unknown as Record<string, unknown>],
+      [
+        { key: 'name', header: 'NAME' },
+        { key: 'description', header: 'DESCRIPTION' },
+        { key: '_id', header: '_ID' },
+      ],
+    )
+  } finally {
+    await client.close()
+  }
 }
 
 export async function createCardSpace(opts: {
@@ -91,7 +140,7 @@ export async function createCardSpace(opts: {
   const client = await connectCli({
     url: opts.url,
     workspace: opts.workspace,
-    skipBootstrap: opts.dryRun === true
+    skipBootstrap: opts.dryRun === true,
   })
   // Add the current user as a member — a CardSpace is a Space, and
   // SpaceSecurityMiddleware iterates `members` while registering the new
@@ -110,7 +159,7 @@ export async function createCardSpace(opts: {
     await client.close().catch(() => {})
     throw new CliError(
       ExitCode.Auth,
-      `cannot resolve current account for card-space create: ${err instanceof Error ? err.message : String(err)}`
+      `cannot resolve current account for card-space create: ${err instanceof Error ? err.message : String(err)}`,
     )
   }
   // CardSpace.description is a plain string field, not collaborative
@@ -121,7 +170,7 @@ export async function createCardSpace(opts: {
     private: false,
     archived: false,
     types: [],
-    members: [currentAccountUuid]
+    members: [currentAccountUuid],
   }
   if (opts.dryRun) {
     console.log('would create card-space:')
@@ -132,36 +181,77 @@ export async function createCardSpace(opts: {
   try {
     const id = await withSpinner(
       'Creating card-space…',
-      () => client.createDoc(CLASS.CardSpace as Ref<Class<CardSpace>>, 'core:space:Workspace' as Ref<Space>, data as any),
-      opts
+      () =>
+        client.createDoc(
+          CLASS.CardSpace as Ref<Class<CardSpace>>,
+          'core:space:Workspace' as Ref<Space>,
+          data as any,
+        ),
+      opts,
     )
     invalidateIndex(client, CLASS.CardSpace)
-    if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ _id: id, ...data }) }
-    else success(`created card-space`, opts.name, id)
-  } finally { await client.close() }
+    if (shouldJson({ json: opts.json, ci: opts.ci })) {
+      json({ _id: id, ...data })
+    } else success(`created card-space`, opts.name, id)
+  } finally {
+    await client.close()
+  }
 }
 
-export async function deleteCardSpaces(refs: string[], opts: { workspace?: string; url?: string; yes?: boolean; dryRun?: boolean } = {}): Promise<void> {
+export async function deleteCardSpaces(
+  refs: string[],
+  opts: { workspace?: string; url?: string; yes?: boolean; dryRun?: boolean } = {},
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const ids = await resolveRefs(refs, {
       client,
       classId: CLASS.CardSpace as Ref<Class<Doc>>,
     })
-    if (!opts.yes && ids.length > 1) throw new CliError(ExitCode.Validation, `destructive: deleting ${ids.length} card-spaces requires --yes`, 're-run with --yes to confirm')
-    let deleted = 0, skipped = 0
+    if (!opts.yes && ids.length > 1)
+      throw new CliError(
+        ExitCode.Validation,
+        `destructive: deleting ${ids.length} card-spaces requires --yes`,
+        're-run with --yes to confirm',
+      )
+    let deleted = 0,
+      skipped = 0
     for (const id of ids) {
-      const doc = await client.findOne(CLASS.CardSpace as Ref<Class<CardSpace>>, { _id: id as Ref<CardSpace> })
-      if (!doc) { skipped++; continue }
-      const r = await deleteDoc(client, CLASS.CardSpace as Ref<Class<CardSpace>>, 'core:space:Workspace' as Ref<Space>, id as Ref<CardSpace>, { dryRun: opts.dryRun })
+      const doc = await client.findOne(CLASS.CardSpace as Ref<Class<CardSpace>>, {
+        _id: id as Ref<CardSpace>,
+      })
+      if (!doc) {
+        skipped++
+        continue
+      }
+      const r = await deleteDoc(
+        client,
+        CLASS.CardSpace as Ref<Class<CardSpace>>,
+        'core:space:Workspace' as Ref<Space>,
+        id as Ref<CardSpace>,
+        { dryRun: opts.dryRun },
+      )
       if (r.skipped) skipped++
-      else { deleted++; await new Promise((res) => setTimeout(res, 100)) }
+      else {
+        deleted++
+        await new Promise((res) => setTimeout(res, 100))
+      }
     }
     bulkRemoved(deleted, skipped)
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
-export async function listMasterTags(opts: { cardSpace?: string; limit?: number; offset?: number; json?: boolean; ci?: boolean; workspace?: string; url?: string }): Promise<void> {
+export async function listMasterTags(opts: {
+  cardSpace?: string
+  limit?: number
+  offset?: number
+  json?: boolean
+  ci?: boolean
+  workspace?: string
+  url?: string
+}): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const query: Record<string, unknown> = {}
@@ -175,22 +265,49 @@ export async function listMasterTags(opts: { cardSpace?: string; limit?: number;
     const docs = (await withSpinner(
       'Loading master tags…',
       () => client.findAll(CLASS.MasterTag as Ref<Class<MasterTag>>, query as any),
-      opts
+      opts,
     )) as MasterTag[]
     let r = docs
     if (opts.offset && opts.offset > 0) r = r.slice(opts.offset)
     if (opts.limit && opts.limit > 0) r = r.slice(0, opts.limit)
-    if (shouldJson({ json: opts.json, ci: opts.ci })) { json(r); return }
-    table(r as unknown as Record<string, unknown>[], [
-      { key: 'label', header: 'LABEL' },
-      { key: 'name', header: 'NAME' },
-      { key: 'background', header: 'BG' },
-      { key: '_id', header: '_ID', format: (r) => String((r as MasterTag)._id).split(':').slice(-1)[0] ?? String((r as MasterTag)._id) }
-    ], { count: true, title: 'master-tags' })
-  } finally { await client.close() }
+    if (shouldJson({ json: opts.json, ci: opts.ci })) {
+      json(r)
+      return
+    }
+    table(
+      r as unknown as Record<string, unknown>[],
+      [
+        { key: 'label', header: 'LABEL' },
+        { key: 'name', header: 'NAME' },
+        { key: 'background', header: 'BG' },
+        {
+          key: '_id',
+          header: '_ID',
+          format: (r) =>
+            String((r as MasterTag)._id)
+              .split(':')
+              .slice(-1)[0] ?? String((r as MasterTag)._id),
+        },
+      ],
+      { count: true, title: 'master-tags' },
+    )
+  } finally {
+    await client.close()
+  }
 }
 
-export async function listCards(opts: { cardSpace?: string; masterTag?: string; limit?: number; offset?: number; json?: boolean; ci?: boolean; workspace?: string; url?: string } = {}): Promise<void> {
+export async function listCards(
+  opts: {
+    cardSpace?: string
+    masterTag?: string
+    limit?: number
+    offset?: number
+    json?: boolean
+    ci?: boolean
+    workspace?: string
+    url?: string
+  } = {},
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const query: Record<string, unknown> = {}
@@ -208,18 +325,35 @@ export async function listCards(opts: { cardSpace?: string; masterTag?: string; 
       })
       query._class = tagId
     }
-    const docs = (await withSpinner('Loading cards…', () =>
-      client.findAll(CLASS.Card as Ref<Class<CardDoc>>, query as any), opts
+    const docs = (await withSpinner(
+      'Loading cards…',
+      () => client.findAll(CLASS.Card as Ref<Class<CardDoc>>, query as any),
+      opts,
     )) as CardDoc[]
     let r = docs
     if (opts.offset && opts.offset > 0) r = r.slice(opts.offset)
     if (opts.limit && opts.limit > 0) r = r.slice(0, opts.limit)
-    if (shouldJson({ json: opts.json, ci: opts.ci })) { json(r); return }
+    if (shouldJson({ json: opts.json, ci: opts.ci })) {
+      json(r)
+      return
+    }
     table(r as unknown as Record<string, unknown>[], COLUMNS.card(), { count: true, title: 'cards' })
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
-export async function getCard(ref: string, opts: { json?: boolean; ci?: boolean; markdown?: boolean; rawMarkup?: boolean; workspace?: string; url?: string }): Promise<void> {
+export async function getCard(
+  ref: string,
+  opts: {
+    json?: boolean
+    ci?: boolean
+    markdown?: boolean
+    rawMarkup?: boolean
+    workspace?: string
+    url?: string
+  },
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const id = await resolveRef(ref, {
@@ -231,9 +365,15 @@ export async function getCard(ref: string, opts: { json?: boolean; ci?: boolean;
     if ((opts.markdown || opts.rawMarkup) && doc.content) {
       try {
         const body = await withTimeout(
-          client.fetchMarkup(CLASS.Card as Ref<Class<Doc>>, doc._id, 'content', doc.content as any, opts.rawMarkup ? 'markup' : 'markdown'),
+          client.fetchMarkup(
+            CLASS.Card as Ref<Class<Doc>>,
+            doc._id,
+            'content',
+            doc.content as any,
+            opts.rawMarkup ? 'markup' : 'markdown',
+          ),
           5000,
-          '(body fetch timed out)'
+          '(body fetch timed out)',
         )
         const bodyStr = String(body ?? '')
         if (opts.markdown && looksLikeRawMarkup(bodyStr)) {
@@ -241,12 +381,20 @@ export async function getCard(ref: string, opts: { json?: boolean; ci?: boolean;
         }
         console.log(bodyStr)
         return
-      } catch { console.log(String(doc.content)); return }
+      } catch {
+        console.log(String(doc.content))
+        return
+      }
     }
-    if (shouldJson({ json: opts.json, ci: opts.ci })) { json(doc); return }
+    if (shouldJson({ json: opts.json, ci: opts.ci })) {
+      json(doc)
+      return
+    }
     console.log(`${doc.title} (${doc._id})`)
     console.log(JSON.stringify(doc, null, 2))
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
 export async function createCard(opts: {
@@ -294,11 +442,10 @@ export async function createCard(opts: {
       const spaces = (await client.findAll(
         CLASS.CardSpace as Ref<Class<Doc>>,
         { archived: false },
-        { sort: { createdOn: 1 }, limit: 1 }
+        { sort: { createdOn: 1 }, limit: 1 },
       )) as Array<Doc & { _id: Ref<Doc> }>
-      resolvedCardSpace = spaces.length > 0
-        ? (spaces[0]._id as unknown as Ref<Space>)
-        : ('card:space:Default' as Ref<Space>)
+      resolvedCardSpace =
+        spaces.length > 0 ? (spaces[0]._id as unknown as Ref<Space>) : ('card:space:Default' as Ref<Space>)
     } else {
       resolvedCardSpace = 'card:space:Default' as Ref<Space>
     }
@@ -329,7 +476,9 @@ export async function createCard(opts: {
         client,
         classId: CLASS.Card as Ref<Class<Doc>>,
       })
-      parent = (await client.findOne(CLASS.Card as Ref<Class<CardDoc>>, { _id: parentId as Ref<CardDoc> })) as CardDoc | undefined
+      parent = (await client.findOne(CLASS.Card as Ref<Class<CardDoc>>, {
+        _id: parentId as Ref<CardDoc>,
+      })) as CardDoc | undefined
       if (parent === undefined || parent === null) {
         throw new CliError(ExitCode.NotFound, `parent card ${opts.parent} not found`)
       }
@@ -347,7 +496,7 @@ export async function createCard(opts: {
       })
       parentInfo = [
         ...safeParentInfo,
-        { _id: parent._id, _class: parent._class as Ref<Class<Doc>>, title: parent.title }
+        { _id: parent._id, _class: parent._class as Ref<Class<Doc>>, title: parent.title },
       ]
     }
 
@@ -358,16 +507,24 @@ export async function createCard(opts: {
     const initialBody = body && body.length > 0 ? body : ''
     // Skip the JSON-blob upload entirely when there's no body. An empty blob
     // is wasted storage; the ydoc will be created lazily on first update/read.
-    const contentRef = initialBody.length > 0
-      ? await uploadMarkup(client, CLASS.Card as Ref<Class<Doc>>, newCardId, 'content', initialBody, 'markup')
-      : ''
+    const contentRef =
+      initialBody.length > 0
+        ? await uploadMarkup(
+            client,
+            CLASS.Card as Ref<Class<Doc>>,
+            newCardId,
+            'content',
+            initialBody,
+            'markup',
+          )
+        : ''
 
     const data: Record<string, unknown> = {
       title: opts.title,
       content: contentRef,
       parentInfo,
       rank: '0|aaaaa:',
-      blobs: {}
+      blobs: {},
     }
     if (parent !== undefined && parent !== null) data.parent = parent._id as Ref<Doc>
     if (opts.dryRun) {
@@ -383,42 +540,53 @@ export async function createCard(opts: {
       // tagId is guaranteed non-undefined here: createCard throws on missing
       // --master-tag and resolveRef throws on resolution failure.
       () => client.createDoc(tagId as Ref<Class<CardDoc>>, space as Ref<Space>, data as any, newCardId),
-      opts
+      opts,
     )
     invalidateIndex(client, CLASS.Card)
-    if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ _id: id, ...data }) }
-    else success(`created card`, opts.title, id)
-  } finally { await client.close() }
+    if (shouldJson({ json: opts.json, ci: opts.ci })) {
+      json({ _id: id, ...data })
+    } else success(`created card`, opts.title, id)
+  } finally {
+    await client.close()
+  }
 }
 
-export async function updateCard(ref: string, opts: {
-  title?: string
-  description?: string
-  body?: string
-  bodyFile?: string
-  replaceContent?: boolean
-  json?: boolean
-  ci?: boolean
-  dryRun?: boolean
-  workspace?: string
-  url?: string
-}): Promise<void> {
+export async function updateCard(
+  ref: string,
+  opts: {
+    title?: string
+    description?: string
+    body?: string
+    bodyFile?: string
+    replaceContent?: boolean
+    json?: boolean
+    ci?: boolean
+    dryRun?: boolean
+    workspace?: string
+    url?: string
+  },
+): Promise<void> {
   // Validation: split into two clear single-purpose checks (issue #16).
   if (opts.body !== undefined && opts.bodyFile !== undefined) {
-    throw new CliError(ExitCode.Validation,
+    throw new CliError(
+      ExitCode.Validation,
       '--body and --body-file are mutually exclusive',
-      'pass only one: --body "<html>" or --body-file <path>')
+      'pass only one: --body "<html>" or --body-file <path>',
+    )
   }
-  if (opts.description !== undefined &&
-      (opts.body !== undefined || opts.bodyFile !== undefined)) {
-    throw new CliError(ExitCode.Validation,
+  if (opts.description !== undefined && (opts.body !== undefined || opts.bodyFile !== undefined)) {
+    throw new CliError(
+      ExitCode.Validation,
       '--description conflicts with --body/--body-file',
-      'use --body or --body-file for the main content, OR --description with --replace-content to overwrite')
+      'use --body or --body-file for the main content, OR --description with --replace-content to overwrite',
+    )
   }
   if (opts.description !== undefined && !opts.replaceContent) {
-    throw new CliError(ExitCode.Validation,
+    throw new CliError(
+      ExitCode.Validation,
       '--description overwrites the existing card body',
-      're-run with --replace-content to confirm overwriting the existing body')
+      're-run with --replace-content to confirm overwriting the existing body',
+    )
   }
   let bodyFromFile: string | undefined
   if (opts.bodyFile) {
@@ -440,50 +608,98 @@ export async function updateCard(ref: string, opts: {
       // Update only the ydoc (issue #3). The ydoc is the source of truth for
       // collaborative content — calling uploadMarkup would create an orphan
       // JSON blob in MinIO and risk partial-write failures (issue #12).
-      await updateMarkup(client, CLASS.Card as Ref<Class<Doc>>, id as Ref<CardDoc>, 'content', opts.body, 'markup')
+      await updateMarkup(
+        client,
+        CLASS.Card as Ref<Class<Doc>>,
+        id as Ref<CardDoc>,
+        'content',
+        opts.body,
+        'markup',
+      )
       markupUpdated = true
     } else if (bodyFromFile !== undefined) {
-      await updateMarkup(client, CLASS.Card as Ref<Class<Doc>>, id as Ref<CardDoc>, 'content', bodyFromFile, 'markup')
+      await updateMarkup(
+        client,
+        CLASS.Card as Ref<Class<Doc>>,
+        id as Ref<CardDoc>,
+        'content',
+        bodyFromFile,
+        'markup',
+      )
       markupUpdated = true
     } else if (opts.description !== undefined && opts.replaceContent) {
-      await updateMarkup(client, CLASS.Card as Ref<Class<Doc>>, id as Ref<CardDoc>, 'content', opts.description, 'markup')
+      await updateMarkup(
+        client,
+        CLASS.Card as Ref<Class<Doc>>,
+        id as Ref<CardDoc>,
+        'content',
+        opts.description,
+        'markup',
+      )
       markupUpdated = true
     }
     if (Object.keys(ops).length === 0 && !markupUpdated) {
-      throw new CliError(ExitCode.Validation, 'nothing to update', 'pass --title, --body, --body-file, or --description (with --replace-content)')
+      throw new CliError(
+        ExitCode.Validation,
+        'nothing to update',
+        'pass --title, --body, --body-file, or --description (with --replace-content)',
+      )
     }
     if (opts.dryRun) {
       console.log(`would update card ${id}:`)
-      console.log(JSON.stringify({ _class: CLASS.Card, objectId: id, space: doc.space, ops, markupUpdated }, null, 2))
+      console.log(
+        JSON.stringify({ _class: CLASS.Card, objectId: id, space: doc.space, ops, markupUpdated }, null, 2),
+      )
       return
     }
     if (Object.keys(ops).length > 0) {
       await withSpinner(
         'Updating…',
         () => client.updateDoc(CLASS.Card as Ref<Class<CardDoc>>, doc.space, id as Ref<CardDoc>, ops as any),
-        opts
+        opts,
       )
     }
     updated(`updated card`, id)
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
-export async function deleteCards(refs: string[], opts: { workspace?: string; url?: string; yes?: boolean; dryRun?: boolean } = {}): Promise<void> {
+export async function deleteCards(
+  refs: string[],
+  opts: { workspace?: string; url?: string; yes?: boolean; dryRun?: boolean } = {},
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const ids = await resolveRefs(refs, {
       client,
       classId: CLASS.Card as Ref<Class<Doc>>,
     })
-    if (!opts.yes && ids.length > 1) throw new CliError(ExitCode.Validation, `destructive: deleting ${refs.length} cards requires --yes`, 're-run with --yes to confirm')
-    let deleted = 0, skipped = 0
+    if (!opts.yes && ids.length > 1)
+      throw new CliError(
+        ExitCode.Validation,
+        `destructive: deleting ${refs.length} cards requires --yes`,
+        're-run with --yes to confirm',
+      )
+    let deleted = 0,
+      skipped = 0
     for (const id of ids) {
       const doc = await client.findOne(CLASS.Card as Ref<Class<CardDoc>>, { _id: id as Ref<CardDoc> })
-      if (!doc) { skipped++; continue }
-      const r = await deleteDoc(client, CLASS.Card as Ref<Class<CardDoc>>, doc.space, id as Ref<CardDoc>, { dryRun: opts.dryRun })
+      if (!doc) {
+        skipped++
+        continue
+      }
+      const r = await deleteDoc(client, CLASS.Card as Ref<Class<CardDoc>>, doc.space, id as Ref<CardDoc>, {
+        dryRun: opts.dryRun,
+      })
       if (r.skipped) skipped++
-      else { deleted++; await new Promise((res) => setTimeout(res, 100)) }
+      else {
+        deleted++
+        await new Promise((res) => setTimeout(res, 100))
+      }
     }
     bulkRemoved(deleted, skipped)
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }

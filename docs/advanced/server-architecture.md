@@ -32,10 +32,10 @@ the CLI itself is wired together internally, see
 
 The selfhost has ~16 services. The CLI talks to **three** of them:
 
-| Service | What the CLI does with it |
-|---|---|
-| `account` (port 3000) | Login, workspace ops, account token management |
-| `transactor` (port 3333) | WebSocket RPC: `findAll`, `findOne`, `createDoc`, `updateDoc`, `tx`, `loadModel` |
+| Service                    | What the CLI does with it                                                             |
+| -------------------------- | ------------------------------------------------------------------------------------- |
+| `account` (port 3000)      | Login, workspace ops, account token management                                        |
+| `transactor` (port 3333)   | WebSocket RPC: `findAll`, `findOne`, `createDoc`, `updateDoc`, `tx`, `loadModel`      |
 | `collaborator` (port 3078) | Read path only: `fetchMarkup`, `getContent`. The CLI's read timeout (5s) covers this. |
 
 The CLI never talks to `workspace`, `kvs`, `minio`, `redpanda`,
@@ -138,11 +138,11 @@ A workspace goes through these states (mode column):
 The workspace pod polls for pending workspaces and processes them.
 `WS_OPERATION` env var controls which states the pod handles:
 
-| `WS_OPERATION` value | Processes |
-|---|---|
-| `upgrade` (default) | only `pending-upgrade` (re-applies model-upgrade txs) |
-| `all` | `pending-creation` + `pending-upgrade` + `pending-deletion` |
-| `all+backup` | all of `all` + `migration-pending-*` + `archiving-pending-*` + `pending-restore` |
+| `WS_OPERATION` value | Processes                                                                        |
+| -------------------- | -------------------------------------------------------------------------------- |
+| `upgrade` (default)  | only `pending-upgrade` (re-applies model-upgrade txs)                            |
+| `all`                | `pending-creation` + `pending-upgrade` + `pending-deletion`                      |
+| `all+backup`         | all of `all` + `migration-pending-*` + `archiving-pending-*` + `pending-restore` |
 
 For self-hosted single-pod deployments, use `WS_OPERATION=all+backup`.
 
@@ -155,16 +155,16 @@ The CLI's raw `huly ws` escape hatch is a separate **text-JSON**
 channel — the two are different transports to the transactor. Key
 methods on the binary SDK side:
 
-| Method | Direction | Purpose |
-|---|---|---|
-| `hello` | client → server | First message; identifies client (binary mode, compression) |
-| `findAll` | client → server | Query; server returns array + total |
-| `findOne` | client → server | Single-doc query |
-| `loadModel` | client → server | Initial model load (returns txs since last hash) |
-| `loadChunk` | client → server | Lazy-load a domain's documents |
-| `tx` | client → server | Apply a transaction |
-| `updateFromRemote` | server → client | Push a tx (server-initiated) |
-| `ping` / `pong` | both | Keepalive |
+| Method             | Direction       | Purpose                                                     |
+| ------------------ | --------------- | ----------------------------------------------------------- |
+| `hello`            | client → server | First message; identifies client (binary mode, compression) |
+| `findAll`          | client → server | Query; server returns array + total                         |
+| `findOne`          | client → server | Single-doc query                                            |
+| `loadModel`        | client → server | Initial model load (returns txs since last hash)            |
+| `loadChunk`        | client → server | Lazy-load a domain's documents                              |
+| `tx`               | client → server | Apply a transaction                                         |
+| `updateFromRemote` | server → client | Push a tx (server-initiated)                                |
+| `ping` / `pong`    | both            | Keepalive                                                   |
 
 Chunks are how the server streams large query results. The default
 chunk size is whatever fits in a WebSocket frame (~64 KB compressed).
@@ -233,11 +233,11 @@ for the in-process pipeline.
 
 The account server gates every method by token type:
 
-| Token type | `extra.service` | Granted methods |
-|---|---|---|
-| Login token (password / OAuth) | undefined | User-level methods only: `login`, `selectWorkspace`, `listWorkspaces`, `findPersonBySocialKey` (after Fix #1), `getWorkspaceInfo`, `getSocialIds`, etc. |
-| Service token | `'tool' \| 'workspace' \| 'aibot' \| 'backup' \| 'payment' \| ...` | Service-level methods: `getPendingWorkspace`, `updateWorkspaceInfo`, etc. |
-| Admin token | `admin === 'true'` | All methods |
+| Token type                     | `extra.service`                                                    | Granted methods                                                                                                                                         |
+| ------------------------------ | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Login token (password / OAuth) | undefined                                                          | User-level methods only: `login`, `selectWorkspace`, `listWorkspaces`, `findPersonBySocialKey` (after Fix #1), `getWorkspaceInfo`, `getSocialIds`, etc. |
+| Service token                  | `'tool' \| 'workspace' \| 'aibot' \| 'backup' \| 'payment' \| ...` | Service-level methods: `getPendingWorkspace`, `updateWorkspaceInfo`, etc.                                                                               |
+| Admin token                    | `admin === 'true'`                                                 | All methods                                                                                                                                             |
 
 The CLI uses login tokens. Service-to-service calls (e.g. the worker
 calling `getPendingWorkspace`) use service tokens.
@@ -254,12 +254,12 @@ server's current version, the workspace pod applies model-upgrade
 txs:
 
 1. Pod calls `getPendingWorkspace(this.region, this.version,
-   'upgrade')`.
+'upgrade')`.
 2. Account server returns workspaces where `version_* < current`.
 3. Pod loads the model-upgrade txs from the platform's source tree.
 4. Pod applies them in order.
 5. Pod calls `updateWorkspaceInfo(workspace, 'upgrade-done',
-   version)`.
+version)`.
 6. Workspace's `version_*` is bumped, status becomes `active`.
 
 The model-upgrade txs are auto-generated from the platform's

@@ -6,12 +6,12 @@ Documents are the second knowledge primitive. Use them only when the user explic
 
 ## Decision: Documents vs Cards (recap)
 
-| Use Documents when… | Use Cards when in doubt. |
-|---|---|
-| Nested parent/child hierarchy needed (wiki-style) | Flat-by-Type organization |
-| Versioned snapshots per doc required | Custom typed attributes per MasterTag |
-| ControlledDocument / e-signature workflow (TraceX) | Quick captures, records, notes |
-| Training workflow (Trainee / TrainingRequest) | Structured / kanban-style |
+| Use Documents when…                                | Use Cards when in doubt.              |
+| -------------------------------------------------- | ------------------------------------- |
+| Nested parent/child hierarchy needed (wiki-style)  | Flat-by-Type organization             |
+| Versioned snapshots per doc required               | Custom typed attributes per MasterTag |
+| ControlledDocument / e-signature workflow (TraceX) | Quick captures, records, notes        |
+| Training workflow (Trainee / TrainingRequest)      | Structured / kanban-style             |
 
 If the user said "create a document" or "make a wiki page" → use Documents.
 
@@ -60,6 +60,7 @@ huly document create \
 ```
 
 **Smart defaults silently applied:**
+
 - `teamspace`: `--teamspace <name>` → `HULY_TEAMSPACE` env → index lookup → exact name → first available → **auto-create `General`** if no teamspaces exist.
 - `parent`: ref-resolved against documents within the teamspace; falls back to title-match (exact, lowercased) within the teamspace. Ambiguous titles throw `Ambiguous`.
 - `space`: `teamspace._id`.
@@ -85,11 +86,13 @@ huly document update <ref> --archived                    # archives (cannot unar
 ```
 
 **Mutually exclusive on update:**
+
 - `--body` + `--body-file` → error.
 - `--body` + (`--old-text` + `--new-text`) → error.
 - `--body-file` + (`--old-text` + `--new-text`) → error.
 
 **Targeted substitution:**
+
 - `--old-text` appears 0 times → `NotFound: old-text not found in document`.
 - `--old-text` appears ≥ 2 times without `--replace-all` → `Ambiguous: N occurrences of --old-text — pass --replace-all`.
 - `--old-text` appears ≥ 2 times with `--replace-all` → replaces all.
@@ -147,6 +150,7 @@ huly teamspace delete "A" "B" --yes
 ```
 
 **Smart defaults:**
+
 - `type: 'public'` (free-text; CLI doesn't validate against enum despite help text suggesting `public|private`).
 - `private: false` unless `--private`.
 - `archived: false`.

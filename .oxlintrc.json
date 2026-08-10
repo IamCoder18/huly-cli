@@ -1,0 +1,41 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "import", "node", "unicorn", "vitest"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn"
+  },
+  "env": {
+    "node": true,
+    "es2024": true
+  },
+  "ignorePatterns": [
+    "node_modules",
+    "dist",
+    "packages/*/dist",
+    "packages/*/node_modules",
+    "**/*.d.ts",
+    "packages/cli/src/types-shim.d.ts"
+  ],
+  "rules": {
+    "no-unused-vars": "off",
+    "@typescript-eslint/no-unused-vars": ["warn", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }],
+    "no-magic-numbers": "off",
+    "no-warning-comments": "off",
+    "no-underscore-dangle": "off",
+    "no-shadow": "off",
+    "unicorn/catch-error-name": "off",
+    "unicorn/no-null": "off"
+  },
+  "overrides": [
+    {
+      "files": ["packages/cli/src/**/*.test.ts"],
+      "rules": {
+        "@typescript-eslint/no-explicit-any": "off",
+        "vitest/no-hooks": "off",
+        "vitest/require-mock-type-parameters": "off",
+        "unicorn/prefer-add-event-listener": "off"
+      }
+    }
+  ]
+}

@@ -32,16 +32,16 @@ The CLI silently creates things on your behalf to keep common flows
 one-liners. Most can be disabled with `--minimal` /
 `HULY_OPINIONATED=0`.
 
-| Command | What gets auto-created | When |
-|---|---|---|
-| `huly document create` | A `General` teamspace (type `space-type:default`, members `[]`, description "Default teamspace (auto-created)") | Workspace has zero teamspaces. |
-| `huly issue create` | 5 default `IssueStatus` records (`Backlog`, `To do`, `In progress`, `Done`, `Canceled`) in `core:space:Model` | Workspace has zero `IssueStatus`. |
-| `huly issue create` | First `ProjectToDo` (classic projects only) | `--assignee` is non-empty (explicitly set, or defaulted to the current user by the opinionated default) AND status category is `ToDo`/`Active`. An explicit `--assignee ''` suppresses the cascade. See [Platform behavior — Issues](../reference/platform-behavior.md#issues-todos-the-cascade-everyone-hits). |
-| `huly dm create --person <email>` / `huly dm send --person <email>` | A DM with that person (resolves via `resolvePersonId`) | No existing DM with that person. |
-| `huly issue label add <ref> --label <name>` | A `TagElement` in `tags:space:Tag` (first `TagCategory`) | Label doesn't exist yet. |
-| `huly project create` | The current user is added as `members: [<uuid>]` | Always (security invariant — required by `SpaceSecurityMiddleware` so the creator can `findAll` their own project). Not gated by `--minimal` or `HULY_OPINIONATED=0`. |
-| `huly calendar create` | A new `Calendar` doc | Always; `--type public\|private` defaults to `public`. |
-| `huly action create` | If `--attached-to` omitted, the task is attached to the owner's `Person` (or current user) | Default. |
+| Command                                                             | What gets auto-created                                                                                          | When                                                                                                                                                                                                                                                                                                            |
+| ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `huly document create`                                              | A `General` teamspace (type `space-type:default`, members `[]`, description "Default teamspace (auto-created)") | Workspace has zero teamspaces.                                                                                                                                                                                                                                                                                  |
+| `huly issue create`                                                 | 5 default `IssueStatus` records (`Backlog`, `To do`, `In progress`, `Done`, `Canceled`) in `core:space:Model`   | Workspace has zero `IssueStatus`.                                                                                                                                                                                                                                                                               |
+| `huly issue create`                                                 | First `ProjectToDo` (classic projects only)                                                                     | `--assignee` is non-empty (explicitly set, or defaulted to the current user by the opinionated default) AND status category is `ToDo`/`Active`. An explicit `--assignee ''` suppresses the cascade. See [Platform behavior — Issues](../reference/platform-behavior.md#issues-todos-the-cascade-everyone-hits). |
+| `huly dm create --person <email>` / `huly dm send --person <email>` | A DM with that person (resolves via `resolvePersonId`)                                                          | No existing DM with that person.                                                                                                                                                                                                                                                                                |
+| `huly issue label add <ref> --label <name>`                         | A `TagElement` in `tags:space:Tag` (first `TagCategory`)                                                        | Label doesn't exist yet.                                                                                                                                                                                                                                                                                        |
+| `huly project create`                                               | The current user is added as `members: [<uuid>]`                                                                | Always (security invariant — required by `SpaceSecurityMiddleware` so the creator can `findAll` their own project). Not gated by `--minimal` or `HULY_OPINIONATED=0`.                                                                                                                                           |
+| `huly calendar create`                                              | A new `Calendar` doc                                                                                            | Always; `--type public\|private` defaults to `public`.                                                                                                                                                                                                                                                          |
+| `huly action create`                                                | If `--attached-to` omitted, the task is attached to the owner's `Person` (or current user)                      | Default.                                                                                                                                                                                                                                                                                                        |
 
 > `huly issue create` re-tries the auto-seed on the **second** call
 > if the first failed silently (model-load race). If the issue create
@@ -52,33 +52,33 @@ one-liners. Most can be disabled with `--minimal` /
 
 ## Smart defaults (values the CLI fills for you)
 
-| Command | Flag | Default |
-|---|---|---|
-| `huly project create` | `--sequence` | `0` |
-| `huly project create` | `--members` | `[<current-user-uuid>]` |
-| `huly project create` | `--description` | `''` (omitted with `--minimal` / `HULY_OPINIONATED=0` — but an explicit `--description ''` is still preserved verbatim; only a fully omitted flag is removed from the payload) |
-| `huly project create` | `type` | `tracker:ids:ClassingProjectType` (the classic tracker ProjectType — note the server-side typo "Classing"). Without this default, projects may not be classic and miss the issue↔action cascade. Pass `HULY_OPINIONATED=0` or `--minimal` to skip. |
-| `huly issue create` | `--status` | Lowest-rank `IssueStatus` in category `ToDo` (usually `To do`). Pin to Backlog with `--status Backlog`. With `HULY_OPINIONATED=0` or `--minimal`, falls back to the lowest-rank status overall (usually `Backlog`). |
-| `huly issue create` | `--assignee` | Current user's email (resolved from `getAccount().fullSocialIds`). Pass `--assignee <other>` to override, `--assignee ''` to leave unassigned. Disabled with `HULY_OPINIONATED=0` or `--minimal`. |
-| `huly issue create` | `--priority` | `Normal` if it exists in the workspace; else first priority; else omitted |
-| `huly issue create` | `--task-type` | First available TaskType for the project; if none, falls back to `tracker:taskTypes:Issue` (NOT `tracker:issue:default` — that ref is invalid and the create errors) |
-| `huly issue create` | `parent` | `null` (top-level), unless `--minimal` / `HULY_OPINIONATED=0` |
-| `huly issue create` | `space` | `project._id` (unless `--minimal` / `HULY_OPINIONATED=0`) |
-| `huly card create` | `--card-space` | First available, non-archived `CardSpace` (resolved with `findAll({ archived: false }, { sort: { createdOn: 1 }, limit: 1 })` — the oldest by `createdOn`). Falls back to literal `card:space:Default` only when zero `CardSpace`s exist. With `HULY_OPINIONATED=0` or `--minimal`, the literal `card:space:Default` is used directly (which often does not exist). |
-| `huly calendar create-calendar` | `--access` | `public` (one of `owner` / `team` / `public`) |
-| `huly calendar create-calendar` | `--private` | `false` |
-| `huly schedule create` | `--duration` | `30` (minutes) |
-| `huly schedule create` | `--interval` | `15` (minutes) |
-| `huly action create` | `--priority` | `NoPriority` |
-| `huly action create` | `--visibility` | `public` |
-| `huly action create` | `--owner` | Current user |
-| `huly action create` | `--attached-to-class` | `contact:class:Person` |
-| `huly action create` | `--due` | none (`dueDate: null`) |
-| `huly action create` | `doneOn` | `null` |
-| `huly action create` | `rank` | `0\|aaaaa:` |
-| `huly time log` | `--date` | `Date.now()` |
-| `huly time log` | value conversion | minutes → man-hours (`value = minutes/60`); rounds to nearest 15 min |
-| `huly teamspace create` | `--type` | `public` |
+| Command                         | Flag                  | Default                                                                                                                                                                                                                                                                                                                                                             |
+| ------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `huly project create`           | `--sequence`          | `0`                                                                                                                                                                                                                                                                                                                                                                 |
+| `huly project create`           | `--members`           | `[<current-user-uuid>]`                                                                                                                                                                                                                                                                                                                                             |
+| `huly project create`           | `--description`       | `''` (omitted with `--minimal` / `HULY_OPINIONATED=0` — but an explicit `--description ''` is still preserved verbatim; only a fully omitted flag is removed from the payload)                                                                                                                                                                                      |
+| `huly project create`           | `type`                | `tracker:ids:ClassingProjectType` (the classic tracker ProjectType — note the server-side typo "Classing"). Without this default, projects may not be classic and miss the issue↔action cascade. Pass `HULY_OPINIONATED=0` or `--minimal` to skip.                                                                                                                  |
+| `huly issue create`             | `--status`            | Lowest-rank `IssueStatus` in category `ToDo` (usually `To do`). Pin to Backlog with `--status Backlog`. With `HULY_OPINIONATED=0` or `--minimal`, falls back to the lowest-rank status overall (usually `Backlog`).                                                                                                                                                 |
+| `huly issue create`             | `--assignee`          | Current user's email (resolved from `getAccount().fullSocialIds`). Pass `--assignee <other>` to override, `--assignee ''` to leave unassigned. Disabled with `HULY_OPINIONATED=0` or `--minimal`.                                                                                                                                                                   |
+| `huly issue create`             | `--priority`          | `Normal` if it exists in the workspace; else first priority; else omitted                                                                                                                                                                                                                                                                                           |
+| `huly issue create`             | `--task-type`         | First available TaskType for the project; if none, falls back to `tracker:taskTypes:Issue` (NOT `tracker:issue:default` — that ref is invalid and the create errors)                                                                                                                                                                                                |
+| `huly issue create`             | `parent`              | `null` (top-level), unless `--minimal` / `HULY_OPINIONATED=0`                                                                                                                                                                                                                                                                                                       |
+| `huly issue create`             | `space`               | `project._id` (unless `--minimal` / `HULY_OPINIONATED=0`)                                                                                                                                                                                                                                                                                                           |
+| `huly card create`              | `--card-space`        | First available, non-archived `CardSpace` (resolved with `findAll({ archived: false }, { sort: { createdOn: 1 }, limit: 1 })` — the oldest by `createdOn`). Falls back to literal `card:space:Default` only when zero `CardSpace`s exist. With `HULY_OPINIONATED=0` or `--minimal`, the literal `card:space:Default` is used directly (which often does not exist). |
+| `huly calendar create-calendar` | `--access`            | `public` (one of `owner` / `team` / `public`)                                                                                                                                                                                                                                                                                                                       |
+| `huly calendar create-calendar` | `--private`           | `false`                                                                                                                                                                                                                                                                                                                                                             |
+| `huly schedule create`          | `--duration`          | `30` (minutes)                                                                                                                                                                                                                                                                                                                                                      |
+| `huly schedule create`          | `--interval`          | `15` (minutes)                                                                                                                                                                                                                                                                                                                                                      |
+| `huly action create`            | `--priority`          | `NoPriority`                                                                                                                                                                                                                                                                                                                                                        |
+| `huly action create`            | `--visibility`        | `public`                                                                                                                                                                                                                                                                                                                                                            |
+| `huly action create`            | `--owner`             | Current user                                                                                                                                                                                                                                                                                                                                                        |
+| `huly action create`            | `--attached-to-class` | `contact:class:Person`                                                                                                                                                                                                                                                                                                                                              |
+| `huly action create`            | `--due`               | none (`dueDate: null`)                                                                                                                                                                                                                                                                                                                                              |
+| `huly action create`            | `doneOn`              | `null`                                                                                                                                                                                                                                                                                                                                                              |
+| `huly action create`            | `rank`                | `0\|aaaaa:`                                                                                                                                                                                                                                                                                                                                                         |
+| `huly time log`                 | `--date`              | `Date.now()`                                                                                                                                                                                                                                                                                                                                                        |
+| `huly time log`                 | value conversion      | minutes → man-hours (`value = minutes/60`); rounds to nearest 15 min                                                                                                                                                                                                                                                                                                |
+| `huly teamspace create`         | `--type`              | `public`                                                                                                                                                                                                                                                                                                                                                            |
 
 `--minimal` / `HULY_OPINIONATED=0` removes every default that is not
 a security-invariant (the only one the CLI refuses to drop is the
@@ -150,13 +150,13 @@ Reserved keys (silently stripped): `set`, `unset`, `json`, `ci`,
 
 ## Cache & index behavior
 
-| Cache | Lifetime | Invalidation |
-|---|---|---|
+| Cache                                                                                    | Lifetime                                              | Invalidation                                                   |
+| ---------------------------------------------------------------------------------------- | ----------------------------------------------------- | -------------------------------------------------------------- |
 | Resolver index (`PlatformClient` → `Map<classId, Map<key, _id>>`, backed by a `WeakMap`) | In-memory, **no TTL**; dies with the `PlatformClient` | Explicit `invalidateIndex(client, classId)` after every write. |
-| Account `_accounts` URL cache | In-memory, per-host | Never invalidated; restart the CLI process to refresh. |
-| `${XDG_CONFIG_HOME:-$HOME/.config}/huly/credentials.json` (account + workspace tokens) | On disk, mode 0600, no expiry | Refreshed on re-login. Delete the file to reset. |
-| `${XDG_CONFIG_HOME:-$HOME/.config}/huly/active-workspace` | On disk, mode 0600 | Updated on `huly workspace use <name>` or `--workspace`. |
-| `${XDG_CONFIG_HOME:-$HOME/.config}/huly/active-account` | On disk, mode 0600 | One line per host, updated on login. |
+| Account `_accounts` URL cache                                                            | In-memory, per-host                                   | Never invalidated; restart the CLI process to refresh.         |
+| `${XDG_CONFIG_HOME:-$HOME/.config}/huly/credentials.json` (account + workspace tokens)   | On disk, mode 0600, no expiry                         | Refreshed on re-login. Delete the file to reset.               |
+| `${XDG_CONFIG_HOME:-$HOME/.config}/huly/active-workspace`                                | On disk, mode 0600                                    | Updated on `huly workspace use <name>` or `--workspace`.       |
+| `${XDG_CONFIG_HOME:-$HOME/.config}/huly/active-account`                                  | On disk, mode 0600                                    | One line per host, updated on login.                           |
 
 > **Stale-cache gotcha:** the resolver index never expires. If
 > someone deletes or renames a project between two CLI commands in
@@ -176,12 +176,12 @@ on-disk cache details.
 
 ## Timeouts
 
-| Path | Timeout | Fallback |
-|---|---|---|
-| `client.fetchMarkup` (all `--markdown` reads) | **5 seconds** | `'(body fetch timed out)'` |
-| `ws` raw command | **60 seconds** | Promise rejects |
-| `ws` raw command ping | **5 seconds** (interval) | `--no-ping` disables |
-| `retry()` helper (defined, unused) | `429` only | `500 * attempt² ms` backoff, max 3 attempts |
+| Path                                          | Timeout                  | Fallback                                    |
+| --------------------------------------------- | ------------------------ | ------------------------------------------- |
+| `client.fetchMarkup` (all `--markdown` reads) | **5 seconds**            | `'(body fetch timed out)'`                  |
+| `ws` raw command                              | **60 seconds**           | Promise rejects                             |
+| `ws` raw command ping                         | **5 seconds** (interval) | `--no-ping` disables                        |
+| `retry()` helper (defined, unused)            | `429` only               | `500 * attempt² ms` backoff, max 3 attempts |
 
 There is **no WebSocket auto-reconnect** in the CLI. Each command
 opens a fresh WS, runs, and closes in `finally`. If the connection
@@ -195,45 +195,45 @@ for the server-side window when a workspace is being upgraded.
 
 ## Filtering & matching semantics
 
-| Flag | Match type | Case-sensitive? |
-|---|---|---|
-| `--status` (issue) | Exact label/name | No |
-| `--status-category` | Strips `task:statusCategory:` prefix, exact | No |
-| `--priority` (issue) | Exact label/name | No |
-| `--task-type` (issue) | Exact label/name OR raw `_id` | No |
-| `--role` (member) | Aliases (`owner\|admin\|guest\|docguest\|readonlyguest\|maintainer`) | No |
-| `--priority` (todo) | Strict enum (`High\|Medium\|Low\|NoPriority\|Urgent`), throws on invalid | No |
-| `--visibility` (todo) | Strict enum (`public\|busy\|private`) | No |
-| `--archived` (channel/document) | Anything that isn't `'false'` or `'0'` → `true` | n/a |
-| `--completed` (todo) | `true\|false\|all` | n/a |
-| `--description-search` / `--content-search` / `--title` (todo) | **MongoDB-style regex** with `$options: 'i'` | **No** |
-| `--private` (channel) | Non-strict coercion (anything not `'false'`/`'0'` → true) | n/a |
+| Flag                                                           | Match type                                                               | Case-sensitive? |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------ | --------------- |
+| `--status` (issue)                                             | Exact label/name                                                         | No              |
+| `--status-category`                                            | Strips `task:statusCategory:` prefix, exact                              | No              |
+| `--priority` (issue)                                           | Exact label/name                                                         | No              |
+| `--task-type` (issue)                                          | Exact label/name OR raw `_id`                                            | No              |
+| `--role` (member)                                              | Aliases (`owner\|admin\|guest\|docguest\|readonlyguest\|maintainer`)     | No              |
+| `--priority` (todo)                                            | Strict enum (`High\|Medium\|Low\|NoPriority\|Urgent`), throws on invalid | No              |
+| `--visibility` (todo)                                          | Strict enum (`public\|busy\|private`)                                    | No              |
+| `--archived` (channel/document)                                | Anything that isn't `'false'` or `'0'` → `true`                          | n/a             |
+| `--completed` (todo)                                           | `true\|false\|all`                                                       | n/a             |
+| `--description-search` / `--content-search` / `--title` (todo) | **MongoDB-style regex** with `$options: 'i'`                             | **No**          |
+| `--private` (channel)                                          | Non-strict coercion (anything not `'false'`/`'0'` → true)                | n/a             |
 
 ---
 
 ## Idempotency
 
-| Command | Behavior |
-|---|---|
-| `huly issue create` | If the create returns `duplicate` / `exists` / `already`, the CLI re-runs the lookup and returns the existing issue's `_id` (idempotent). |
-| `huly project create` | Pre-flight `findAll({identifier})`; on `already exists\|duplicate\|exists` error, repeats the lookup and returns the existing project. |
+| Command               | Behavior                                                                                                                                  |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `huly issue create`   | If the create returns `duplicate` / `exists` / `already`, the CLI re-runs the lookup and returns the existing issue's `_id` (idempotent). |
+| `huly project create` | Pre-flight `findAll({identifier})`; on `already exists\|duplicate\|exists` error, repeats the lookup and returns the existing project.    |
 
 ---
 
 ## Error messages include next-step hints
 
-| Error | Hint |
-|---|---|
+| Error                              | Hint                                          |
+| ---------------------------------- | --------------------------------------------- |
 | `PLATFORM_NOT_FOUND` / `not found` | "check the ref or run `huly <resource> list`" |
-| `PLATFORM_UNAUTHORIZED` / 401 | "run `huly login` or set `HULY_TOKEN`" |
-| `PLATFORM_FORBIDDEN` / 403 | "insufficient permissions" |
-| `PLATFORM_ALREADY_EXISTS` | mapped to `ExitCode.Conflict(6)` |
-| `PLATFORM_RATE_LIMITED` / 429 | mapped to `ExitCode.RateLimited(5)` |
-| `PLATFORM_VALIDATION` / 400 | mapped to `ExitCode.Validation(4)` |
-| `>=500` | mapped to `ExitCode.Server(7)` |
-| Bad `--status` | lists all available statuses |
-| Bad `--priority` | lists available priorities |
-| `ref-resolver` NotFound | shows first 10 candidates |
+| `PLATFORM_UNAUTHORIZED` / 401      | "run `huly login` or set `HULY_TOKEN`"        |
+| `PLATFORM_FORBIDDEN` / 403         | "insufficient permissions"                    |
+| `PLATFORM_ALREADY_EXISTS`          | mapped to `ExitCode.Conflict(6)`              |
+| `PLATFORM_RATE_LIMITED` / 429      | mapped to `ExitCode.RateLimited(5)`           |
+| `PLATFORM_VALIDATION` / 400        | mapped to `ExitCode.Validation(4)`            |
+| `>=500`                            | mapped to `ExitCode.Server(7)`                |
+| Bad `--status`                     | lists all available statuses                  |
+| Bad `--priority`                   | lists available priorities                    |
+| `ref-resolver` NotFound            | shows first 10 candidates                     |
 
 See [Usage — Exit codes](../usage.md#exit-codes) for the full exit
 table.
@@ -260,7 +260,7 @@ piping to `jq`. See
 - `workspace create`
 - `workspace delete` (active workspace also needs `--force`)
 - Any delete of ≥2 refs (`issue delete`, `project delete`, `channel
-  delete`, `document delete`, `teamspace delete`, `action delete`,
+delete`, `document delete`, `teamspace delete`, `action delete`,
   `comment delete`, `time delete`, `calendar delete`, `card delete`,
   `card-space delete`, `thread delete`, `channel message delete`,
   `action unschedule` of multiple slots).

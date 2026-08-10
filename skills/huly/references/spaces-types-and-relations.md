@@ -1,6 +1,7 @@
 # Spaces, relations, type configuration
 
 The lower-level surface that other resources are built on. You usually don't need this for everyday work — but you DO need it when you're:
+
 - Setting up custom project / task / status types
 - Wiring cross-resource relations
 - Inspecting per-space permissions
@@ -23,17 +24,17 @@ For 95% of work, the higher-level surfaces (`project`, `issue`, `card`, `documen
 
 A **Space** (`core:class:Space`) is the abstract container primitive. Almost everything else is a sub-class:
 
-| Higher-level surface | Class | Lives in space |
-|---|---|---|
-| Tracker projects | `tracker:class:Project` | project domain (resolved via `client.getHierarchy().getDomain(CLASS.Project)`) |
-| Chunter channels | `chunter:class:Channel` | `chunter:space:Chunter` |
-| Chunter DMs | `chunter:class:DirectMessage` | `chunter:space:Chunter` |
-| Calendar calendars | `calendar:class:Calendar` | `core:space:Workspace` |
-| Calendar events | `calendar:class:Event` | `calendar:space:Calendar` |
-| Document teamspaces | `document:class:Teamspace` | `document:space:Default` |
-| Documents | `document:class:Document` | teamspace's space |
-| Cards | `card:class:Card` | card-space's space |
-| MasterTags | `card:class:MasterTag` | card-space's space |
+| Higher-level surface | Class                         | Lives in space                                                                 |
+| -------------------- | ----------------------------- | ------------------------------------------------------------------------------ |
+| Tracker projects     | `tracker:class:Project`       | project domain (resolved via `client.getHierarchy().getDomain(CLASS.Project)`) |
+| Chunter channels     | `chunter:class:Channel`       | `chunter:space:Chunter`                                                        |
+| Chunter DMs          | `chunter:class:DirectMessage` | `chunter:space:Chunter`                                                        |
+| Calendar calendars   | `calendar:class:Calendar`     | `core:space:Workspace`                                                         |
+| Calendar events      | `calendar:class:Event`        | `calendar:space:Calendar`                                                      |
+| Document teamspaces  | `document:class:Teamspace`    | `document:space:Default`                                                       |
+| Documents            | `document:class:Document`     | teamspace's space                                                              |
+| Cards                | `card:class:Card`             | card-space's space                                                             |
+| MasterTags           | `card:class:MasterTag`        | card-space's space                                                             |
 
 All share common fields: `name, description, private, archived, members, owners, type`.
 
@@ -62,6 +63,7 @@ huly space set-owners    <ref> --members <emails...>     # REPLACES owners array
 **`add-member` de-duplicates** against existing members (no-op if all already present). **`remove-member`** does NOT pre-check (silent no-op on non-members via the SDK's `$pull` semantics). **`set-owners`** REPLACES the owners array unconditionally — there is no merge.
 
 `--members` accepts:
+
 - `me` or empty string → current user
 - Full email (exact case-insensitive)
 - Person UUID
@@ -85,11 +87,11 @@ Read-only. Lists `core:class:SpaceType` records. Use this to discover what Space
 
 Three different cross-resource link primitives. Pick the right one:
 
-| Primitive | Class | Direction | Use |
-|---|---|---|---|
-| **Issue.relations / Issue.blockedBy** | (Issue-class fields) | Issue ↔ Issue | Ergonomic tracker relations; use `huly issue relation add` |
-| **Association** | `core:class:Association` | Bi-directional, A ↔ B, N:N | Generic symmetric links between any two docs |
-| **Relation** | `core:class:Relation` | Asymmetric A → B | One-directional A→B link with a name |
+| Primitive                             | Class                    | Direction                  | Use                                                        |
+| ------------------------------------- | ------------------------ | -------------------------- | ---------------------------------------------------------- |
+| **Issue.relations / Issue.blockedBy** | (Issue-class fields)     | Issue ↔ Issue              | Ergonomic tracker relations; use `huly issue relation add` |
+| **Association**                       | `core:class:Association` | Bi-directional, A ↔ B, N:N | Generic symmetric links between any two docs               |
+| **Relation**                          | `core:class:Relation`    | Asymmetric A → B           | One-directional A→B link with a name                       |
 
 For ergonomic issue-to-issue linking, ALWAYS prefer `huly issue relation`:
 
@@ -101,6 +103,7 @@ huly issue relation list TSK-1                       # merged view of blocks + i
 ```
 
 The `huly association` and `huly relation` commands operate on the lower-level primitives and should be used only when:
+
 - You need a non-Issue-to-Issue link (e.g. document ↔ document, or card ↔ issue)
 - You're building a custom plugin
 - You need N:N symmetric semantics
@@ -137,6 +140,7 @@ These configure the structure of tracker projects. Critical constraint:
 **Custom space types and custom task types can ONLY be applied to NEW projects. You cannot migrate an existing project.**
 
 If the user wants to change a project's type, the workflow is:
+
 1. Read all issues from the old project.
 2. Create a new project with the desired type.
 3. Copy issues (and meta) to the new project.
@@ -291,16 +295,16 @@ huly project get TSK --json | jq -r '._id' \
 
 When a side effect fires (e.g. assigning an issue creates a ProjectToDo), the relevant `On…` mixin lives in the corresponding server plugin. The CLI role is just to know which command triggers which mixin:
 
-| Mixin | Triggered by CLI command(s) | Where |
-|---|---|---|
-| `OnProjectRemove` | `huly project delete` | tracker plugin |
-| `OnComponentRemove` | `huly component delete` | tracker plugin |
-| `OnIssueUpdate` | `huly issue update`, `huly time log` | tracker plugin |
-| `OnToDoUpdate` | `huly action update --title\|--visibility` | time plugin |
-| `OnToDoRemove` | `huly action delete` | time plugin |
-| `OnWorkSlotCreate` | `huly action schedule` (first slot) | time plugin |
-| `OnWorkSlotUpdate` | `huly action update --visibility` mirrors | time plugin |
-| `OnCardTag` | server-side, on attribute add to one card | card plugin |
+| Mixin                                          | Triggered by CLI command(s)                      | Where           |
+| ---------------------------------------------- | ------------------------------------------------ | --------------- |
+| `OnProjectRemove`                              | `huly project delete`                            | tracker plugin  |
+| `OnComponentRemove`                            | `huly component delete`                          | tracker plugin  |
+| `OnIssueUpdate`                                | `huly issue update`, `huly time log`             | tracker plugin  |
+| `OnToDoUpdate`                                 | `huly action update --title\|--visibility`       | time plugin     |
+| `OnToDoRemove`                                 | `huly action delete`                             | time plugin     |
+| `OnWorkSlotCreate`                             | `huly action schedule` (first slot)              | time plugin     |
+| `OnWorkSlotUpdate`                             | `huly action update --visibility` mirrors        | time plugin     |
+| `OnCardTag`                                    | server-side, on attribute add to one card        | card plugin     |
 | `OnDocTitleChanged`, `OnDocHasBecomeEffective` | server-side, on ControlledDocument state changes | document plugin |
 
 See `references/issues-and-todos.md` for the full cascade table.

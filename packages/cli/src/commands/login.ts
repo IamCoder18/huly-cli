@@ -1,6 +1,6 @@
 import { readEnv, isNonInteractive, requireUrl } from '../auth/env.js'
-import { loginAndCache, listWorkspaces, accountClient, resolveToken } from '../auth/client.js'
-import { setCachedWorkspaceToken, writeActiveWorkspace, readActiveWorkspace } from '../auth/cache.js'
+import { loginAndCache, listWorkspaces, accountClient } from '../auth/client.js'
+import { setCachedWorkspaceToken, writeActiveWorkspace } from '../auth/cache.js'
 import { promptEmail, promptPassword, pickWorkspace } from '../auth/prompts.js'
 import { withSpinner } from '../output/progress.js'
 import { shouldJson } from '../output/format.js'
@@ -31,17 +31,19 @@ export async function loginCommand(opts: LoginOpts = {}): Promise<void> {
       throw new CliError(
         ExitCode.Validation,
         'credentials required',
-        'set HULY_EMAIL and HULY_PASSWORD, pass --email/--password, or run without --headless'
+        'set HULY_EMAIL and HULY_PASSWORD, pass --email/--password, or run without --headless',
       )
     }
     if (!email) email = await promptEmail(undefined, { forceInteractive })
     if (!password) password = await promptPassword({ forceInteractive })
   }
 
-  const result = await withSpinner('Logging in…', () => loginAndCache(url, email!, password!), { ci: opts.headless })
+  const result = await withSpinner('Logging in…', () => loginAndCache(url, email!, password!), {
+    ci: opts.headless,
+  })
 
   const workspaces = await withSpinner('Fetching workspaces…', () => listWorkspaces(url, result.token), {
-    ci: opts.headless
+    ci: opts.headless,
   })
 
   const wantWorkspace = opts.workspace ?? env.workspace
@@ -55,7 +57,13 @@ export async function loginCommand(opts: LoginOpts = {}): Promise<void> {
       chosenUrl = workspaces[0].url
     } else if (!forceInteractive) {
       if (useJson) {
-        console.log(JSON.stringify({ email, workspaces: workspaces.map((w) => ({ name: w.name, url: w.url, uuid: w.uuid })) }, null, 2))
+        console.log(
+          JSON.stringify(
+            { email, workspaces: workspaces.map((w) => ({ name: w.name, url: w.url, uuid: w.uuid })) },
+            null,
+            2,
+          ),
+        )
         return
       }
       console.log(`logged in as ${email}`)
@@ -72,21 +80,23 @@ export async function loginCommand(opts: LoginOpts = {}): Promise<void> {
   // CLI-25: match against url, uuid, and display name (any of them).
   // Throw on ambiguous name matches to avoid silently picking the wrong
   // workspace.
-  const matches = workspaces.filter((w) => w.url === chosenUrl || w.uuid === chosenUrl || w.name === chosenUrl)
-  let ws: typeof workspaces[number] | undefined
+  const matches = workspaces.filter(
+    (w) => w.url === chosenUrl || w.uuid === chosenUrl || w.name === chosenUrl,
+  )
+  let ws: (typeof workspaces)[number] | undefined
   if (matches.length === 1) {
     ws = matches[0]
   } else if (matches.length > 1) {
     throw new CliError(
       ExitCode.Validation,
       `workspace "${chosenUrl}" matches multiple workspaces: ${matches.map((m) => m.url).join(', ')}`,
-      'pass the workspace URL instead'
+      'pass the workspace URL instead',
     )
   } else {
     throw new CliError(
       ExitCode.NotFound,
       `workspace ${chosenUrl} not in accessible list`,
-      `hint: one of ${workspaces.map((w) => w.url).join(', ')}`
+      `hint: one of ${workspaces.map((w) => w.url).join(', ')}`,
     )
   }
 
@@ -100,7 +110,7 @@ export async function loginCommand(opts: LoginOpts = {}): Promise<void> {
       token: wsLogin.token,
       workspaceId: wsLogin.workspace ?? ws.uuid,
       role: String(wsLogin.role ?? 'OWNER'),
-      endpoint: wsLogin.endpoint
+      endpoint: wsLogin.endpoint,
     })
   } catch (err) {
     if (!useJson) {
@@ -110,7 +120,13 @@ export async function loginCommand(opts: LoginOpts = {}): Promise<void> {
   }
 
   if (useJson) {
-    console.log(JSON.stringify({ email, workspace: { name: ws.name, url: ws.url, uuid: ws.uuid }, account: result.account }, null, 2))
+    console.log(
+      JSON.stringify(
+        { email, workspace: { name: ws.name, url: ws.url, uuid: ws.uuid }, account: result.account },
+        null,
+        2,
+      ),
+    )
     return
   }
   console.log(`logged in as ${email}`)

@@ -12,17 +12,17 @@ Three distinct surfaces that all happen to involve time:
 
 This is the most-named-confused surface:
 
-| You say… | Use |
-|---|---|
-| "show my calendars" / "list available calendars" | `huly calendar calendars` |
-| "list events" / "what's on my calendar today" | `huly calendar list` |
-| "get event X" | `huly calendar get X` (returns the EVENT, not the calendar) |
-| "create an event" | `huly calendar create` |
-| "create a calendar (the container)" | `huly calendar create-calendar` |
-| "list recurring events" | `huly calendar recurring` |
-| "show instances of a recurring event" | `huly calendar recurring-instances <ref>` |
-| "define my working hours / availability" | `huly schedule create` |
-| "log time on TSK-1" / "I spent 30 min on…" | `huly time log --issue TSK-1` |
+| You say…                                         | Use                                                         |
+| ------------------------------------------------ | ----------------------------------------------------------- |
+| "show my calendars" / "list available calendars" | `huly calendar calendars`                                   |
+| "list events" / "what's on my calendar today"    | `huly calendar list`                                        |
+| "get event X"                                    | `huly calendar get X` (returns the EVENT, not the calendar) |
+| "create an event"                                | `huly calendar create`                                      |
+| "create a calendar (the container)"              | `huly calendar create-calendar`                             |
+| "list recurring events"                          | `huly calendar recurring`                                   |
+| "show instances of a recurring event"            | `huly calendar recurring-instances <ref>`                   |
+| "define my working hours / availability"         | `huly schedule create`                                      |
+| "log time on TSK-1" / "I spent 30 min on…"       | `huly time log --issue TSK-1`                               |
 
 **Critical naming trap:** `huly calendar get <ref>` returns an **EVENT**, not a calendar object. To get a calendar by id, use `huly calendar calendars --json | jq '.[] | select(._id == "<id>")'`.
 
@@ -68,6 +68,7 @@ huly calendar create \
 **Required:** `--title`, `--start`, `--end`. The CLI parses dates with `new Date(value).getTime()`; throws `Validation` on NaN.
 
 **Defaults:**
+
 - `--calendar-id` falls through: `calendar:class:PrimaryCalendar` first, else first non-hidden Calendar, else throws `no calendars available`.
 - `attachedTo`: defaults to current user's Person (`attachedToClass = contact:class:Person`) so the event shows in the user's calendar.
 - `access: 'owner'`, `visibility: 'public'`, `blockTime: false`.
@@ -134,11 +135,11 @@ huly calendar calendars --json | jq -r '.[] | select(.name == "Work") | ._id'
 
 ## Recurring event model
 
-| Concept | Class | Notes |
-|---|---|---|
-| Recurring event definition | `calendar:class:ReccuringEvent` (typo preserved in source) | Has `rules[]`, `originalStartTime`, `timeZone`, `exdate: []`, `rdate: []` |
-| Recurring instance (per-occurrence) | `calendar:class:ReccuringInstance` | Has `recurringEventId`, `originalStartTime`, `virtual`, `isCancelled` |
-| One-off event | `calendar:class:Event` | Plain event |
+| Concept                             | Class                                                      | Notes                                                                     |
+| ----------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------- |
+| Recurring event definition          | `calendar:class:ReccuringEvent` (typo preserved in source) | Has `rules[]`, `originalStartTime`, `timeZone`, `exdate: []`, `rdate: []` |
+| Recurring instance (per-occurrence) | `calendar:class:ReccuringInstance`                         | Has `recurringEventId`, `originalStartTime`, `virtual`, `isCancelled`     |
+| One-off event                       | `calendar:class:Event`                                     | Plain event                                                               |
 
 **Always-empty arrays:** the CLI initializes `exdate: []` and `rdate: []` on every new recurring event. EXDATE/RDATE have NO CLI exposure.
 
@@ -205,6 +206,7 @@ huly time delete <e1> <e2> --yes                  # REQUIRED --yes for multiple
 ## Visibility for Google Calendar sync (FYI)
 
 The platform maps `visibility ↔ Google transparency`:
+
 - Google `transparency:transparent` ↔ Huly `visibility:freeBusy`
 - Huly `private` ↔ Google `private`
 
@@ -251,6 +253,7 @@ huly calendar recurring-instances <rec-id> --json | jq 'length'
 ### "Skip next Monday's standup"
 
 There is no CLI surface for this. EXDATE is silently ignored. Options:
+
 - Delete the one instance via `huly ws findAll '["calendar:class:ReccuringInstance",{"recurringEventId":"<id>","originalStartTime":<ms>}]'` and `huly ws tx` with a `removeDoc`.
 - Or accept that all instances will exist.
 

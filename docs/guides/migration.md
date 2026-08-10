@@ -79,13 +79,13 @@ MCP uses `snake_case` (e.g. `list_issues`); the CLI uses
 space-separated resource/verb syntax (`issue list`). The MCP names map
 to CLI as:
 
-| MCP | CLI |
-|---|---|
-| `list_<resources>` | `<resource> list` |
-| `get_<resource>` | `<resource> get` |
-| `create_<resource>` | `<resource> create` |
-| `update_<resource>` | `<resource> update` |
-| `delete_<resource>` | `<resource> delete` |
+| MCP                                      | CLI                 |
+| ---------------------------------------- | ------------------- |
+| `list_<resources>`                       | `<resource> list`   |
+| `get_<resource>`                         | `<resource> get`    |
+| `create_<resource>`                      | `<resource> create` |
+| `update_<resource>`                      | `<resource> update` |
+| `delete_<resource>`                      | `<resource> delete` |
 | `<verb>_<resource>` (e.g. `add_comment`) | `<resource> <verb>` |
 
 ---
@@ -94,19 +94,19 @@ to CLI as:
 
 If you're used to clicking around in the web UI:
 
-| Web UI action | CLI command |
-|---|---|
-| Click project in sidebar | `huly workspace use <name>` then `huly project list` |
-| Open issue TSK-1 | `huly issue get TSK-1 --markdown` |
-| Create new issue | `huly issue create --project TSK --title "..."` |
-| Move issue to "Done" | `huly issue update TSK-1 --status Done` |
-| Add label "bug" | `huly issue label TSK-1 add --label bug` |
-| Comment on issue | `huly comment add --issue TSK-1 --body "..."` |
-| Send DM | `huly dm send placeholder --person alice@... --body "..."` (use any placeholder for `<dm>` when `--person` is set; the CLI auto-creates the DM as needed) |
-| Create channel | `huly channel create --name engineering` |
-| Create calendar event | `huly calendar create --title "Standup" --start ... --end ...` |
-| Log time | `huly time log --issue TSK-1 --minutes 30` |
-| Switch workspace | `huly workspace use <name>` |
+| Web UI action            | CLI command                                                                                                                                               |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Click project in sidebar | `huly workspace use <name>` then `huly project list`                                                                                                      |
+| Open issue TSK-1         | `huly issue get TSK-1 --markdown`                                                                                                                         |
+| Create new issue         | `huly issue create --project TSK --title "..."`                                                                                                           |
+| Move issue to "Done"     | `huly issue update TSK-1 --status Done`                                                                                                                   |
+| Add label "bug"          | `huly issue label TSK-1 add --label bug`                                                                                                                  |
+| Comment on issue         | `huly comment add --issue TSK-1 --body "..."`                                                                                                             |
+| Send DM                  | `huly dm send placeholder --person alice@... --body "..."` (use any placeholder for `<dm>` when `--person` is set; the CLI auto-creates the DM as needed) |
+| Create channel           | `huly channel create --name engineering`                                                                                                                  |
+| Create calendar event    | `huly calendar create --title "Standup" --start ... --end ...`                                                                                            |
+| Log time                 | `huly time log --issue TSK-1 --minutes 30`                                                                                                                |
+| Switch workspace         | `huly workspace use <name>`                                                                                                                               |
 
 > Heads up: the platform fires cascades from CLI mutations too — see
 > [Platform behavior](../reference/platform-behavior.md) for what

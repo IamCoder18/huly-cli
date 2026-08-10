@@ -1,6 +1,7 @@
 # Channels, DMs, threads, activity
 
 The chat surface. All chat lives under `chunter:space:Chunter`. Three flavors:
+
 - **Channels** — group conversations, listed in the sidebar.
 - **DMs** — direct or group, hidden from sidebar.
 - **Threads** — replies to a message (channel or DM).
@@ -11,11 +12,11 @@ Plus the cross-cutting **Activity** surface: reactions, pins, saved messages, me
 
 ## Decision: Channel vs DM vs Thread vs Comment
 
-| Use | When |
-|---|---|
-| `huly channel message send` | Public/semi-public team discussion; channel visible in sidebar |
-| `huly dm send --person <email>` | 1:1 or small group conversation; should NOT appear in the channel sidebar |
-| `huly thread add` | Reply to an existing message (channel or DM) |
+| Use                              | When                                                                       |
+| -------------------------------- | -------------------------------------------------------------------------- |
+| `huly channel message send`      | Public/semi-public team discussion; channel visible in sidebar             |
+| `huly dm send --person <email>`  | 1:1 or small group conversation; should NOT appear in the channel sidebar  |
+| `huly thread add`                | Reply to an existing message (channel or DM)                               |
 | `huly comment add --issue <ref>` | Top-level comment on a tracker issue (these are ChatMessages on the issue) |
 
 Use DMs for hidden conversations. Private channels still appear in the sidebar (users must request access); only DMs/close-conversation hide from it.
@@ -40,6 +41,7 @@ huly channel leave <ref> --member alice@example.com   # override to someone else
 ```
 
 Resolution order (`resolvePersonId` in `resources/channel.ts:61-130`):
+
 1. **Workspace-local Person scan** — `findAll('contact:class:Person', {}, { limit: 200 })`. Exact case-insensitive match on email OR name.
 2. **Account service fallback** — `accountClient.findPersonBySocialKey(email)` for cross-workspace; `findPersonBySocialId(socialId, true)` creates the Person if missing.
 3. Otherwise throw `NotFound` with a hint.
@@ -75,6 +77,7 @@ huly channel create \
 ```
 
 **Auto-applied:**
+
 - The current user is ALWAYS added to `members` first (prepended) and to `owners`. Cannot skip.
 - `autoJoin: false` and `autoJoinForRoles: []` by default.
 - `archived: false`.
@@ -141,6 +144,7 @@ huly channel message list engineering --json \
 ### Side effects on `message send` (server-side)
 
 The CLI just calls `addCollection`. Server-side behavior (NOT done by the CLI):
+
 - **Auto-adds sender to `channel.members`** if not already a member. The CLI itself does NOT `$push` the sender; if the platform doesn't add them either, the send will fail for non-members.
 - **Every `@name` in body** is parsed via `extractReferences`. Each mentioned Person is:
   - Added as `core:class:Collaborator` on the channel
@@ -170,7 +174,7 @@ huly dm message send --person alice@example.com --body "Hi"   # AUTO-CREATES the
 
 **Aliases:** `huly dm messages <dm>` is the deprecated alias for `huly dm message list <dm>`; `huly dm send <dm>` is the alias for `huly dm message send <dm>`. They invoke the same handlers. Use the canonical form.
 
-**Auto-creation:** passing `--person` to `dm send` *creates a new* `DirectMessage` doc. The CLI does NOT check whether a DM with that person already exists — it calls `createDoc(DM_CLASS, …)` unconditionally. Repeated calls produce duplicate DMs (one per call). To avoid duplicates, run `huly dm list --json` first. **No `--yes` required for DM creation.**
+**Auto-creation:** passing `--person` to `dm send` _creates a new_ `DirectMessage` doc. The CLI does NOT check whether a DM with that person already exists — it calls `createDoc(DM_CLASS, …)` unconditionally. Repeated calls produce duplicate DMs (one per call). To avoid duplicates, run `huly dm list --json` first. **No `--yes` required for DM creation.**
 
 ### "Close conversation" mechanism
 
@@ -201,6 +205,7 @@ huly thread delete <r1> <r2> --yes
 A thread reply is a `chunter:class:ThreadMessage` with `attachedTo = <parent-msg-id>`, `attachedToClass = chunter:class:ChatMessage`, `collection = 'replies'`.
 
 **Server-side cascade:**
+
 - Author pushed into parent's `repliedPersons[]`.
 - Parent's `lastReply` updated.
 - Inbox notifications sent to all collaborators + every `@mention` in the reply body.
@@ -316,6 +321,7 @@ huly notification contexts hide <dm-ref> --unhide
 ### Migrate channel messages to a thread (or pull replies into a topic)
 
 There is no CLI helper. If the user wants this:
+
 - Use `huly channel message list ...` and `huly thread add ...` manually.
 - Or use the web UI.
 

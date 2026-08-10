@@ -45,15 +45,15 @@ To build from source, see [Development](docs/development.md).
 
 ## Why huly-cli (not the MCP wrappers)
 
-| | **huly-cli** | MCP-based wrappers |
-|---|---|---|
-| Talks to Huly via | **Direct SDK** (no separate MCP server or runtime) | huly-mcp process + JSON-RPC |
-| Browser / Playwright | **None — fully headless** | Often required for auth/UI flows |
-| Employee / user creation | **Works** (including the fields MCP stops at) | Often half-implemented |
-| Time tracking / calendar recurrence | **First-class** (durations, recurring rules) | Frequently missing or stubbed |
-| Output formats | `table`, `json`, `jsonl`, `markdown` — same flags everywhere | Varies per wrapper |
-| Agent install | `npx skills add IamCoder18/huly-cli` (one command) | Manual MCP server config |
-| Polish | Every command has `--yes`, `--json`, idempotency, ref-resolution | Inconsistent |
+|                                     | **huly-cli**                                                     | MCP-based wrappers               |
+| ----------------------------------- | ---------------------------------------------------------------- | -------------------------------- |
+| Talks to Huly via                   | **Direct SDK** (no separate MCP server or runtime)               | huly-mcp process + JSON-RPC      |
+| Browser / Playwright                | **None — fully headless**                                        | Often required for auth/UI flows |
+| Employee / user creation            | **Works** (including the fields MCP stops at)                    | Often half-implemented           |
+| Time tracking / calendar recurrence | **First-class** (durations, recurring rules)                     | Frequently missing or stubbed    |
+| Output formats                      | `table`, `json`, `jsonl`, `markdown` — same flags everywhere     | Varies per wrapper               |
+| Agent install                       | `npx skills add IamCoder18/huly-cli` (one command)               | Manual MCP server config         |
+| Polish                              | Every command has `--yes`, `--json`, idempotency, ref-resolution | Inconsistent                     |
 
 > **Manually verified against every Huly product area** — accounts,
 > workspaces, Tracker (projects, issues, components, milestones,

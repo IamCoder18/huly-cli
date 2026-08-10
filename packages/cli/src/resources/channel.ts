@@ -1,11 +1,9 @@
 import type { Doc, Ref, Space, Class } from '@hcengineering/core'
 import type { PlatformClient } from '@hcengineering/api-client'
-import pkg from '@hcengineering/api-client'
-import { CLASS } from '../transport/identifiers.js'
 import { connectCli, connectAccountCli } from '../transport/sdk.js'
-import { resolveRef, resolveRefs, buildIndex, invalidateIndex } from '../transport/ref-resolver.js'
+import { resolveRef, buildIndex, invalidateIndex } from '../transport/ref-resolver.js'
 import { normalizeSocialKey } from '../auth/social.js'
-import { shouldJson, json, table, COLUMNS, C, success, updated, bulkRemoved } from "../output/format.js"
+import { shouldJson, json, table, COLUMNS, C, success, updated, bulkRemoved } from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
 
@@ -70,7 +68,7 @@ async function resolveChannel(client: PlatformClient, ref: string): Promise<Chan
 async function resolvePersonId(
   emailOrName: string,
   client: PlatformClient,
-  opts: { url?: string; workspace?: string } = {}
+  opts: { url?: string; workspace?: string } = {},
 ): Promise<Ref<Doc>> {
   // Strategy 1: scan workspace-local Person docs (works for multi-user
   // selfhosts and production workspaces where each user has a
@@ -79,7 +77,11 @@ async function resolvePersonId(
   // wrong person when callers pass a typo or a partial name.
   const lower = emailOrName.toLowerCase()
   try {
-    const persons = (await client.findAll('contact:class:Person' as Ref<Class<Doc>>, {}, { limit: 200 })) as Array<Doc & { name?: string; email?: string }>
+    const persons = (await client.findAll(
+      'contact:class:Person' as Ref<Class<Doc>>,
+      {},
+      { limit: 200 },
+    )) as Array<Doc & { name?: string; email?: string }>
     const hit = persons.find((p) => {
       const n = String(p.name ?? '').toLowerCase()
       const e = String(p.email ?? '').toLowerCase()
@@ -101,7 +103,9 @@ async function resolvePersonId(
       const me = await accountClient.getPerson().catch(() => null)
       const myUuid = me?.uuid
       if (emailOrName.includes('@')) {
-        const socialId = await accountClient.findSocialIdBySocialKey(normalizeSocialKey(emailOrName)).catch(() => undefined)
+        const socialId = await accountClient
+          .findSocialIdBySocialKey(normalizeSocialKey(emailOrName))
+          .catch(() => undefined)
         if (socialId !== undefined) {
           const person = await accountClient.findPersonBySocialId(socialId, true).catch(() => undefined)
           if (person !== undefined) return person as Ref<Doc>
@@ -119,7 +123,7 @@ async function resolvePersonId(
         throw new CliError(
           ExitCode.NotFound,
           `no other person in this workspace — you are the only member`,
-          'a DM requires at least one other member; invite someone via `huly user invite <email>`'
+          'a DM requires at least one other member; invite someone via `huly user invite <email>`',
         )
       }
     }
@@ -128,49 +132,67 @@ async function resolvePersonId(
     // account service unreachable or returned Forbidden — fall through
   }
 
-  const memberHint = otherMemberCount > 0
-    ? ` — workspace has ${otherMemberCount} other member${otherMemberCount === 1 ? '' : 's'}, but none matched exactly; pass a full email or 36-char UUID instead of --person`
-    : ''
+  const memberHint =
+    otherMemberCount > 0
+      ? ` — workspace has ${otherMemberCount} other member${otherMemberCount === 1 ? '' : 's'}, but none matched exactly; pass a full email or 36-char UUID instead of --person`
+      : ''
   throw new CliError(
     ExitCode.NotFound,
     `no person matching ${emailOrName}${memberHint}`,
-    'try --members <uuid1> <uuid2> with raw account UUIDs instead of --person'
+    'try --members <uuid1> <uuid2> with raw account UUIDs instead of --person',
   )
 }
 
 // ---- list / get / create / update / delete ----
 
-export async function listChannels(opts: {
-  archived?: boolean
-  limit?: number
-  offset?: number
-  json?: boolean
-  ci?: boolean
-  workspace?: string
-  url?: string
-} = {}): Promise<void> {
+export async function listChannels(
+  opts: {
+    archived?: boolean
+    limit?: number
+    offset?: number
+    json?: boolean
+    ci?: boolean
+    workspace?: string
+    url?: string
+  } = {},
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const query: Record<string, unknown> = {}
     if (opts.archived !== undefined) query.archived = opts.archived
-    const docs = (await withSpinner('Loading channels…', () =>
-      client.findAll(CHANNEL_CLASS, query as any), opts
+    const docs = (await withSpinner(
+      'Loading channels…',
+      () => client.findAll(CHANNEL_CLASS, query as any),
+      opts,
     )) as Channel[]
     let r = docs
     if (opts.offset && opts.offset > 0) r = r.slice(opts.offset)
     if (opts.limit && opts.limit > 0) r = r.slice(0, opts.limit)
-    if (shouldJson({ json: opts.json, ci: opts.ci })) { json(r); return }
+    if (shouldJson({ json: opts.json, ci: opts.ci })) {
+      json(r)
+      return
+    }
     table(r as unknown as Record<string, unknown>[], COLUMNS.channel(), { count: true, title: 'channels' })
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
-export async function getChannel(ref: string, opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string }): Promise<void> {
+export async function getChannel(
+  ref: string,
+  opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string },
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const channel = await resolveChannel(client, ref)
-    if (shouldJson({ json: opts.json, ci: opts.ci })) { json(channel); return }
+    if (shouldJson({ json: opts.json, ci: opts.ci })) {
+      json(channel)
+      return
+    }
     table([channel as unknown as Record<string, unknown>], COLUMNS.channel())
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
 export async function createChannel(opts: {
@@ -204,7 +226,7 @@ export async function createChannel(opts: {
       members: memberIds,
       owners: [account.uuid],
       autoJoin: opts.autoJoin ?? false,
-      autoJoinForRoles: []
+      autoJoinForRoles: [],
     }
     if (opts.dryRun) {
       console.log('would create channel:')
@@ -214,26 +236,34 @@ export async function createChannel(opts: {
     const id = await withSpinner(
       'Creating channel…',
       () => client.createDoc(CHANNEL_CLASS, 'chunter:space:Chunter' as Ref<Space>, data as any),
-      opts
+      opts,
     )
     invalidateIndex(client, CHANNEL_CLASS)
-    if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ _id: id, ...data }); return }
+    if (shouldJson({ json: opts.json, ci: opts.ci })) {
+      json({ _id: id, ...data })
+      return
+    }
     success(`created channel`, id)
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
-export async function updateChannel(ref: string, opts: {
-  name?: string
-  description?: string
-  topic?: string
-  private?: boolean
-  autoJoin?: boolean
-  json?: boolean
-  ci?: boolean
-  dryRun?: boolean
-  workspace?: string
-  url?: string
-}): Promise<void> {
+export async function updateChannel(
+  ref: string,
+  opts: {
+    name?: string
+    description?: string
+    topic?: string
+    private?: boolean
+    autoJoin?: boolean
+    json?: boolean
+    ci?: boolean
+    dryRun?: boolean
+    workspace?: string
+    url?: string
+  },
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const channel = await resolveChannel(client, ref)
@@ -243,7 +273,12 @@ export async function updateChannel(ref: string, opts: {
     if (opts.topic !== undefined) ops.topic = opts.topic
     if (opts.private !== undefined) ops.private = opts.private
     if (opts.autoJoin !== undefined) ops.autoJoin = opts.autoJoin
-    if (Object.keys(ops).length === 0) throw new CliError(ExitCode.Validation, 'nothing to update', 'pass --name/--description/--topic/--private/--auto-join')
+    if (Object.keys(ops).length === 0)
+      throw new CliError(
+        ExitCode.Validation,
+        'nothing to update',
+        'pass --name/--description/--topic/--private/--auto-join',
+      )
     if (opts.dryRun) {
       console.log(`would update channel ${channel._id}:`)
       console.log(JSON.stringify({ _class: CHANNEL_CLASS, objectId: channel._id, ops }, null, 2))
@@ -252,13 +287,18 @@ export async function updateChannel(ref: string, opts: {
     await withSpinner(
       'Updating…',
       () => client.updateDoc(CHANNEL_CLASS, channel.space, channel._id, ops as any),
-      opts
+      opts,
     )
     updated(`updated channel`, channel._id)
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
-export async function deleteChannels(refs: string[], opts: { workspace?: string; url?: string; yes?: boolean } = {}): Promise<void> {
+export async function deleteChannels(
+  refs: string[],
+  opts: { workspace?: string; url?: string; yes?: boolean } = {},
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const channels: Channel[] = []
@@ -274,10 +314,11 @@ export async function deleteChannels(refs: string[], opts: { workspace?: string;
       throw new CliError(
         ExitCode.Validation,
         `destructive: deleting ${channels.length} channels requires --yes`,
-        're-run with --yes to confirm'
+        're-run with --yes to confirm',
       )
     }
-    let deleted = 0, skipped = 0
+    let deleted = 0,
+      skipped = 0
     for (const ch of channels) {
       try {
         await client.removeDoc(CHANNEL_CLASS, ch.space, ch._id as Ref<Channel>)
@@ -288,12 +329,17 @@ export async function deleteChannels(refs: string[], opts: { workspace?: string;
       }
     }
     bulkRemoved(deleted, skipped)
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
 // ---- archive / unarchive ----
 
-export async function archiveChannel(ref: string, opts: { value?: boolean; dryRun?: boolean; workspace?: string; url?: string } = {}): Promise<void> {
+export async function archiveChannel(
+  ref: string,
+  opts: { value?: boolean; dryRun?: boolean; workspace?: string; url?: string } = {},
+): Promise<void> {
   const archive = opts.value ?? true
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
@@ -302,26 +348,43 @@ export async function archiveChannel(ref: string, opts: { value?: boolean; dryRu
       console.log(`would set archived=${archive} on ${channel._id}`)
       return
     }
-    await withSpinner('Archiving…', () => client.updateDoc(CHANNEL_CLASS, channel.space, channel._id, { archived: archive } as any))
+    await withSpinner('Archiving…', () =>
+      client.updateDoc(CHANNEL_CLASS, channel.space, channel._id, { archived: archive } as any),
+    )
     console.log(C.info(`archived channel`) + C.muted('  ') + C.emphasis(`${channel._id} archived=${archive}`))
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
 // ---- members ----
 
-export async function listChannelMembers(ref: string, opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string }): Promise<void> {
+export async function listChannelMembers(
+  ref: string,
+  opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string },
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const channel = await resolveChannel(client, ref)
     const members = channel.members ?? []
-    if (shouldJson({ json: opts.json, ci: opts.ci })) { json(members); return }
-    table(members.map((m) => ({ uuid: m })) as unknown as Record<string, unknown>[], [
-      { key: 'uuid', header: 'UUID' }
-    ], { count: true, title: 'members' })
-  } finally { await client.close() }
+    if (shouldJson({ json: opts.json, ci: opts.ci })) {
+      json(members)
+      return
+    }
+    table(
+      members.map((m) => ({ uuid: m })) as unknown as Record<string, unknown>[],
+      [{ key: 'uuid', header: 'UUID' }],
+      { count: true, title: 'members' },
+    )
+  } finally {
+    await client.close()
+  }
 }
 
-export async function joinChannel(ref: string, opts: { member?: string; dryRun?: boolean; workspace?: string; url?: string } = {}): Promise<void> {
+export async function joinChannel(
+  ref: string,
+  opts: { member?: string; dryRun?: boolean; workspace?: string; url?: string } = {},
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const account = await client.getAccount()
@@ -335,17 +398,21 @@ export async function joinChannel(ref: string, opts: { member?: string; dryRun?:
       console.log(`would join ${memberId} to channel ${channel._id}`)
       return
     }
-    await withSpinner(
-      'Joining…',
-      () => client.updateDoc(CHANNEL_CLASS, channel.space, channel._id, {
-        $push: { members: { $each: [memberId], $position: 0 } }
-      } as any)
+    await withSpinner('Joining…', () =>
+      client.updateDoc(CHANNEL_CLASS, channel.space, channel._id, {
+        $push: { members: { $each: [memberId], $position: 0 } },
+      } as any),
     )
     success(`joined member`, `${memberId} → ${channel._id}`)
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
-export async function leaveChannel(ref: string, opts: { member?: string; dryRun?: boolean; workspace?: string; url?: string } = {}): Promise<void> {
+export async function leaveChannel(
+  ref: string,
+  opts: { member?: string; dryRun?: boolean; workspace?: string; url?: string } = {},
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const account = await client.getAccount()
@@ -359,17 +426,22 @@ export async function leaveChannel(ref: string, opts: { member?: string; dryRun?
       console.log(`would remove ${memberId} from channel ${channel._id}`)
       return
     }
-    await withSpinner(
-      'Leaving…',
-      () => client.updateDoc(CHANNEL_CLASS, channel.space, channel._id, {
-        $pull: { members: { $in: [memberId] } }
-      } as any)
+    await withSpinner('Leaving…', () =>
+      client.updateDoc(CHANNEL_CLASS, channel.space, channel._id, {
+        $pull: { members: { $in: [memberId] } },
+      } as any),
     )
     success(`removed member`, `${memberId} from ${channel._id}`)
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
-export async function addChannelMembers(ref: string, members: string[], opts: { dryRun?: boolean; workspace?: string; url?: string } = {}): Promise<void> {
+export async function addChannelMembers(
+  ref: string,
+  members: string[],
+  opts: { dryRun?: boolean; workspace?: string; url?: string } = {},
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const channel = await resolveChannel(client, ref)
@@ -379,17 +451,22 @@ export async function addChannelMembers(ref: string, members: string[], opts: { 
       console.log(`would add ${ids.length} members to channel ${channel._id}`)
       return
     }
-    await withSpinner(
-      'Adding members…',
-      () => client.updateDoc(CHANNEL_CLASS, channel.space, channel._id, {
-        $push: { members: { $each: ids, $position: 0 } }
-      } as any)
+    await withSpinner('Adding members…', () =>
+      client.updateDoc(CHANNEL_CLASS, channel.space, channel._id, {
+        $push: { members: { $each: ids, $position: 0 } },
+      } as any),
     )
     console.log(C.ok(`added ${ids.length} members`) + C.muted('  ') + C.emphasis(`to ${channel._id}`))
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
-export async function removeChannelMembers(ref: string, members: string[], opts: { dryRun?: boolean; workspace?: string; url?: string } = {}): Promise<void> {
+export async function removeChannelMembers(
+  ref: string,
+  members: string[],
+  opts: { dryRun?: boolean; workspace?: string; url?: string } = {},
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const channel = await resolveChannel(client, ref)
@@ -399,87 +476,131 @@ export async function removeChannelMembers(ref: string, members: string[], opts:
       console.log(`would remove ${ids.length} members from channel ${channel._id}`)
       return
     }
-    await withSpinner(
-      'Removing members…',
-      () => client.updateDoc(CHANNEL_CLASS, channel.space, channel._id, {
-        $pull: { members: { $in: ids } }
-      } as any)
+    await withSpinner('Removing members…', () =>
+      client.updateDoc(CHANNEL_CLASS, channel.space, channel._id, {
+        $pull: { members: { $in: ids } },
+      } as any),
     )
     success(`removed ${ids.length} members`, `from ${channel._id}`)
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
 // ---- messages ----
 
-export async function listChannelMessages(ref: string, opts: {
-  limit?: number
-  offset?: number
-  json?: boolean
-  ci?: boolean
-  workspace?: string
-  url?: string
-}): Promise<void> {
+export async function listChannelMessages(
+  ref: string,
+  opts: {
+    limit?: number
+    offset?: number
+    json?: boolean
+    ci?: boolean
+    workspace?: string
+    url?: string
+  },
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const channel = await resolveChannel(client, ref)
     const messages = (await withSpinner(
       'Loading messages…',
-      () => client.findAll(CHAT_MESSAGE_CLASS, {
-        attachedTo: channel._id,
-        attachedToClass: CHANNEL_CLASS,
-        collection: 'messages'
-      }),
-      opts
+      () =>
+        client.findAll(CHAT_MESSAGE_CLASS, {
+          attachedTo: channel._id,
+          attachedToClass: CHANNEL_CLASS,
+          collection: 'messages',
+        }),
+      opts,
     )) as ChatMessage[]
     let r = messages
     if (opts.offset && opts.offset > 0) r = r.slice(opts.offset)
     if (opts.limit && opts.limit > 0) r = r.slice(0, opts.limit)
-    if (shouldJson({ json: opts.json, ci: opts.ci })) { json(r); return }
-    table(r as unknown as Record<string, unknown>[], COLUMNS.channelMessage(), { count: true, title: 'messages' })
-  } finally { await client.close() }
+    if (shouldJson({ json: opts.json, ci: opts.ci })) {
+      json(r)
+      return
+    }
+    table(r as unknown as Record<string, unknown>[], COLUMNS.channelMessage(), {
+      count: true,
+      title: 'messages',
+    })
+  } finally {
+    await client.close()
+  }
 }
 
-export async function sendChannelMessage(ref: string, opts: {
-  message?: string
-  body?: string
-  bodyFile?: string
-  json?: boolean
-  ci?: boolean
-  dryRun?: boolean
-  workspace?: string
-  url?: string
-}): Promise<void> {
+export async function sendChannelMessage(
+  ref: string,
+  opts: {
+    message?: string
+    body?: string
+    bodyFile?: string
+    json?: boolean
+    ci?: boolean
+    dryRun?: boolean
+    workspace?: string
+    url?: string
+  },
+): Promise<void> {
   const body = await readMessageBody(opts)
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const channel = await resolveChannel(client, ref)
     const data: Record<string, unknown> = {
-      message: body
+      message: body,
     }
     if (opts.dryRun) {
       console.log('would send channel message:')
-      console.log(JSON.stringify({ _class: CHAT_MESSAGE_CLASS, space: channel.space, attachedTo: channel._id, attachedToClass: CHANNEL_CLASS, collection: 'messages', data }, null, 2))
+      console.log(
+        JSON.stringify(
+          {
+            _class: CHAT_MESSAGE_CLASS,
+            space: channel.space,
+            attachedTo: channel._id,
+            attachedToClass: CHANNEL_CLASS,
+            collection: 'messages',
+            data,
+          },
+          null,
+          2,
+        ),
+      )
       return
     }
-    const id = await withSpinner(
-      'Sending…',
-      () => client.addCollection(CHAT_MESSAGE_CLASS, channel.space, channel._id, CHANNEL_CLASS, 'messages', data as any)
+    const id = await withSpinner('Sending…', () =>
+      client.addCollection(
+        CHAT_MESSAGE_CLASS,
+        channel.space,
+        channel._id,
+        CHANNEL_CLASS,
+        'messages',
+        data as any,
+      ),
     )
-    if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ _id: id, ...data }); return }
+    if (shouldJson({ json: opts.json, ci: opts.ci })) {
+      json({ _id: id, ...data })
+      return
+    }
     console.log(`sent: ${id}`)
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
-export async function updateChannelMessage(ref: string, messageId: string, opts: {
-  message?: string
-  body?: string
-  bodyFile?: string
-  json?: boolean
-  ci?: boolean
-  dryRun?: boolean
-  workspace?: string
-  url?: string
-}): Promise<void> {
+export async function updateChannelMessage(
+  ref: string,
+  messageId: string,
+  opts: {
+    message?: string
+    body?: string
+    bodyFile?: string
+    json?: boolean
+    ci?: boolean
+    dryRun?: boolean
+    workspace?: string
+    url?: string
+  },
+): Promise<void> {
   const body = await readMessageBody(opts)
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
@@ -491,30 +612,35 @@ export async function updateChannelMessage(ref: string, messageId: string, opts:
     }
     const data: Record<string, unknown> = {
       message: body,
-      editedOn: Date.now()
+      editedOn: Date.now(),
     }
     if (opts.dryRun) {
       console.log(`would update message ${messageId}:`)
       console.log(JSON.stringify({ _class: CHAT_MESSAGE_CLASS, space: msg.space, ops: data }, null, 2))
       return
     }
-    await withSpinner(
-      'Updating…',
-      () => client.updateCollection(
+    await withSpinner('Updating…', () =>
+      client.updateCollection(
         CHAT_MESSAGE_CLASS,
         msg.space as unknown as Ref<Space>,
         messageId as Ref<ChatMessage>,
         channel._id,
         CHANNEL_CLASS,
         'messages',
-        data as any
-      )
+        data as any,
+      ),
     )
     updated(`updated message`, messageId)
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
-export async function deleteChannelMessages(ref: string, messageIds: string[], opts: { workspace?: string; url?: string; yes?: boolean } = {}): Promise<void> {
+export async function deleteChannelMessages(
+  ref: string,
+  messageIds: string[],
+  opts: { workspace?: string; url?: string; yes?: boolean } = {},
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const channel = await resolveChannel(client, ref)
@@ -522,13 +648,17 @@ export async function deleteChannelMessages(ref: string, messageIds: string[], o
       throw new CliError(
         ExitCode.Validation,
         `destructive: deleting ${messageIds.length} messages requires --yes`,
-        're-run with --yes to confirm'
+        're-run with --yes to confirm',
       )
     }
-    let deleted = 0, skipped = 0
+    let deleted = 0,
+      skipped = 0
     for (const id of messageIds) {
       const msg = await client.findOne(CHAT_MESSAGE_CLASS, { _id: id as Ref<ChatMessage> })
-      if (!msg) { skipped++; continue }
+      if (!msg) {
+        skipped++
+        continue
+      }
       if (msg.attachedTo !== channel._id) {
         console.error(`skipped: ${id} (message does not belong to this channel)`)
         skipped++
@@ -541,7 +671,7 @@ export async function deleteChannelMessages(ref: string, messageIds: string[], o
           id as Ref<ChatMessage>,
           channel._id,
           CHANNEL_CLASS,
-          'messages'
+          'messages',
         )
         deleted++
       } catch (e) {
@@ -550,123 +680,165 @@ export async function deleteChannelMessages(ref: string, messageIds: string[], o
       }
     }
     bulkRemoved(deleted, skipped)
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
 // ---- threads ----
 
-export async function listThreadReplies(targetId: string, opts: {
-  limit?: number
-  offset?: number
-  json?: boolean
-  ci?: boolean
-  workspace?: string
-  url?: string
-}): Promise<void> {
+export async function listThreadReplies(
+  targetId: string,
+  opts: {
+    limit?: number
+    offset?: number
+    json?: boolean
+    ci?: boolean
+    workspace?: string
+    url?: string
+  },
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const replies = (await client.findAll(
-      'chunter:class:ThreadMessage' as Ref<Class<ChatMessage>>,
-      { attachedTo: targetId as Ref<Doc> }
-    )) as ChatMessage[]
+    const replies = (await client.findAll('chunter:class:ThreadMessage' as Ref<Class<ChatMessage>>, {
+      attachedTo: targetId as Ref<Doc>,
+    })) as ChatMessage[]
     let r = replies
     if (opts.offset && opts.offset > 0) r = r.slice(opts.offset)
     if (opts.limit && opts.limit > 0) r = r.slice(0, opts.limit)
-    if (shouldJson({ json: opts.json, ci: opts.ci })) { json(r); return }
-    table(r as unknown as Record<string, unknown>[], COLUMNS.channelMessage(), { count: true, title: 'messages' })
-  } finally { await client.close() }
+    if (shouldJson({ json: opts.json, ci: opts.ci })) {
+      json(r)
+      return
+    }
+    table(r as unknown as Record<string, unknown>[], COLUMNS.channelMessage(), {
+      count: true,
+      title: 'messages',
+    })
+  } finally {
+    await client.close()
+  }
 }
 
-export async function addThreadReply(targetId: string, opts: {
-  message?: string
-  body?: string
-  bodyFile?: string
-  json?: boolean
-  ci?: boolean
-  dryRun?: boolean
-  workspace?: string
-  url?: string
-}): Promise<void> {
+export async function addThreadReply(
+  targetId: string,
+  opts: {
+    message?: string
+    body?: string
+    bodyFile?: string
+    json?: boolean
+    ci?: boolean
+    dryRun?: boolean
+    workspace?: string
+    url?: string
+  },
+): Promise<void> {
   const body = await readMessageBody(opts)
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const parent = await client.findOne(CHAT_MESSAGE_CLASS, { _id: targetId as Ref<ChatMessage> })
     if (!parent) throw new CliError(ExitCode.NotFound, `target message ${targetId} not found`)
     const data: Record<string, unknown> = {
-      message: body
+      message: body,
     }
     if (opts.dryRun) {
       console.log('would add thread reply:')
-      console.log(JSON.stringify({ _class: 'chunter:class:ThreadMessage', space: parent.space, attachedTo: targetId, data }, null, 2))
+      console.log(
+        JSON.stringify(
+          { _class: 'chunter:class:ThreadMessage', space: parent.space, attachedTo: targetId, data },
+          null,
+          2,
+        ),
+      )
       return
     }
-    const id = await withSpinner(
-      'Adding reply…',
-      () => client.addCollection(
+    const id = await withSpinner('Adding reply…', () =>
+      client.addCollection(
         'chunter:class:ThreadMessage' as Ref<Class<ChatMessage>>,
         parent.space as unknown as Ref<Space>,
         targetId as Ref<Doc>,
         CHAT_MESSAGE_CLASS,
         'replies',
-        data as any
-      )
+        data as any,
+      ),
     )
-    if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ _id: id, ...data }); return }
+    if (shouldJson({ json: opts.json, ci: opts.ci })) {
+      json({ _id: id, ...data })
+      return
+    }
     success(`added reply`, id)
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
-export async function updateThreadReply(replyId: string, opts: {
-  message?: string
-  body?: string
-  bodyFile?: string
-  json?: boolean
-  ci?: boolean
-  dryRun?: boolean
-  workspace?: string
-  url?: string
-}): Promise<void> {
+export async function updateThreadReply(
+  replyId: string,
+  opts: {
+    message?: string
+    body?: string
+    bodyFile?: string
+    json?: boolean
+    ci?: boolean
+    dryRun?: boolean
+    workspace?: string
+    url?: string
+  },
+): Promise<void> {
   const body = await readMessageBody(opts)
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const reply = await client.findOne('chunter:class:ThreadMessage' as Ref<Class<ChatMessage>>, { _id: replyId as Ref<ChatMessage> })
+    const reply = await client.findOne('chunter:class:ThreadMessage' as Ref<Class<ChatMessage>>, {
+      _id: replyId as Ref<ChatMessage>,
+    })
     if (!reply) throw new CliError(ExitCode.NotFound, `thread reply ${replyId} not found`)
     const data: Record<string, unknown> = { message: body, editedOn: Date.now() }
     if (opts.dryRun) {
       console.log(`would update thread reply ${replyId}:`)
-      console.log(JSON.stringify({ _class: 'chunter:class:ThreadMessage', space: reply.space, ops: data }, null, 2))
+      console.log(
+        JSON.stringify({ _class: 'chunter:class:ThreadMessage', space: reply.space, ops: data }, null, 2),
+      )
       return
     }
-    await withSpinner(
-      'Updating…',
-      () => client.updateCollection(
+    await withSpinner('Updating…', () =>
+      client.updateCollection(
         'chunter:class:ThreadMessage' as Ref<Class<ChatMessage>>,
         reply.space as unknown as Ref<Space>,
         replyId as Ref<ChatMessage>,
         (reply as ChatMessage).attachedTo,
         CHAT_MESSAGE_CLASS,
         'replies',
-        data as any
-      )
+        data as any,
+      ),
     )
     updated(`updated reply`, replyId)
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
-export async function deleteThreadReplies(replyIds: string[], opts: { workspace?: string; url?: string; yes?: boolean } = {}): Promise<void> {
+export async function deleteThreadReplies(
+  replyIds: string[],
+  opts: { workspace?: string; url?: string; yes?: boolean } = {},
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     if (!opts.yes && replyIds.length > 1) {
       throw new CliError(
         ExitCode.Validation,
         `destructive: deleting ${replyIds.length} replies requires --yes`,
-        're-run with --yes to confirm'
+        're-run with --yes to confirm',
       )
     }
-    let deleted = 0, skipped = 0
+    let deleted = 0,
+      skipped = 0
     for (const id of replyIds) {
-      const reply = await client.findOne('chunter:class:ThreadMessage' as Ref<Class<ChatMessage>>, { _id: id as Ref<ChatMessage> })
-      if (!reply) { skipped++; continue }
+      const reply = await client.findOne('chunter:class:ThreadMessage' as Ref<Class<ChatMessage>>, {
+        _id: id as Ref<ChatMessage>,
+      })
+      if (!reply) {
+        skipped++
+        continue
+      }
       try {
         await client.removeCollection(
           'chunter:class:ThreadMessage' as Ref<Class<ChatMessage>>,
@@ -674,7 +846,7 @@ export async function deleteThreadReplies(replyIds: string[], opts: { workspace?
           id as Ref<ChatMessage>,
           (reply as ChatMessage).attachedTo,
           CHAT_MESSAGE_CLASS,
-          'replies'
+          'replies',
         )
         deleted++
       } catch (e) {
@@ -683,34 +855,45 @@ export async function deleteThreadReplies(replyIds: string[], opts: { workspace?
       }
     }
     bulkRemoved(deleted, skipped)
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
 // ---- DMs ----
 
-export async function listDms(opts: {
-  limit?: number
-  offset?: number
-  json?: boolean
-  ci?: boolean
-  workspace?: string
-  url?: string
-} = {}): Promise<void> {
+export async function listDms(
+  opts: {
+    limit?: number
+    offset?: number
+    json?: boolean
+    ci?: boolean
+    workspace?: string
+    url?: string
+  } = {},
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const dms = (await withSpinner('Loading DMs…', () =>
-      client.findAll(DM_CLASS, {}), opts
+    const dms = (await withSpinner(
+      'Loading DMs…',
+      () => client.findAll(DM_CLASS, {}),
+      opts,
     )) as DirectMessage[]
     let r = dms
     if (opts.offset && opts.offset > 0) r = r.slice(opts.offset)
     if (opts.limit && opts.limit > 0) r = r.slice(0, opts.limit)
-    if (shouldJson({ json: opts.json, ci: opts.ci })) { json(r); return }
+    if (shouldJson({ json: opts.json, ci: opts.ci })) {
+      json(r)
+      return
+    }
     table(r as unknown as Record<string, unknown>[], [
       { key: 'name', header: 'NAME' },
       { key: 'description', header: 'DESCRIPTION' },
-      { key: '_id', header: '_ID', format: (r) => String((r as DirectMessage)._id).slice(-12) }
+      { key: '_id', header: '_ID', format: (r) => String((r as DirectMessage)._id).slice(-12) },
     ])
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
 export async function createDm(opts: {
@@ -729,16 +912,18 @@ export async function createDm(opts: {
   try {
     const account = await client.getAccount()
     const memberIds: Ref<Doc>[] = []
-    if (opts.person) memberIds.push(await resolvePersonId(opts.person, client, { url: opts.url, workspace: opts.workspace }))
+    if (opts.person)
+      memberIds.push(await resolvePersonId(opts.person, client, { url: opts.url, workspace: opts.workspace }))
     if (opts.members) {
-      for (const m of opts.members) memberIds.push(await resolvePersonId(m, client, { url: opts.url, workspace: opts.workspace }))
+      for (const m of opts.members)
+        memberIds.push(await resolvePersonId(m, client, { url: opts.url, workspace: opts.workspace }))
     }
     memberIds.unshift(account.uuid as Ref<Doc>)
     const data: Record<string, unknown> = {
       name: '',
       description: '',
       members: memberIds,
-      pinned: false
+      pinned: false,
     }
     if (opts.dryRun) {
       console.log('would create DM:')
@@ -748,22 +933,30 @@ export async function createDm(opts: {
     const id = await withSpinner(
       'Creating DM…',
       () => client.createDoc(DM_CLASS, 'chunter:space:Chunter' as Ref<Space>, data as any),
-      opts
+      opts,
     )
-    if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ _id: id, ...data }); return undefined }
+    if (shouldJson({ json: opts.json, ci: opts.ci })) {
+      json({ _id: id, ...data })
+      return undefined
+    }
     success('created DM', id)
     return id as Ref<Doc>
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
-export async function listDmMessages(dmRef: string, opts: {
-  limit?: number
-  offset?: number
-  json?: boolean
-  ci?: boolean
-  workspace?: string
-  url?: string
-}): Promise<void> {
+export async function listDmMessages(
+  dmRef: string,
+  opts: {
+    limit?: number
+    offset?: number
+    json?: boolean
+    ci?: boolean
+    workspace?: string
+    url?: string
+  },
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const dmId = await resolveRef(dmRef, {
@@ -772,32 +965,44 @@ export async function listDmMessages(dmRef: string, opts: {
     })
     const messages = (await withSpinner(
       'Loading DM messages…',
-      () => client.findAll(CHAT_MESSAGE_CLASS, {
-        attachedTo: dmId as Ref<Doc>,
-        attachedToClass: DM_CLASS,
-        collection: 'messages'
-      }),
-      opts
+      () =>
+        client.findAll(CHAT_MESSAGE_CLASS, {
+          attachedTo: dmId as Ref<Doc>,
+          attachedToClass: DM_CLASS,
+          collection: 'messages',
+        }),
+      opts,
     )) as ChatMessage[]
     let r = messages
     if (opts.offset && opts.offset > 0) r = r.slice(opts.offset)
     if (opts.limit && opts.limit > 0) r = r.slice(0, opts.limit)
-    if (shouldJson({ json: opts.json, ci: opts.ci })) { json(r); return }
-    table(r as unknown as Record<string, unknown>[], COLUMNS.channelMessage(), { count: true, title: 'messages' })
-  } finally { await client.close() }
+    if (shouldJson({ json: opts.json, ci: opts.ci })) {
+      json(r)
+      return
+    }
+    table(r as unknown as Record<string, unknown>[], COLUMNS.channelMessage(), {
+      count: true,
+      title: 'messages',
+    })
+  } finally {
+    await client.close()
+  }
 }
 
-export async function sendDmMessage(dmRef: string, opts: {
-  message?: string
-  body?: string
-  bodyFile?: string
-  person?: string
-  json?: boolean
-  ci?: boolean
-  dryRun?: boolean
-  workspace?: string
-  url?: string
-}): Promise<void> {
+export async function sendDmMessage(
+  dmRef: string,
+  opts: {
+    message?: string
+    body?: string
+    bodyFile?: string
+    person?: string
+    json?: boolean
+    ci?: boolean
+    dryRun?: boolean
+    workspace?: string
+    url?: string
+  },
+): Promise<void> {
   const body = await readMessageBody(opts)
   // --person <email>: resolve or auto-create DM, then send.
   if (opts.person !== undefined && opts.person !== '') {
@@ -807,15 +1012,21 @@ export async function sendDmMessage(dmRef: string, opts: {
       person: opts.person,
       dryRun: opts.dryRun,
       workspace: opts.workspace,
-      url: opts.url
+      url: opts.url,
     })
     if (opts.dryRun) {
       console.log('would send DM:')
-      console.log(JSON.stringify({
-        wouldCreateDm: { person: opts.person },
-        wouldSendTo: dmRef,
-        message: body
-      }, null, 2))
+      console.log(
+        JSON.stringify(
+          {
+            wouldCreateDm: { person: opts.person },
+            wouldSendTo: dmRef,
+            message: body,
+          },
+          null,
+          2,
+        ),
+      )
       return
     }
     if (dmId !== undefined) dmRef = String(dmId)
@@ -831,28 +1042,49 @@ export async function sendDmMessage(dmRef: string, opts: {
     const data: Record<string, unknown> = { message: body }
     if (opts.dryRun) {
       console.log('would send DM:')
-      console.log(JSON.stringify({ _class: CHAT_MESSAGE_CLASS, space: dm.space, attachedTo: dmId, attachedToClass: DM_CLASS, collection: 'messages', data }, null, 2))
+      console.log(
+        JSON.stringify(
+          {
+            _class: CHAT_MESSAGE_CLASS,
+            space: dm.space,
+            attachedTo: dmId,
+            attachedToClass: DM_CLASS,
+            collection: 'messages',
+            data,
+          },
+          null,
+          2,
+        ),
+      )
       return
     }
-    const id = await withSpinner(
-      'Sending…',
-      () => client.addCollection(
+    const id = await withSpinner('Sending…', () =>
+      client.addCollection(
         CHAT_MESSAGE_CLASS,
         dm.space as unknown as Ref<Space>,
         dmId as Ref<Doc>,
         DM_CLASS,
         'messages',
-        data as any
-      )
+        data as any,
+      ),
     )
-    if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ _id: id, ...data }); return }
+    if (shouldJson({ json: opts.json, ci: opts.ci })) {
+      json({ _id: id, ...data })
+      return
+    }
     console.log(`sent: ${id}`)
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
 // ---- helpers ----
 
-async function readMessageBody(opts: { message?: string; body?: string; bodyFile?: string }): Promise<string> {
+async function readMessageBody(opts: {
+  message?: string
+  body?: string
+  bodyFile?: string
+}): Promise<string> {
   if (opts.body && opts.bodyFile) {
     throw new CliError(ExitCode.Validation, 'ambiguous body input', 'pass only one of --body or --body-file')
   }

@@ -130,6 +130,7 @@ huly approval cancel <ref>              # only by the requester
 ```
 
 **Critical semantics:**
+
 - `comment` — `--decision` is OPTIONAL. Omit for a plain comment; pass `--decision comment` for symmetry (the CLI prefers omitting the flag).
 - `approve` — requires `--comment` is recommended but optional. The request auto-completes server-side when `requiredCount` reached.
 - `reject` — `--comment` is REQUIRED. `--rejected-tx` is optional; the tx to apply on rejection.
@@ -150,16 +151,16 @@ ApprovalRequest is an AttachedDoc (`request:class:Request`), so delete uses `rem
 
 The platform emits `InboxNotification` rows automatically on most mutations:
 
-| Trigger | Notification? |
-|---|---|
-| Channel/DM/thread message send | Every collaborator + every `@mention` (the sender does NOT notify themselves) |
-| `comment add --issue X` | Every `@mention` + every collaborator (the author does NOT notify themselves) |
-| Issue status/assignee change | New assignee (and previous assignee on close) |
-| Action (todo) created on an issue | Issue collaborators (depends on cascade shape) |
-| Card/Document update | `@mentioned` users |
-| Calendar event with attendee | Attendees |
-| Approval status change | Requester + approvers |
-| Telegram reply to a notification | Notification sender (creates a thread reply in Huly) |
+| Trigger                           | Notification?                                                                 |
+| --------------------------------- | ----------------------------------------------------------------------------- |
+| Channel/DM/thread message send    | Every collaborator + every `@mention` (the sender does NOT notify themselves) |
+| `comment add --issue X`           | Every `@mention` + every collaborator (the author does NOT notify themselves) |
+| Issue status/assignee change      | New assignee (and previous assignee on close)                                 |
+| Action (todo) created on an issue | Issue collaborators (depends on cascade shape)                                |
+| Card/Document update              | `@mentioned` users                                                            |
+| Calendar event with attendee      | Attendees                                                                     |
+| Approval status change            | Requester + approvers                                                         |
+| Telegram reply to a notification  | Notification sender (creates a thread reply in Huly)                          |
 
 **Class-level mixin to disable notifications:** `IgnoreActivity` (CLI doesn't expose this — server-side plugin config).
 

@@ -1,11 +1,35 @@
 import type { Doc, Ref, Space, Class, DocumentQuery, FindResult } from '@hcengineering/core'
 import type { PlatformClient } from '@hcengineering/api-client'
-import pkg from '@hcengineering/api-client'
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, buildIndex, invalidateIndex } from '../transport/ref-resolver.js'
-import { shouldJson, json, table, kv, header, withTimeout, COLUMNS, C, colorizeStatus, colorizePriority, statusGlyph, priorityGlyph, relTime, isoDate, isoDay, success, updated, bulkRemoved } from "../output/format.js"
-import { resolveAssignee, generateId, uploadMarkup, updateMarkup, looksLikeRawMarkup, warnMarkdownFallback } from "./_helpers.js"
+import {
+  shouldJson,
+  json,
+  table,
+  kv,
+  header,
+  withTimeout,
+  COLUMNS,
+  C,
+  colorizeStatus,
+  statusGlyph,
+  priorityGlyph,
+  relTime,
+  isoDate,
+  isoDay,
+  success,
+  updated,
+  bulkRemoved,
+} from '../output/format.js'
+import {
+  resolveAssignee,
+  generateId,
+  uploadMarkup,
+  updateMarkup,
+  looksLikeRawMarkup,
+  warnMarkdownFallback,
+} from './_helpers.js'
 import { withSpinner } from '../output/progress.js'
 import { deleteDoc } from '../commands/dry-run.js'
 import { CliError, ExitCode } from '../output/errors.js'
@@ -55,8 +79,13 @@ interface IssueCreateOpts {
 
 function parseDate(value: string, field: string): number {
   const t = new Date(value).getTime()
-  if (Number.isNaN(t)) throw new CliError(ExitCode.Validation, `invalid ${field}: ${value} (expected ISO date)`)
+  if (Number.isNaN(t))
+    throw new CliError(ExitCode.Validation, `invalid ${field}: ${value} (expected ISO date)`)
   return t
+}
+
+function stripStatusCategoryPrefix(cat: string): string {
+  return cat.replace(/^task:statusCategory:/, '')
 }
 
 async function readBody(opts: { body?: string; bodyFile?: string }): Promise<string | undefined> {
@@ -95,13 +124,19 @@ async function firstStatus(client: PlatformClient, project: Project): Promise<Re
     await ensureDefaultStatuses(client, project)
     const rechecked = (await client.findAll(CLASS.IssueStatus as Ref<Class<Doc>>, { ofAttribute })) as Doc[]
     if (rechecked.length === 0) {
-      throw new CliError(ExitCode.NotFound,
+      throw new CliError(
+        ExitCode.NotFound,
         `no IssueStatus in workspace; tried to auto-seed but the workspace model may be missing tracker attributes`,
-        'try running: huly issue create with --status in another workspace, then come back')
+        'try running: huly issue create with --status in another workspace, then come back',
+      )
     }
-    return rechecked.sort((a, b) => ((a as { rank?: number }).rank ?? 0) - ((b as { rank?: number }).rank ?? 0))[0]._id
+    return rechecked.toSorted(
+      (a, b) => ((a as { rank?: number }).rank ?? 0) - ((b as { rank?: number }).rank ?? 0),
+    )[0]._id
   }
-  return statuses.sort((a, b) => ((a as { rank?: number }).rank ?? 0) - ((b as { rank?: number }).rank ?? 0))[0]._id
+  return statuses.toSorted(
+    (a, b) => ((a as { rank?: number }).rank ?? 0) - ((b as { rank?: number }).rank ?? 0),
+  )[0]._id
 }
 
 /**
@@ -118,7 +153,7 @@ async function ensureDefaultStatuses(client: PlatformClient, project: Project): 
     { name: 'To do', color: 0, rank: '1|aaaaa:' },
     { name: 'In progress', color: 0, rank: '2|aaaaa:' },
     { name: 'Done', color: 0, rank: '3|aaaaa:' },
-    { name: 'Canceled', color: 0, rank: '4|aaaaa:' }
+    { name: 'Canceled', color: 0, rank: '4|aaaaa:' },
   ]
   // The CLI's local model believes IssueStatus inherits AttachedDoc (false).
   // createDoc refuses to create AttachedDoc instances, so seeding fails.
@@ -134,8 +169,8 @@ async function ensureDefaultStatuses(client: PlatformClient, project: Project): 
           name: s.name,
           color: s.color,
           rank: s.rank,
-          space: project._id
-        } as any
+          space: project._id,
+        } as any,
       )
     } catch {
       // ignore — local model routing failure or already-exists
@@ -146,8 +181,12 @@ async function ensureDefaultStatuses(client: PlatformClient, project: Project): 
 async function resolveStatus(client: PlatformClient, project: Project, name?: string): Promise<Ref<Doc>> {
   if (!name) return await firstStatus(client, project)
   const ofAttribute = 'tracker:attribute:IssueStatus' as Ref<Doc>
-  const all = (await client.findAll(CLASS.IssueStatus as Ref<Class<Doc>>, { ofAttribute })) as Array<Doc & { label?: string; name?: string }>
-  const hit = all.find((s) => s.label?.toLowerCase() === name.toLowerCase() || s.name?.toLowerCase() === name.toLowerCase())
+  const all = (await client.findAll(CLASS.IssueStatus as Ref<Class<Doc>>, { ofAttribute })) as Array<
+    Doc & { label?: string; name?: string }
+  >
+  const hit = all.find(
+    (s) => s.label?.toLowerCase() === name.toLowerCase() || s.name?.toLowerCase() === name.toLowerCase(),
+  )
   // Issue #14: explicit --status with no matching status must throw rather
   // than silently fall back to the default. Show what's available.
   if (!hit) {
@@ -155,7 +194,7 @@ async function resolveStatus(client: PlatformClient, project: Project, name?: st
     throw new CliError(
       ExitCode.NotFound,
       `status "${name}" not found in this workspace`,
-      `available statuses: ${available.length > 0 ? available.join(', ') : '(none — workspace may not have tracker migration applied)'}`
+      `available statuses: ${available.length > 0 ? available.join(', ') : '(none — workspace may not have tracker migration applied)'}`,
     )
   }
   return hit._id
@@ -166,30 +205,33 @@ async function resolveStatus(client: PlatformClient, project: Project, name?: st
  * status ref by picking the lowest-ranked status in that category for the
  * given project. Used by `issue create --status-category` (issue #17).
  */
-async function resolveStatusByCategory(client: PlatformClient, project: Project, category: string): Promise<Ref<Doc>> {
+async function resolveStatusByCategory(
+  client: PlatformClient,
+  project: Project,
+  category: string,
+): Promise<Ref<Doc>> {
   const valid = ['UnStarted', 'ToDo', 'Active', 'Won', 'Lost']
   // Case-insensitive lookup: accept 'active', 'Active', 'ACTIVE', etc.
   const lower = category.toLowerCase()
   const canonical = valid.find((c) => c.toLowerCase() === lower)
   if (canonical === undefined) {
-    throw new CliError(ExitCode.Validation, `invalid --status-category: ${category}`, `expected one of ${valid.join(' | ')}`)
+    throw new CliError(
+      ExitCode.Validation,
+      `unknown status category: ${category}`,
+      `valid categories: ${valid.join(', ')}`,
+    )
   }
-  // IssueStatus records live in `core:space:Model` (workspace-global). Filter
-  // by `ofAttribute` so we don't depend on project-scoped copies.
-  const ofAttribute = 'tracker:attribute:IssueStatus' as Ref<Doc>
-  const statuses = (await client.findAll(
-    CLASS.IssueStatus as Ref<Class<Doc>>,
-    { ofAttribute } as any
-  )) as Array<Doc & { category?: string; rank?: string }>
-  const stripPrefix = (cat: string): string => cat.replace(/^task:statusCategory:/, '')
+  const statuses = (await client.findAll(CLASS.IssueStatus as Ref<Class<Doc>>, {
+    space: project._id,
+  })) as Array<Doc & { category?: string; rank?: string }>
   const matching = statuses
-    .filter((s) => stripPrefix(String(s.category ?? '')).toLowerCase() === lower)
-    .sort((a, b) => String(a.rank ?? '').localeCompare(String(b.rank ?? '')))
+    .filter((s) => stripStatusCategoryPrefix(String(s.category ?? '')).toLowerCase() === lower)
+    .toSorted((a, b) => String(a.rank ?? '').localeCompare(String(b.rank ?? '')))
   if (matching.length === 0) {
     throw new CliError(
       ExitCode.NotFound,
       `no statuses in category "${category}" for project ${project.identifier}`,
-      `available categories in this project: ${[...new Set(statuses.map((s) => stripPrefix(String(s.category ?? ''))))].filter(Boolean).join(', ') || '(none)'}`
+      `available categories in this project: ${[...new Set(statuses.map((s) => stripStatusCategoryPrefix(String(s.category ?? ''))))].filter(Boolean).join(', ') || '(none)'}`,
     )
   }
   return matching[0]._id
@@ -201,18 +243,26 @@ async function resolvePriority(client: PlatformClient, name?: string): Promise<R
   // tracker migration applied) can return 0. As a last resort, fall back to the
   // well-known classic tracker priority IDs which are deterministic across
   // workspaces (derived from the rank value).
-  const conn = (client as unknown as { connection?: { findAll: <T extends Doc>(_class: Ref<Class<T>>, query: DocumentQuery<T>) => Promise<FindResult<T>> } }).connection
+  const conn = (
+    client as unknown as {
+      connection?: {
+        findAll: <T extends Doc>(_class: Ref<Class<T>>, query: DocumentQuery<T>) => Promise<FindResult<T>>
+      }
+    }
+  ).connection
   const queryAll = async (): Promise<Array<Doc & { label?: string; name?: string }>> => {
     if (conn !== undefined) {
       const r = await conn.findAll(CLASS.TypeIssuePriority as Ref<Class<Doc>>, {})
-      return (r as unknown as Array<Doc & { label?: string; name?: string }>)
+      return r as unknown as Array<Doc & { label?: string; name?: string }>
     }
     const r = await client.findAll(CLASS.TypeIssuePriority as Ref<Class<Doc>>, {})
-    return (r as unknown as Array<Doc & { label?: string; name?: string }>)
+    return r as unknown as Array<Doc & { label?: string; name?: string }>
   }
   if (name) {
     const all = await queryAll()
-    const hit = all.find((p) => p.label?.toLowerCase() === name.toLowerCase() || p.name?.toLowerCase() === name.toLowerCase())
+    const hit = all.find(
+      (p) => p.label?.toLowerCase() === name.toLowerCase() || p.name?.toLowerCase() === name.toLowerCase(),
+    )
     if (hit) return hit._id
     // CLI-13: explicit --priority with no matching priority must throw
     // rather than silently dropping the user input.
@@ -220,7 +270,7 @@ async function resolvePriority(client: PlatformClient, name?: string): Promise<R
     throw new CliError(
       ExitCode.Validation,
       `priority "${name}" not found in this workspace`,
-      `available priorities: ${available.length > 0 ? available.join(', ') : '(none — workspace may not have tracker migration applied)'}`
+      `available priorities: ${available.length > 0 ? available.join(', ') : '(none — workspace may not have tracker migration applied)'}`,
     )
   }
   const all = await queryAll()
@@ -233,20 +283,25 @@ async function resolvePriority(client: PlatformClient, name?: string): Promise<R
   return undefined
 }
 
-async function resolveTaskType(client: PlatformClient, name: string, project: Project): Promise<Ref<Doc>> {
+async function resolveTaskType(client: PlatformClient, name: string): Promise<Ref<Doc>> {
   // TaskTypes live in `core:space:Model` (workspace-global for tracker). The
   // space filter previously rejected all tracker TaskTypes because the
   // tracker plugin doesn't create per-project copies — issues #7/#18.
-  const taskTypes = (await client.findAll(CLASS.TaskType as Ref<Class<Doc>>, {})) as Array<Doc & { label?: string; name?: string }>
-  const hit = taskTypes.find((t) =>
-    (t.label?.toLowerCase() === name.toLowerCase()) ||
-    (t.name?.toLowerCase() === name.toLowerCase()) ||
-    String(t._id) === name
+  const taskTypes = (await client.findAll(CLASS.TaskType as Ref<Class<Doc>>, {})) as Array<
+    Doc & { label?: string; name?: string }
+  >
+  const hit = taskTypes.find(
+    (t) =>
+      t.label?.toLowerCase() === name.toLowerCase() ||
+      t.name?.toLowerCase() === name.toLowerCase() ||
+      String(t._id) === name,
   )
   if (!hit) {
-    throw new CliError(ExitCode.NotFound,
+    throw new CliError(
+      ExitCode.NotFound,
       `task type ${name} not found in workspace`,
-      `available: ${taskTypes.map((t) => t.label ?? t.name ?? t._id).join(', ') || '(none)'}`)
+      `available: ${taskTypes.map((t) => t.label ?? t.name ?? t._id).join(', ') || '(none)'}`,
+    )
   }
   return hit._id
 }
@@ -256,15 +311,12 @@ async function resolveTaskType(client: PlatformClient, name: string, project: Pr
  * provided _id exists in the project's TaskType list. If the user passed
  * a non-ref string, treat it as a name (delegates to resolveTaskType).
  */
-async function resolveKindByRef(client: PlatformClient, ref: string, project: Project): Promise<Ref<Doc>> {
+async function resolveKindByRef(client: PlatformClient, ref: string): Promise<Ref<Doc>> {
   if (/^[a-zA-Z0-9_-]+:[a-zA-Z0-9_-]+:[A-Za-z0-9_-]+$/.test(ref)) {
-    const exists = await client.findOne(
-      CLASS.TaskType as Ref<Class<Doc>>,
-      { _id: ref as Ref<Doc> }
-    )
+    const exists = await client.findOne(CLASS.TaskType as Ref<Class<Doc>>, { _id: ref as Ref<Doc> })
     if (exists !== null && exists !== undefined) return ref as Ref<Doc>
   }
-  return await resolveTaskType(client, ref, project)
+  return await resolveTaskType(client, ref)
 }
 
 export async function listIssues(opts: {
@@ -287,7 +339,11 @@ export async function listIssues(opts: {
     const project = opts.project ? await resolveProject(client, opts.project) : null
     const query: Record<string, unknown> = {}
     if (project) query.space = project._id
-    if (opts.assignee) query.assignee = await resolveAssignee(client, opts.assignee, { url: opts.url, workspace: opts.workspace })
+    if (opts.assignee)
+      query.assignee = await resolveAssignee(client, opts.assignee, {
+        url: opts.url,
+        workspace: opts.workspace,
+      })
     if (opts.label && opts.label.length > 0) query.labels = { $in: opts.label }
 
     // Status filter — either direct name or by category
@@ -308,7 +364,11 @@ export async function listIssues(opts: {
       const wanted = String(opts.statusCategory)
       const valid = ['UnStarted', 'ToDo', 'Active', 'Won', 'Lost']
       if (!valid.includes(wanted)) {
-        throw new CliError(ExitCode.Validation, `invalid --status-category: ${wanted}`, `expected one of ${valid.join(' | ')}`)
+        throw new CliError(
+          ExitCode.Validation,
+          `invalid --status-category: ${wanted}`,
+          `expected one of ${valid.join(' | ')}`,
+        )
       }
       // IssueStatus records live in `core:space:Model`, not in the project's
       // space. Filter by `ofAttribute` like the rest of the status lookups
@@ -316,17 +376,16 @@ export async function listIssues(opts: {
       const ofAttribute = 'tracker:attribute:IssueStatus' as Ref<Doc>
       const statuses = (await client.findAll(
         CLASS.IssueStatus as Ref<Class<Doc>>,
-        { ofAttribute } as any
+        { ofAttribute } as any,
       )) as Array<Doc & { category?: string; label?: string; name?: string }>
-      const stripPrefix = (cat: string): string => cat.replace(/^task:statusCategory:/, '')
       const matchingIds = statuses
-        .filter((s) => stripPrefix(String(s.category ?? '')) === wanted)
+        .filter((s) => stripStatusCategoryPrefix(String(s.category ?? '')) === wanted)
         .map((s) => s._id)
       if (matchingIds.length === 0) {
         throw new CliError(
           ExitCode.NotFound,
           `no statuses in category "${wanted}" in this workspace`,
-          `available categories: ${[...new Set(statuses.map((s) => stripPrefix(String(s.category ?? ''))))].filter(Boolean).join(', ') || '(none)'}`
+          `available categories: ${[...new Set(statuses.map((s) => stripStatusCategoryPrefix(String(s.category ?? ''))))].filter(Boolean).join(', ') || '(none)'}`,
         )
       }
       query.status = { $in: matchingIds }
@@ -338,41 +397,62 @@ export async function listIssues(opts: {
     // possible. If the server doesn't support that pattern, results will be
     // an empty set, which is no worse than not searching.
     if (opts.descriptionSearch) {
-      query.description = { $regex: opts.descriptionSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' }
+      query.description = {
+        $regex: opts.descriptionSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+        $options: 'i',
+      }
     }
 
     // Parent filter
     if (opts.parent !== undefined) {
-      const parentRef = opts.parent === 'null' || opts.parent === '-'
-        ? null
-        : await resolveRef(opts.parent, {
-          client,
-          classId: CLASS.Issue as Ref<Class<Doc>>,
-          defaultProjectIdentifier: readEnv().project
-        })
+      const parentRef =
+        opts.parent === 'null' || opts.parent === '-'
+          ? null
+          : await resolveRef(opts.parent, {
+              client,
+              classId: CLASS.Issue as Ref<Class<Doc>>,
+              defaultProjectIdentifier: readEnv().project,
+            })
       query.parent = parentRef
     }
 
-    const result = (await withSpinner('Loading issues…', () =>
-      client.findAll(CLASS.Issue as Ref<Class<Issue>>, query as any), opts
+    const result = (await withSpinner(
+      'Loading issues…',
+      () => client.findAll(CLASS.Issue as Ref<Class<Issue>>, query as any),
+      opts,
     )) as unknown as Issue[]
 
     let docs = result
     if (opts.offset && opts.offset > 0) docs = docs.slice(opts.offset)
     if (opts.limit && opts.limit > 0) docs = docs.slice(0, opts.limit)
 
-    if (shouldJson({ json: opts.json, ci: opts.ci })) { json(docs); return }
+    if (shouldJson({ json: opts.json, ci: opts.ci })) {
+      json(docs)
+      return
+    }
     table(docs as unknown as Record<string, unknown>[], COLUMNS.issue(), { count: true, title: 'issues' })
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
-export async function getIssue(ref: string, opts: { json?: boolean; ci?: boolean; markdown?: boolean; rawMarkup?: boolean; workspace?: string; url?: string } = {}): Promise<void> {
+export async function getIssue(
+  ref: string,
+  opts: {
+    json?: boolean
+    ci?: boolean
+    markdown?: boolean
+    rawMarkup?: boolean
+    workspace?: string
+    url?: string
+  } = {},
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const id = await resolveRef(ref, {
       client,
       classId: CLASS.Issue as Ref<Class<Doc>>,
-      defaultProjectIdentifier: readEnv().project
+      defaultProjectIdentifier: readEnv().project,
     })
     const issue = await client.findOne(CLASS.Issue as Ref<Class<Issue>>, { _id: id as Ref<Issue> })
     if (!issue) throw new CliError(ExitCode.NotFound, `issue ${ref} not found`)
@@ -380,9 +460,15 @@ export async function getIssue(ref: string, opts: { json?: boolean; ci?: boolean
     if ((opts.markdown || opts.rawMarkup) && issue.description) {
       try {
         const body = await withTimeout(
-          client.fetchMarkup(CLASS.Issue as Ref<Class<Doc>>, issue._id, 'description', issue.description as any, opts.rawMarkup ? 'markup' : 'markdown'),
+          client.fetchMarkup(
+            CLASS.Issue as Ref<Class<Doc>>,
+            issue._id,
+            'description',
+            issue.description as any,
+            opts.rawMarkup ? 'markup' : 'markdown',
+          ),
           5000,
-          '(body fetch timed out)'
+          '(body fetch timed out)',
         )
         const bodyStr = String(body ?? '')
         if (opts.markdown && looksLikeRawMarkup(bodyStr)) {
@@ -390,9 +476,15 @@ export async function getIssue(ref: string, opts: { json?: boolean; ci?: boolean
         }
         console.log(bodyStr)
         return
-      } catch { console.log(String(issue.description)); return }
+      } catch {
+        console.log(String(issue.description))
+        return
+      }
     }
-    if (shouldJson({ json: opts.json, ci: opts.ci })) { json(issue); return }
+    if (shouldJson({ json: opts.json, ci: opts.ci })) {
+      json(issue)
+      return
+    }
 
     const status = String(issue.status ?? '')
     const priority = String(issue.priority ?? '')
@@ -402,7 +494,9 @@ export async function getIssue(ref: string, opts: { json?: boolean; ci?: boolean
     // Resolve project and parent to friendly names
     let projectName: string | null = null
     if (issue.space) {
-      const p = await client.findOne(CLASS.Project as Ref<Class<Project>>, { _id: issue.space as Ref<Project> })
+      const p = await client.findOne(CLASS.Project as Ref<Class<Project>>, {
+        _id: issue.space as Ref<Project>,
+      })
       projectName = p ? String((p as Project).identifier ?? (p as Project).name ?? '') : null
     }
     let parentRef: string | null = null
@@ -421,7 +515,9 @@ export async function getIssue(ref: string, opts: { json?: boolean; ci?: boolean
     }
 
     const headerTitle = identifier !== '—' ? `Issue ${identifier} — ${title}` : `Issue · ${title}`
-    header(headerTitle, { subtitle: `created ${relTime(issue.createdOn as number | null)} · updated ${relTime(issue.modifiedOn as number | null)}` })
+    header(headerTitle, {
+      subtitle: `created ${relTime(issue.createdOn as number | null)} · updated ${relTime(issue.modifiedOn as number | null)}`,
+    })
 
     kv([
       ['ID', identifier !== '—' ? C.emphasis(identifier) : C.muted('—')],
@@ -431,11 +527,26 @@ export async function getIssue(ref: string, opts: { json?: boolean; ci?: boolean
       ['Project', projectName != null ? C.emphasis(projectName) : C.muted('—')],
       ['Parent', parentRef != null ? C.emphasis(parentRef) : C.muted('—')],
       ['Due', issue.dueDate != null ? isoDay(issue.dueDate) : C.muted('none')],
-      ['Labels', Array.isArray(issue.labels) && (issue.labels as unknown[]).length > 0 ? (issue.labels as string[]).join(', ') : C.muted('none')],
+      [
+        'Labels',
+        Array.isArray(issue.labels) && (issue.labels as unknown[]).length > 0
+          ? (issue.labels as string[]).join(', ')
+          : C.muted('none'),
+      ],
       ['Assignee', assigneeLabel != null ? assigneeLabel : C.muted('unassigned')],
-      ['Created', issue.createdOn != null ? `${isoDate(issue.createdOn)} (${relTime(issue.createdOn as number | null)})` : C.muted('—')],
-      ['Modified', issue.modifiedOn != null ? `${isoDate(issue.modifiedOn)} (${relTime(issue.modifiedOn as number | null)})` : C.muted('—')],
-      ['_id', C.id(String(issue._id))]
+      [
+        'Created',
+        issue.createdOn != null
+          ? `${isoDate(issue.createdOn)} (${relTime(issue.createdOn as number | null)})`
+          : C.muted('—'),
+      ],
+      [
+        'Modified',
+        issue.modifiedOn != null
+          ? `${isoDate(issue.modifiedOn)} (${relTime(issue.modifiedOn as number | null)})`
+          : C.muted('—'),
+      ],
+      ['_id', C.id(String(issue._id))],
     ])
 
     if (issue.description !== '' && issue.description !== undefined && !opts.markdown) {
@@ -443,9 +554,15 @@ export async function getIssue(ref: string, opts: { json?: boolean; ci?: boolean
       console.log(C.emphasis('Description'))
       console.log(C.muted('─'.repeat(20)))
       const desc = String(issue.description)
-      console.log(desc.length > 500 ? desc.slice(0, 500) + '…\n' + C.muted('(truncated — use --markdown for full)') : desc)
+      console.log(
+        desc.length > 500
+          ? desc.slice(0, 500) + '…\n' + C.muted('(truncated — use --markdown for full)')
+          : desc,
+      )
     }
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
 export async function createIssue(opts: IssueCreateOpts): Promise<void> {
@@ -477,10 +594,13 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
         // optional chaining because `getAccount()` can legitimately
         // return null/undefined in some auth-failure paths; we want a
         // graceful "unassigned" fallback rather than a TypeError here.
-        const account = await client.getAccount() as unknown as {
-          email?: string
-          fullSocialIds?: Array<{ type?: string; value?: string }>
-        } | null | undefined
+        const account = (await client.getAccount()) as unknown as
+          | {
+              email?: string
+              fullSocialIds?: Array<{ type?: string; value?: string }>
+            }
+          | null
+          | undefined
         const directEmail = account?.email
         const socialEmail = account?.fullSocialIds?.find((s) => s.type === 'email')?.value
         // Pick the first non-empty value: `??` preserves `''` so an empty
@@ -507,20 +627,22 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
     // only `{ objectId }`, `findOne` is the fallback.
     let number: number
     try {
-      const incResult = await withSpinner('Reserving issue number…', () =>
+      const incResult = (await withSpinner('Reserving issue number…', () =>
         client.updateDoc(
           CLASS.Project as Ref<Class<Doc>>,
           'core:space:Space' as Ref<Space>,
           project._id as Ref<Space>,
           { $inc: { sequence: 1 } },
-          true
-        )
-      ) as unknown as { object?: { sequence?: number } } | { sequence?: number } | undefined
+          true,
+        ),
+      )) as unknown as { object?: { sequence?: number } } | { sequence?: number } | undefined
       const seq = (incResult as any)?.object?.sequence ?? (incResult as any)?.sequence
       if (typeof seq === 'number') {
         number = seq
       } else {
-        const reloaded = await client.findOne(CLASS.Project as Ref<Class<Doc>>, { _id: project._id as Ref<Doc> }) as unknown as { sequence?: number } | undefined
+        const reloaded = (await client.findOne(CLASS.Project as Ref<Class<Doc>>, {
+          _id: project._id as Ref<Doc>,
+        })) as unknown as { sequence?: number } | undefined
         number = reloaded?.sequence ?? 0
       }
     } catch (err) {
@@ -535,28 +657,29 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
     // issues sit invisible until someone drags them. Pinning to `ToDo`
     // also fires the server-side ProjectToDo cascade when an assignee is
     // set, since `ToDo` is one of the two categories that triggers it.
-    const status = opts.statusCategory !== undefined
-      ? await resolveStatusByCategory(client, project, opts.statusCategory)
-      : opts.status !== undefined
-        ? await resolveStatus(client, project, opts.status)
-        : opinionated
-          ? await (async (): Promise<Ref<Doc>> => {
-              try {
-                return await resolveStatusByCategory(client, project, 'ToDo')
-              } catch (err) {
-                // Narrow the fallback to the documented "no statuses in
-                // category `ToDo`" case. Anything else (transport /
-                // auth / server errors) is a real failure that the
-                // caller needs to see — silently masking it would hide
-                // connectivity issues from the user and make the cascade
-                // appear to work when the category lookup never ran.
-                if (err instanceof CliError && err.code === ExitCode.NotFound) {
-                  return await resolveStatus(client, project, undefined)
+    const status =
+      opts.statusCategory !== undefined
+        ? await resolveStatusByCategory(client, project, opts.statusCategory)
+        : opts.status !== undefined
+          ? await resolveStatus(client, project, opts.status)
+          : opinionated
+            ? await (async (): Promise<Ref<Doc>> => {
+                try {
+                  return await resolveStatusByCategory(client, project, 'ToDo')
+                } catch (err) {
+                  // Narrow the fallback to the documented "no statuses in
+                  // category `ToDo`" case. Anything else (transport /
+                  // auth / server errors) is a real failure that the
+                  // caller needs to see — silently masking it would hide
+                  // connectivity issues from the user and make the cascade
+                  // appear to work when the category lookup never ran.
+                  if (err instanceof CliError && err.code === ExitCode.NotFound) {
+                    return await resolveStatus(client, project, undefined)
+                  }
+                  throw err
                 }
-                throw err
-              }
-            })()
-          : await resolveStatus(client, project, opts.status)
+              })()
+            : await resolveStatus(client, project, opts.status)
     const priority = await resolvePriority(client, opts.priority)
     const body = await readBody(opts)
     const dueDate = opts.due ? parseDate(opts.due, '--due') : null
@@ -568,9 +691,17 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
     const newIssueId = generateId()
     const descriptionSource = body ?? opts.description
     // Issue #9: skip the blob upload when there's no description.
-    const descriptionRef = descriptionSource !== undefined && descriptionSource.length > 0
-      ? await uploadMarkup(client, CLASS.Issue as Ref<Class<Doc>>, newIssueId, 'description', descriptionSource, 'markup')
-      : ''
+    const descriptionRef =
+      descriptionSource !== undefined && descriptionSource.length > 0
+        ? await uploadMarkup(
+            client,
+            CLASS.Issue as Ref<Class<Doc>>,
+            newIssueId,
+            'description',
+            descriptionSource,
+            'markup',
+          )
+        : ''
 
     const data: Record<string, unknown> = {
       title,
@@ -598,16 +729,16 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
       subIssues: 0,
       comments: 0,
       attachments: 0,
-      todos: 0
+      todos: 0,
     }
     if (priority !== undefined) data.priority = priority
 
     if (opts.taskType) {
-      data.kind = await resolveTaskType(client, opts.taskType, project)
+      data.kind = await resolveTaskType(client, opts.taskType)
     } else if (opts.kind) {
       // Issue #18: --kind <ref> lets power users select any TaskType. Same
       // validation as --taskType but skips the by-name lookup.
-      data.kind = await resolveKindByRef(client, opts.kind, project)
+      data.kind = await resolveKindByRef(client, opts.kind)
     } else {
       // Default to the project's first available TaskType. If none exist,
       // fall back to the canonical `tracker:taskTypes:Issue` (the default
@@ -615,22 +746,21 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
       // `tracker:issue:default` is not a real TaskType and breaks the UI
       // issues view (the UI filters out issues whose `kind` doesn't match
       // any defined TaskType in the project).
-      const taskTypes = (await client.findAll(CLASS.TaskType as Ref<Class<Doc>>, { space: project._id })) as Array<Doc & { _id: Ref<Doc> }>
+      const taskTypes = (await client.findAll(CLASS.TaskType as Ref<Class<Doc>>, {
+        space: project._id,
+      })) as Array<Doc & { _id: Ref<Doc> }>
       let defaultKind: Ref<Doc> | undefined = taskTypes[0]?._id
       if (defaultKind === undefined) {
         defaultKind = 'tracker:taskTypes:Issue' as Ref<Doc>
       }
       // Issue #7: validate the resolved kind actually exists. If not,
       // surface a clear error so the user knows to pass --kind explicitly.
-      const exists = await client.findOne(
-        CLASS.TaskType as Ref<Class<Doc>>,
-        { _id: defaultKind as Ref<Doc> }
-      )
+      const exists = await client.findOne(CLASS.TaskType as Ref<Class<Doc>>, { _id: defaultKind as Ref<Doc> })
       if (exists === null || exists === undefined) {
         throw new CliError(
           ExitCode.Validation,
           `default TaskType "${defaultKind}" not found in this workspace`,
-          'pass --kind <ref> or --task-type <name> to specify a valid TaskType for this project'
+          'pass --kind <ref> or --task-type <name> to specify a valid TaskType for this project',
         )
       }
       data.kind = defaultKind
@@ -640,7 +770,7 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
       const parentId = (await resolveRef(opts.parent, {
         client,
         classId: CLASS.Issue as Ref<Class<Doc>>,
-        defaultProjectIdentifier: readEnv().project
+        defaultProjectIdentifier: readEnv().project,
       })) as Ref<Doc>
       data.parent = parentId
       // Issue #10/#15: set attachedTo to the parent issue so queries
@@ -651,7 +781,13 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
       // parent's own ancestors. Without this, child issues have no
       // ancestor chain and `OnIssueUpdate.updateIssueParentEstimations`
       // can't compute rollups up the hierarchy.
-      const parentIssue = (await client.findOne(CLASS.Issue as Ref<Class<Issue>>, { _id: parentId as Ref<Issue> })) as (Issue & { parents?: Array<{ parentId: string; identifier?: string; parentTitle?: string; space: string }> }) | undefined
+      const parentIssue = (await client.findOne(CLASS.Issue as Ref<Class<Issue>>, {
+        _id: parentId as Ref<Issue>,
+      })) as
+        | (Issue & {
+            parents?: Array<{ parentId: string; identifier?: string; parentTitle?: string; space: string }>
+          })
+        | undefined
       if (parentIssue === undefined || parentIssue === null) {
         throw new CliError(ExitCode.NotFound, `parent issue ${opts.parent} not found`)
       }
@@ -660,9 +796,14 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
           parentId: parentIssue._id,
           identifier: parentIssue.identifier,
           parentTitle: parentIssue.title,
-          space: parentIssue.space
+          space: parentIssue.space,
         },
-        ...((parentIssue.parents ?? []) as Array<{ parentId: string; identifier: string; parentTitle: string; space: string }>)
+        ...((parentIssue.parents ?? []) as Array<{
+          parentId: string
+          identifier: string
+          parentTitle: string
+          space: string
+        }>),
       ]
     } else if (opinionated) {
       // CLI-12: top-level issues must have parent=null so that
@@ -680,7 +821,7 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
     }
 
     if (opinionated) {
-      data.project = (project._id as unknown) as Ref<Project>
+      data.project = project._id as unknown as Ref<Project>
     }
 
     if (effectiveAssignee !== undefined) {
@@ -693,7 +834,10 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
       if (effectiveAssignee === '') {
         data.assignee = null
       } else {
-        data.assignee = await resolveAssignee(client, effectiveAssignee, { url: opts.url, workspace: opts.workspace }) as Ref<Doc>
+        data.assignee = (await resolveAssignee(client, effectiveAssignee, {
+          url: opts.url,
+          workspace: opts.workspace,
+        })) as Ref<Doc>
       }
     }
 
@@ -712,7 +856,7 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
           CLASS.Project as Ref<Class<Doc>>,
           'core:space:Space' as Ref<Space>,
           project._id as Ref<Space>,
-          { $inc: { sequence: -1 } }
+          { $inc: { sequence: -1 } },
         )
       } catch (rollbackErr) {
         console.error(`warning: $inc rollback failed: ${(rollbackErr as Error).message}`)
@@ -722,7 +866,12 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
     let id: Ref<Doc>
     try {
       id = await withSpinner('Creating issue…', () =>
-        client.createDoc(CLASS.Issue as Ref<Class<Issue>>, project._id as unknown as Ref<Space>, data as any, newIssueId as Ref<Issue>)
+        client.createDoc(
+          CLASS.Issue as Ref<Class<Issue>>,
+          project._id as unknown as Ref<Space>,
+          data as any,
+          newIssueId as Ref<Issue>,
+        ),
       )
     } catch (err: unknown) {
       // Workaround for C3: SDK's local model has incomplete inheritance info and
@@ -731,33 +880,37 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
       // manually and applying via the raw connection.tx RPC.
       const msg = err instanceof Error ? err.message : String(err)
       if (/createDoc cannot be used for objects inherited from AttachedDoc/i.test(msg)) {
-        const conn = (client as unknown as {
-          connection?: { tx: (tx: unknown) => Promise<unknown> }
-        }).connection
-        const txFactory = (client as unknown as {
-          client?: {
-            txFactory?: {
-              createTxCreateDoc: (
-                _class: Ref<Class<Doc>>,
-                space: Ref<Space>,
-                attributes: Record<string, unknown>,
-                objectId?: Ref<Doc>
-              ) => { _id: string; objectId: string }
+        const conn = (
+          client as unknown as {
+            connection?: { tx: (tx: unknown) => Promise<unknown> }
+          }
+        ).connection
+        const txFactory = (
+          client as unknown as {
+            client?: {
+              txFactory?: {
+                createTxCreateDoc: (
+                  _class: Ref<Class<Doc>>,
+                  space: Ref<Space>,
+                  attributes: Record<string, unknown>,
+                  objectId?: Ref<Doc>,
+                ) => { _id: string; objectId: string }
+              }
             }
           }
-        }).client?.txFactory
+        ).client?.txFactory
         if (conn !== undefined && txFactory !== undefined) {
           try {
-            id = await withSpinner('Creating issue (bypass AttachedDoc check)…', async () => {
+            id = (await withSpinner('Creating issue (bypass AttachedDoc check)…', async () => {
               const tx = txFactory.createTxCreateDoc(
                 CLASS.Issue as Ref<Class<Doc>>,
                 project._id as unknown as Ref<Space>,
                 data,
-                undefined
+                undefined,
               )
               await conn.tx(tx)
               return tx.objectId as Ref<Doc>
-            }) as Ref<Doc>
+            })) as Ref<Doc>
           } catch (bypassErr) {
             // Create failed after we already $inc'd the project's sequence;
             // decrement so the next issue gets the correct number.
@@ -775,7 +928,7 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
         // titles (which must be considered distinct, future issues).
         const existing = (await client.findAll(CLASS.Issue as Ref<Class<Issue>>, {
           space: project._id,
-          title
+          title,
         })) as Issue[]
         if (existing.length > 0) {
           const found = existing[0]
@@ -806,11 +959,20 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
     // returned _id if findOne returns null (model-load race).
     let displayId = identifier ?? (id as string)
     try {
-      const fresh = (await client.findOne(CLASS.Issue as Ref<Class<Issue>>, { _id: id as Ref<Issue> })) as { identifier?: string; _id?: string } | null
+      const fresh = (await client.findOne(CLASS.Issue as Ref<Class<Issue>>, { _id: id as Ref<Issue> })) as {
+        identifier?: string
+        _id?: string
+      } | null
       if (fresh?.identifier != null && fresh.identifier !== '') displayId = fresh.identifier
-    } catch { /* fall through with the local id */ }
-    console.log(C.ok('created issue') + C.muted('  ') + C.emphasis(title) + C.muted('  ') + C.id(`(${displayId})`))
-  } finally { await client.close() }
+    } catch {
+      /* fall through with the local id */
+    }
+    console.log(
+      C.ok('created issue') + C.muted('  ') + C.emphasis(title) + C.muted('  ') + C.id(`(${displayId})`),
+    )
+  } finally {
+    await client.close()
+  }
 }
 
 export async function updateIssue(
@@ -829,14 +991,16 @@ export async function updateIssue(
     minimal?: boolean
     workspace?: string
     url?: string
-  }
+  },
 ): Promise<void> {
   // Validation: --status and --status-category target the same field
   // (`status`). Pick one.
   if (opts.status !== undefined && opts.statusCategory !== undefined) {
-    throw new CliError(ExitCode.Validation,
+    throw new CliError(
+      ExitCode.Validation,
       '--status and --status-category are mutually exclusive',
-      'pass only one: --status <name> or --status-category <c>')
+      'pass only one: --status <name> or --status-category <c>',
+    )
   }
 
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
@@ -844,12 +1008,16 @@ export async function updateIssue(
     const id = await resolveRef(ref, {
       client,
       classId: CLASS.Issue as Ref<Class<Doc>>,
-      defaultProjectIdentifier: readEnv().project
+      defaultProjectIdentifier: readEnv().project,
     })
-    const issue = (await client.findOne(CLASS.Issue as Ref<Class<Issue>>, { _id: id as Ref<Issue> })) as (Issue & { identifier?: string }) | undefined
+    const issue = (await client.findOne(CLASS.Issue as Ref<Class<Issue>>, { _id: id as Ref<Issue> })) as
+      | (Issue & { identifier?: string })
+      | undefined
     if (!issue) throw new CliError(ExitCode.NotFound, `issue ${ref} not found`)
 
-    const project = await client.findOne(CLASS.Project as Ref<Class<Project>>, { _id: issue.space as Ref<Project> })
+    const project = await client.findOne(CLASS.Project as Ref<Class<Project>>, {
+      _id: issue.space as Ref<Project>,
+    })
     if (!project) throw new CliError(ExitCode.NotFound, 'project space not found')
 
     const ops: Record<string, unknown> = {}
@@ -868,12 +1036,17 @@ export async function updateIssue(
     for (const k of opts.unset ?? []) ops[k] = null
 
     if (opts.status) ops.status = await resolveStatus(client, project, opts.status)
-    else if (opts.statusCategory) ops.status = await resolveStatusByCategory(client, project, opts.statusCategory)
+    else if (opts.statusCategory)
+      ops.status = await resolveStatusByCategory(client, project, opts.statusCategory)
     if (opts.priority) {
       const p = await resolvePriority(client, opts.priority)
       if (p !== undefined) ops.priority = p
     }
-    if (opts.assignee) ops.assignee = await resolveAssignee(client, opts.assignee, { url: opts.url, workspace: opts.workspace }) as Ref<Doc>
+    if (opts.assignee)
+      ops.assignee = (await resolveAssignee(client, opts.assignee, {
+        url: opts.url,
+        workspace: opts.workspace,
+      })) as Ref<Doc>
     if (opts.title) ops.title = opts.title
     if (opts.description !== undefined) {
       // Update only the ydoc (issue #3). The ydoc is the source of truth
@@ -882,31 +1055,50 @@ export async function updateIssue(
       // (issue #12). Empty string is a deliberate clear and is forwarded
       // to updateMarkup (which treats undefined as no-op).
       await updateMarkup(
-        client, CLASS.Issue as Ref<Class<Doc>>, issue._id as Ref<Doc>, 'description', opts.description, 'markup'
+        client,
+        CLASS.Issue as Ref<Class<Doc>>,
+        issue._id as Ref<Doc>,
+        'description',
+        opts.description,
+        'markup',
       )
       markupUpdated = true
     }
-    if (opts.taskType) ops.kind = await resolveTaskType(client, opts.taskType, project)
+    if (opts.taskType) ops.kind = await resolveTaskType(client, opts.taskType)
 
     // --minimal means "I know what I'm doing with --set/--unset, don't
     // second-guess me." It only suppresses the empty-ops guard below,
     // so a minimal but explicit --set still sends through. Was previously
     // a dead flag; now actually does something safe.
     if (Object.keys(ops).length === 0 && !markupUpdated && !opts.minimal) {
-      throw new CliError(ExitCode.Validation, 'nothing to update',
-        'pass --set/--unset, --status, --priority, --assignee, --title, --description, --task-type, or --kind (with --status-category to pick a workflow stage)')
+      throw new CliError(
+        ExitCode.Validation,
+        'nothing to update',
+        'pass --set/--unset, --status, --priority, --assignee, --title, --description, --task-type, or --kind (with --status-category to pick a workflow stage)',
+      )
     }
 
     if (opts.dryRun) {
       console.log(`would update issue ${issue.identifier} (${issue._id}):`)
-      console.log(JSON.stringify({ _class: CLASS.Issue, objectId: issue._id, space: issue.space, ops, markupUpdated }, null, 2))
+      console.log(
+        JSON.stringify(
+          { _class: CLASS.Issue, objectId: issue._id, space: issue.space, ops, markupUpdated },
+          null,
+          2,
+        ),
+      )
       return
     }
 
     const hasOps = Object.keys(ops).length > 0
     if (hasOps) {
       await withSpinner('Updating…', () =>
-        client.updateDoc(CLASS.Issue as Ref<Class<Issue>>, issue.space as unknown as Ref<Space>, issue._id, ops as any)
+        client.updateDoc(
+          CLASS.Issue as Ref<Class<Issue>>,
+          issue.space as unknown as Ref<Space>,
+          issue._id,
+          ops as any,
+        ),
       )
     }
     if (hasOps || markupUpdated) {
@@ -914,51 +1106,77 @@ export async function updateIssue(
     } else {
       console.log(`nothing to update for ${issue.identifier} (${issue._id})`)
     }
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
-export async function deleteIssues(refs: string[], opts: { dryRun?: boolean; workspace?: string; url?: string; yes?: boolean } = {}): Promise<void> {
+export async function deleteIssues(
+  refs: string[],
+  opts: { dryRun?: boolean; workspace?: string; url?: string; yes?: boolean } = {},
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const ids = await resolveRefs(refs, {
       client,
       classId: CLASS.Issue as Ref<Class<Doc>>,
-      defaultProjectIdentifier: readEnv().project
+      defaultProjectIdentifier: readEnv().project,
     })
     if (!opts.yes && ids.length > 1) {
       throw new CliError(
         ExitCode.Validation,
         `destructive: deleting ${ids.length} issues requires --yes`,
-        're-run with --yes to confirm'
+        're-run with --yes to confirm',
       )
     }
-    let deleted = 0, skipped = 0
+    let deleted = 0,
+      skipped = 0
     for (const id of ids) {
       const issue = await client.findOne(CLASS.Issue as Ref<Class<Issue>>, { _id: id as Ref<Issue> })
-      if (!issue) { skipped++; continue }
-      const r = await deleteDoc(client, CLASS.Issue as Ref<Class<Issue>>, issue.space as unknown as Ref<Space>, issue._id, opts)
+      if (!issue) {
+        skipped++
+        continue
+      }
+      const r = await deleteDoc(
+        client,
+        CLASS.Issue as Ref<Class<Issue>>,
+        issue.space as unknown as Ref<Space>,
+        issue._id,
+        opts,
+      )
       if (r.skipped) skipped++
-      else { deleted++; await new Promise((res) => setTimeout(res, 100)) }
+      else {
+        deleted++
+        await new Promise((res) => setTimeout(res, 100))
+      }
     }
     bulkRemoved(deleted, skipped)
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
 // ---- Phase 3 additions ----
 
-export async function addIssueLabel(ref: string, labelName: string, opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string }): Promise<void> {
+export async function addIssueLabel(
+  ref: string,
+  labelName: string,
+  opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string },
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const issueId = await resolveRef(ref, {
       client,
       classId: CLASS.Issue as Ref<Class<Doc>>,
-      defaultProjectIdentifier: readEnv().project
+      defaultProjectIdentifier: readEnv().project,
     })
     const issue = await client.findOne(CLASS.Issue as Ref<Class<Issue>>, { _id: issueId as Ref<Issue> })
     if (!issue) throw new CliError(ExitCode.NotFound, `issue ${ref} not found`)
     // Find or create the TagElement (label).
     const tagClass = 'tags:class:TagElement' as Ref<Class<Doc>>
-    const existingTags = (await client.findAll(tagClass, { title: labelName })) as Array<Doc & { targetClass?: Ref<Class<Doc>> }>
+    const existingTags = (await client.findAll(tagClass, { title: labelName })) as Array<
+      Doc & { targetClass?: Ref<Class<Doc>> }
+    >
     let tagId: Ref<Doc>
     const targetClass = CLASS.Issue
     const matchingTag = existingTags.find((t) => t.targetClass === targetClass || t.targetClass === undefined)
@@ -970,50 +1188,64 @@ export async function addIssueLabel(ref: string, labelName: string, opts: { json
       const category = categories[0]?._id as Ref<Doc> | undefined
       tagId = await withSpinner(
         'Creating label…',
-        () => client.createDoc(tagClass, 'tags:space:Tag' as Ref<Space>, {
-          title: labelName,
-          targetClass,
-          description: '',
-          color: 0,
-          category
-        } as any),
-        opts
+        () =>
+          client.createDoc(
+            tagClass,
+            'tags:space:Tag' as Ref<Space>,
+            {
+              title: labelName,
+              targetClass,
+              description: '',
+              color: 0,
+              category,
+            } as any,
+          ),
+        opts,
       )
     }
     // Add as TagReference collection.
     await withSpinner(
       'Adding label…',
-      () => client.addCollection(
-        'tags:class:TagReference' as Ref<Class<Doc>>,
-        issue.space as Ref<Space>,
-        issue._id,
-        CLASS.Issue,
-        'labels',
-        { tag: tagId, title: labelName, color: 0 } as any
-      ),
-      opts
+      () =>
+        client.addCollection(
+          'tags:class:TagReference' as Ref<Class<Doc>>,
+          issue.space as Ref<Space>,
+          issue._id,
+          CLASS.Issue,
+          'labels',
+          { tag: tagId, title: labelName, color: 0 } as any,
+        ),
+      opts,
     )
     invalidateIndex(client, CLASS.Issue)
     success(`added label`, labelName)
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
-export async function removeIssueLabel(ref: string, labelName: string, opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string }): Promise<void> {
+export async function removeIssueLabel(
+  ref: string,
+  labelName: string,
+  opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string },
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const issueId = await resolveRef(ref, {
       client,
       classId: CLASS.Issue as Ref<Class<Doc>>,
-      defaultProjectIdentifier: readEnv().project
+      defaultProjectIdentifier: readEnv().project,
     })
     const issue = await client.findOne(CLASS.Issue as Ref<Class<Issue>>, { _id: issueId as Ref<Issue> })
     if (!issue) throw new CliError(ExitCode.NotFound, `issue ${ref} not found`)
     const tagClass = 'tags:class:TagElement' as Ref<Class<Doc>>
-    const tag = (await client.findAll(tagClass, { title: labelName }))[0] as (Doc & { _id: Ref<Doc> }) | undefined
+    const tag = (await client.findAll(tagClass, { title: labelName }))[0] as
+      | (Doc & { _id: Ref<Doc> })
+      | undefined
     if (!tag) throw new CliError(ExitCode.NotFound, `label ${labelName} not found`)
     const refs = (await client.findAll('tags:class:TagReference' as Ref<Class<Doc>>, {
       attachedTo: issue._id,
-      tag: tag._id
+      tag: tag._id,
     })) as Doc[]
     if (refs.length === 0) throw new CliError(ExitCode.NotFound, `label ${labelName} not on issue ${ref}`)
     for (const r of refs) {
@@ -1023,12 +1255,14 @@ export async function removeIssueLabel(ref: string, labelName: string, opts: { j
         r._id,
         issue._id,
         CLASS.Issue,
-        'labels'
+        'labels',
       )
     }
     invalidateIndex(client, CLASS.Issue)
     success(`removed label`, labelName)
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
 export type RelationType = 'blocks' | 'isBlockedBy' | 'relatesTo'
@@ -1037,7 +1271,11 @@ const RELATION_TYPES: ReadonlyArray<RelationType> = ['blocks', 'isBlockedBy', 'r
 
 export function validateRelationType(type: string): RelationType {
   if (!(RELATION_TYPES as ReadonlyArray<string>).includes(type)) {
-    throw new CliError(ExitCode.Validation, `invalid --type: ${type}`, `expected one of ${RELATION_TYPES.join(' | ')}`)
+    throw new CliError(
+      ExitCode.Validation,
+      `invalid --type: ${type}`,
+      `expected one of ${RELATION_TYPES.join(' | ')}`,
+    )
   }
   return type as RelationType
 }
@@ -1046,25 +1284,24 @@ function relationField(type: RelationType): 'relations' | 'blockedBy' {
   return type === 'isBlockedBy' ? 'blockedBy' : 'relations'
 }
 
-function relationTag(type: RelationType): string {
-  if (type === 'blocks') return 'blocks'
-  if (type === 'isBlockedBy') return 'isBlockedBy'
-  return 'relatesTo'
-}
-
-export async function addIssueRelation(ref: string, type: string, targetRef: string, opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string }): Promise<void> {
+export async function addIssueRelation(
+  ref: string,
+  type: string,
+  targetRef: string,
+  opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string },
+): Promise<void> {
   const rel = validateRelationType(type)
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const sourceId = await resolveRef(ref, {
       client,
       classId: CLASS.Issue as Ref<Class<Doc>>,
-      defaultProjectIdentifier: readEnv().project
+      defaultProjectIdentifier: readEnv().project,
     })
     const targetId = await resolveRef(targetRef, {
       client,
       classId: CLASS.Issue as Ref<Class<Doc>>,
-      defaultProjectIdentifier: readEnv().project
+      defaultProjectIdentifier: readEnv().project,
     })
     const issue = await client.findOne(CLASS.Issue as Ref<Class<Issue>>, { _id: sourceId as Ref<Issue> })
     if (!issue) throw new CliError(ExitCode.NotFound, `issue ${ref} not found`)
@@ -1073,26 +1310,36 @@ export async function addIssueRelation(ref: string, type: string, targetRef: str
     const updated = [...existing, { _id: targetId as string, _class: CLASS.Issue }]
     await withSpinner(
       `Adding ${rel} → ${targetRef}…`,
-      () => client.updateDoc(CLASS.Issue as Ref<Class<Issue>>, issue.space as unknown as Ref<Space>, issue._id, { [field]: updated } as any),
-      opts
+      () =>
+        client.updateDoc(CLASS.Issue as Ref<Class<Issue>>, issue.space as unknown as Ref<Space>, issue._id, {
+          [field]: updated,
+        } as any),
+      opts,
     )
     success(`added ${rel}`, ref + ' → ' + targetRef)
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
-export async function removeIssueRelation(ref: string, type: string, targetRef: string, opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string }): Promise<void> {
+export async function removeIssueRelation(
+  ref: string,
+  type: string,
+  targetRef: string,
+  opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string },
+): Promise<void> {
   const rel = validateRelationType(type)
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const sourceId = await resolveRef(ref, {
       client,
       classId: CLASS.Issue as Ref<Class<Doc>>,
-      defaultProjectIdentifier: readEnv().project
+      defaultProjectIdentifier: readEnv().project,
     })
     const targetId = await resolveRef(targetRef, {
       client,
       classId: CLASS.Issue as Ref<Class<Doc>>,
-      defaultProjectIdentifier: readEnv().project
+      defaultProjectIdentifier: readEnv().project,
     })
     const issue = await client.findOne(CLASS.Issue as Ref<Class<Issue>>, { _id: sourceId as Ref<Issue> })
     if (!issue) throw new CliError(ExitCode.NotFound, `issue ${ref} not found`)
@@ -1101,20 +1348,28 @@ export async function removeIssueRelation(ref: string, type: string, targetRef: 
     const updated = existing.filter((r) => r._id !== targetId)
     await withSpinner(
       `Removing ${rel} → ${targetRef}…`,
-      () => client.updateDoc(CLASS.Issue as Ref<Class<Issue>>, issue.space as unknown as Ref<Space>, issue._id, { [field]: updated } as any),
-      opts
+      () =>
+        client.updateDoc(CLASS.Issue as Ref<Class<Issue>>, issue.space as unknown as Ref<Space>, issue._id, {
+          [field]: updated,
+        } as any),
+      opts,
     )
     success(`removed ${rel}`, ref + ' → ' + targetRef)
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
-export async function listIssueRelations(ref: string, opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string }): Promise<void> {
+export async function listIssueRelations(
+  ref: string,
+  opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string },
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const issueId = await resolveRef(ref, {
       client,
       classId: CLASS.Issue as Ref<Class<Doc>>,
-      defaultProjectIdentifier: readEnv().project
+      defaultProjectIdentifier: readEnv().project,
     })
     const issue = await client.findOne(CLASS.Issue as Ref<Class<Issue>>, { _id: issueId as Ref<Issue> })
     if (!issue) throw new CliError(ExitCode.NotFound, `issue ${ref} not found`)
@@ -1122,26 +1377,43 @@ export async function listIssueRelations(ref: string, opts: { json?: boolean; ci
     const blockedBy = (issue as unknown as { blockedBy?: RelatedDoc[] }).blockedBy ?? []
     const rows = [
       ...relations.map((r) => ({ direction: 'relatesTo', _id: r._id })),
-      ...blockedBy.map((r) => ({ direction: 'isBlockedBy', _id: r._id }))
+      ...blockedBy.map((r) => ({ direction: 'isBlockedBy', _id: r._id })),
     ]
-    if (shouldJson({ json: opts.json, ci: opts.ci })) { json(rows); return }
-    table(rows as unknown as Record<string, unknown>[], [
-      { key: 'direction', header: 'DIRECTION', format: (r) => {
-        const d = String((r as { direction: string }).direction)
-        return d === 'isBlockedBy' ? C.yellow('⛔ is blocked by') : C.muted('↔ relates to')
-      } },
-      { key: '_id', header: '_ID', format: (r) => C.id(String((r as { _id: string })._id).slice(-12)) }
-    ], { count: true, title: 'related-issues' })
-  } finally { await client.close() }
+    if (shouldJson({ json: opts.json, ci: opts.ci })) {
+      json(rows)
+      return
+    }
+    table(
+      rows as unknown as Record<string, unknown>[],
+      [
+        {
+          key: 'direction',
+          header: 'DIRECTION',
+          format: (r) => {
+            const d = String((r as { direction: string }).direction)
+            return d === 'isBlockedBy' ? C.yellow('⛔ is blocked by') : C.muted('↔ relates to')
+          },
+        },
+        { key: '_id', header: '_ID', format: (r) => C.id(String((r as { _id: string })._id).slice(-12)) },
+      ],
+      { count: true, title: 'related-issues' },
+    )
+  } finally {
+    await client.close()
+  }
 }
 
-export async function linkDocument(issueRef: string, docRef: string, opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string }): Promise<void> {
+export async function linkDocument(
+  issueRef: string,
+  docRef: string,
+  opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string },
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const issueId = await resolveRef(issueRef, {
       client,
       classId: CLASS.Issue as Ref<Class<Doc>>,
-      defaultProjectIdentifier: readEnv().project
+      defaultProjectIdentifier: readEnv().project,
     })
     const docId = await resolveRef(docRef, {
       client,
@@ -1149,7 +1421,7 @@ export async function linkDocument(issueRef: string, docRef: string, opts: { jso
     })
     const issue = await client.findOne(CLASS.Issue as Ref<Class<Issue>>, { _id: issueId as Ref<Issue> })
     if (!issue) throw new CliError(ExitCode.NotFound, `issue ${issueRef} not found`)
-    const relations = ((issue as unknown as { relations?: RelatedDoc[] }).relations ?? [])
+    const relations = (issue as unknown as { relations?: RelatedDoc[] }).relations ?? []
     if (relations.some((r) => r._id === docId)) {
       console.log(C.warn('⚠ document already linked'))
       return
@@ -1157,20 +1429,31 @@ export async function linkDocument(issueRef: string, docRef: string, opts: { jso
     const updated = [...relations, { _id: docId as string, _class: CLASS.Document }]
     await withSpinner(
       'Linking document…',
-      () => client.updateDoc(CLASS.Issue as Ref<Class<Issue>>, issue.space as unknown as Ref<Space>, issue._id, { relations: updated } as any),
-      opts
+      () =>
+        client.updateDoc(CLASS.Issue as Ref<Class<Issue>>, issue.space as unknown as Ref<Space>, issue._id, {
+          relations: updated,
+        } as any),
+      opts,
     )
-    console.log(C.ok('linked document') + C.muted('  ') + C.emphasis(docRef) + C.muted('  →  ') + C.emphasis(issueRef))
-  } finally { await client.close() }
+    console.log(
+      C.ok('linked document') + C.muted('  ') + C.emphasis(docRef) + C.muted('  →  ') + C.emphasis(issueRef),
+    )
+  } finally {
+    await client.close()
+  }
 }
 
-export async function unlinkDocument(issueRef: string, docRef: string, opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string }): Promise<void> {
+export async function unlinkDocument(
+  issueRef: string,
+  docRef: string,
+  opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string },
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const issueId = await resolveRef(issueRef, {
       client,
       classId: CLASS.Issue as Ref<Class<Doc>>,
-      defaultProjectIdentifier: readEnv().project
+      defaultProjectIdentifier: readEnv().project,
     })
     const docId = await resolveRef(docRef, {
       client,
@@ -1178,35 +1461,44 @@ export async function unlinkDocument(issueRef: string, docRef: string, opts: { j
     })
     const issue = await client.findOne(CLASS.Issue as Ref<Class<Issue>>, { _id: issueId as Ref<Issue> })
     if (!issue) throw new CliError(ExitCode.NotFound, `issue ${issueRef} not found`)
-    const relations = ((issue as unknown as { relations?: RelatedDoc[] }).relations ?? [])
+    const relations = (issue as unknown as { relations?: RelatedDoc[] }).relations ?? []
     const updated = relations.filter((r) => r._id !== docId)
     await withSpinner(
       'Unlinking document…',
-      () => client.updateDoc(CLASS.Issue as Ref<Class<Issue>>, issue.space as unknown as Ref<Space>, issue._id, { relations: updated } as any),
-      opts
+      () =>
+        client.updateDoc(CLASS.Issue as Ref<Class<Issue>>, issue.space as unknown as Ref<Space>, issue._id, {
+          relations: updated,
+        } as any),
+      opts,
     )
     success(`unlinked document`, docRef)
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
-export async function moveIssue(ref: string, parentRef: string | null, opts: { json?: boolean; ci?: boolean; dryRun?: boolean; workspace?: string; url?: string }): Promise<void> {
+export async function moveIssue(
+  ref: string,
+  parentRef: string | null,
+  opts: { json?: boolean; ci?: boolean; dryRun?: boolean; workspace?: string; url?: string },
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const issueId = await resolveRef(ref, {
       client,
       classId: CLASS.Issue as Ref<Class<Doc>>,
-      defaultProjectIdentifier: readEnv().project
+      defaultProjectIdentifier: readEnv().project,
     })
     const issue = await client.findOne(CLASS.Issue as Ref<Class<Issue>>, { _id: issueId as Ref<Issue> })
     if (!issue) throw new CliError(ExitCode.NotFound, `issue ${ref} not found`)
 
     let newParent: Ref<Doc> | null = null
     if (parentRef && parentRef !== 'null' && parentRef !== '-') {
-      newParent = await resolveRef(parentRef, {
+      newParent = (await resolveRef(parentRef, {
         client,
         classId: CLASS.Issue as Ref<Class<Doc>>,
-        defaultProjectIdentifier: readEnv().project
-      }) as Ref<Doc>
+        defaultProjectIdentifier: readEnv().project,
+      })) as Ref<Doc>
     }
     if (opts.dryRun) {
       console.log(`would move ${ref} → parent=${newParent ?? 'null'}`)
@@ -1214,64 +1506,120 @@ export async function moveIssue(ref: string, parentRef: string | null, opts: { j
     }
     await withSpinner(
       'Moving…',
-      () => client.updateDoc(CLASS.Issue as Ref<Class<Issue>>, issue.space as unknown as Ref<Space>, issue._id, { parent: newParent } as any),
-      opts
+      () =>
+        client.updateDoc(CLASS.Issue as Ref<Class<Issue>>, issue.space as unknown as Ref<Space>, issue._id, {
+          parent: newParent,
+        } as any),
+      opts,
     )
     console.log(`moved ${ref} → ${parentRef ?? 'null'}`)
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
-export async function previewDelete(refs: string[], opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string }): Promise<void> {
+export async function previewDelete(
+  refs: string[],
+  opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string },
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const ids = await resolveRefs(refs, {
       client,
       classId: CLASS.Issue as Ref<Class<Doc>>,
-      defaultProjectIdentifier: readEnv().project
+      defaultProjectIdentifier: readEnv().project,
     })
     const preview: Array<{ ref: string; subIssues: number; comments: number; relations: number }> = []
     for (const id of ids) {
       const issue = await client.findOne(CLASS.Issue as Ref<Class<Issue>>, { _id: id as Ref<Issue> })
       if (!issue) continue
-      const subIssues = (await client.findAll(CLASS.Issue as Ref<Class<Issue>>, { parent: id as Ref<Doc> })).length
-      const relations = ((issue as unknown as { relations?: unknown[] }).relations ?? []).length +
+      const subIssues = (await client.findAll(CLASS.Issue as Ref<Class<Issue>>, { parent: id as Ref<Doc> }))
+        .length
+      const relations =
+        ((issue as unknown as { relations?: unknown[] }).relations ?? []).length +
         ((issue as unknown as { blockedBy?: unknown[] }).blockedBy ?? []).length
       preview.push({
         ref: id,
         subIssues,
         comments: 0,
-        relations
+        relations,
       })
     }
-    if (shouldJson({ json: opts.json, ci: opts.ci })) { json(preview); return }
-    table(preview as unknown as Record<string, unknown>[], [
-      { key: 'ref', header: 'REF', format: (r) => C.emphasis(String((r as { ref: string }).ref)) },
-      { key: 'subIssues', header: 'SUB-ISSUES', align: 'right', format: (r) => {
-        const n = (r as { subIssues: number }).subIssues
-        return n > 0 ? String(n) : C.muted('0')
-      } },
-      { key: 'relations', header: 'RELATIONS', align: 'right', format: (r) => {
-        const n = (r as { relations: number }).relations
-        return n > 0 ? String(n) : C.muted('0')
-      } }
-    ], { count: true, title: 'delete-preview' })
-  } finally { await client.close() }
+    if (shouldJson({ json: opts.json, ci: opts.ci })) {
+      json(preview)
+      return
+    }
+    table(
+      preview as unknown as Record<string, unknown>[],
+      [
+        { key: 'ref', header: 'REF', format: (r) => C.emphasis(String((r as { ref: string }).ref)) },
+        {
+          key: 'subIssues',
+          header: 'SUB-ISSUES',
+          align: 'right',
+          format: (r) => {
+            const n = (r as { subIssues: number }).subIssues
+            return n > 0 ? String(n) : C.muted('0')
+          },
+        },
+        {
+          key: 'relations',
+          header: 'RELATIONS',
+          align: 'right',
+          format: (r) => {
+            const n = (r as { relations: number }).relations
+            return n > 0 ? String(n) : C.muted('0')
+          },
+        },
+      ],
+      { count: true, title: 'delete-preview' },
+    )
+  } finally {
+    await client.close()
+  }
 }
 
-export async function relatedTargets(ref: string, opts: { project?: string; json?: boolean; ci?: boolean; workspace?: string; url?: string }): Promise<void> {
+export async function relatedTargets(
+  ref: string,
+  opts: { project?: string; json?: boolean; ci?: boolean; workspace?: string; url?: string },
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const project = await resolveProject(client, opts.project)
-    const targets = (await client.findAll(CLASS.RelatedIssueTarget as Ref<Class<Doc>>, { space: project._id })) as Doc[]
-    if (shouldJson({ json: opts.json, ci: opts.ci })) { json(targets); return }
-    table(targets as unknown as Record<string, unknown>[], [
-      { key: 'title', header: 'TITLE', format: (r) => C.emphasis(String((r as { title: string }).title ?? '')) },
-      { key: '_id', header: '_ID', format: (r) => C.id(String((r as { _id: string })._id).slice(-12)) }
-    ], { count: true, title: 'related-targets' })
-  } finally { await client.close() }
+    const targets = (await client.findAll(CLASS.RelatedIssueTarget as Ref<Class<Doc>>, {
+      space: project._id,
+    })) as Doc[]
+    if (shouldJson({ json: opts.json, ci: opts.ci })) {
+      json(targets)
+      return
+    }
+    table(
+      targets as unknown as Record<string, unknown>[],
+      [
+        {
+          key: 'title',
+          header: 'TITLE',
+          format: (r) => C.emphasis(String((r as { title: string }).title ?? '')),
+        },
+        { key: '_id', header: '_ID', format: (r) => C.id(String((r as { _id: string })._id).slice(-12)) },
+      ],
+      { count: true, title: 'related-targets' },
+    )
+  } finally {
+    await client.close()
+  }
 }
 
-export async function setRelatedTarget(opts: { project?: string; source?: string; target?: string; json?: boolean; ci?: boolean; dryRun?: boolean; workspace?: string; url?: string }): Promise<void> {
+export async function setRelatedTarget(opts: {
+  project?: string
+  source?: string
+  target?: string
+  json?: boolean
+  ci?: boolean
+  dryRun?: boolean
+  workspace?: string
+  url?: string
+}): Promise<void> {
   if (!opts.source) throw new CliError(ExitCode.Validation, 'missing --source')
   if (!opts.target) throw new CliError(ExitCode.Validation, 'missing --target')
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
@@ -1285,9 +1633,16 @@ export async function setRelatedTarget(opts: { project?: string; source?: string
     }
     const id = await withSpinner(
       'Creating related-issue-target…',
-      () => client.createDoc(CLASS.RelatedIssueTarget as Ref<Class<Doc>>, project._id as unknown as Ref<Space>, data as any),
-      opts
+      () =>
+        client.createDoc(
+          CLASS.RelatedIssueTarget as Ref<Class<Doc>>,
+          project._id as unknown as Ref<Space>,
+          data as any,
+        ),
+      opts,
     )
     console.log(`created related-issue-target: ${id}`)
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }

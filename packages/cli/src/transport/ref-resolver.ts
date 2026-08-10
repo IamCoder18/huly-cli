@@ -33,7 +33,7 @@ const COMMON_IDENTITY_KEYS = ['identifier', 'name', 'label'] as const
 export async function buildIndex<T extends Doc>(
   client: PlatformClient,
   classId: Ref<Class<T>>,
-  identifierField: keyof T | string = 'identifier'
+  identifierField: keyof T | string = 'identifier',
 ): Promise<Map<string, Ref<Doc>>> {
   const byClass = REFS.get(client)
   const cached = byClass?.get(cacheKey(classId))
@@ -135,7 +135,7 @@ export async function resolveRef(ref: string, opts: ResolveOpts): Promise<Ref<Do
   throw new CliError(
     ExitCode.NotFound,
     `ref not found: ${trimmed}`,
-    `hint: candidates ${Array.from(idx.keys()).slice(0, 10).join(', ')}${idx.size > 10 ? '…' : ''}`
+    `hint: candidates ${Array.from(idx.keys()).slice(0, 10).join(', ')}${idx.size > 10 ? '…' : ''}`,
   )
 }
 

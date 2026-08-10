@@ -2,7 +2,7 @@ import type { Doc, Ref, Class, Space } from '@hcengineering/core'
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, invalidateIndex } from '../transport/ref-resolver.js'
-import { shouldJson, json, table, COLUMNS, success, bulkRemoved } from "../output/format.js"
+import { shouldJson, json, table, COLUMNS, success, bulkRemoved } from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
 import { readEnv } from '../auth/env.js'
@@ -17,28 +17,30 @@ type TimeSpendReport = Doc & {
   collection: string
 }
 
-export async function listTimeEntries(opts: {
-  issue?: string
-  start?: string
-  end?: string
-  limit?: number
-  offset?: number
-  json?: boolean
-  ci?: boolean
-  workspace?: string
-  url?: string
-} = {}): Promise<void> {
+export async function listTimeEntries(
+  opts: {
+    issue?: string
+    start?: string
+    end?: string
+    limit?: number
+    offset?: number
+    json?: boolean
+    ci?: boolean
+    workspace?: string
+    url?: string
+  } = {},
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const query: Record<string, unknown> = {
       attachedToClass: CLASS.Issue,
-      collection: 'reports'
+      collection: 'reports',
     }
     if (opts.issue) {
       const issueId = await resolveRef(opts.issue, {
         client,
         classId: CLASS.Issue as Ref<Class<Doc>>,
-        defaultProjectIdentifier: readEnv().project
+        defaultProjectIdentifier: readEnv().project,
       })
       query.attachedTo = issueId
     }
@@ -46,28 +48,42 @@ export async function listTimeEntries(opts: {
       const range: Record<string, number> = {}
       if (opts.start) {
         const t = new Date(opts.start).getTime()
-        if (Number.isNaN(t)) throw new CliError(ExitCode.Validation, `invalid --start: ${opts.start} (expected ISO date)`)
+        if (Number.isNaN(t))
+          throw new CliError(ExitCode.Validation, `invalid --start: ${opts.start} (expected ISO date)`)
         range.$gte = t
       }
       if (opts.end) {
         const t = new Date(opts.end).getTime()
-        if (Number.isNaN(t)) throw new CliError(ExitCode.Validation, `invalid --end: ${opts.end} (expected ISO date)`)
+        if (Number.isNaN(t))
+          throw new CliError(ExitCode.Validation, `invalid --end: ${opts.end} (expected ISO date)`)
         range.$lte = t
       }
       query.date = range
     }
-    const docs = (await withSpinner('Loading time entries…', () =>
-      client.findAll(CLASS.TimeSpendReport as Ref<Class<TimeSpendReport>>, query as any), opts
+    const docs = (await withSpinner(
+      'Loading time entries…',
+      () => client.findAll(CLASS.TimeSpendReport as Ref<Class<TimeSpendReport>>, query as any),
+      opts,
     )) as TimeSpendReport[]
     let r = docs
     if (opts.offset && opts.offset > 0) r = r.slice(opts.offset)
     if (opts.limit && opts.limit > 0) r = r.slice(0, opts.limit)
-    if (shouldJson({ json: opts.json, ci: opts.ci })) { json(r); return }
+    if (shouldJson({ json: opts.json, ci: opts.ci })) {
+      json(r)
+      return
+    }
     const totalMinutes = docs.reduce((s, t) => s + Number(t.value ?? 0) * 60, 0)
     const totalHours = totalMinutes / 60
-    const footer = totalMinutes > 0 ? `total: ${totalHours.toFixed(2)}h (${Math.round(totalMinutes)}min)` : undefined
-    table(r as unknown as Record<string, unknown>[], COLUMNS.timeReport(), { count: true, title: 'time-entries', footer })
-  } finally { await client.close() }
+    const footer =
+      totalMinutes > 0 ? `total: ${totalHours.toFixed(2)}h (${Math.round(totalMinutes)}min)` : undefined
+    table(r as unknown as Record<string, unknown>[], COLUMNS.timeReport(), {
+      count: true,
+      title: 'time-entries',
+      footer,
+    })
+  } finally {
+    await client.close()
+  }
 }
 
 export async function logTime(opts: {
@@ -90,7 +106,12 @@ export async function logTime(opts: {
     throw new CliError(ExitCode.Validation, '--minutes and --hours must be positive')
   }
   const totalMinutes = opts.minutes ?? (opts.hours !== undefined ? Math.round(opts.hours * 60) : 0)
-  if (totalMinutes <= 0) throw new CliError(ExitCode.Validation, 'missing --minutes (or --hours)', 'pass one of --minutes or --hours')
+  if (totalMinutes <= 0)
+    throw new CliError(
+      ExitCode.Validation,
+      'missing --minutes (or --hours)',
+      'pass one of --minutes or --hours',
+    )
   const description = opts.description ?? ''
   if (opts.dryRun) {
     console.log(`would log ${totalMinutes}min on ${opts.issue} (description: "${description}")`)
@@ -101,7 +122,7 @@ export async function logTime(opts: {
     const issueId = await resolveRef(opts.issue, {
       client,
       classId: CLASS.Issue as Ref<Class<Doc>>,
-      defaultProjectIdentifier: readEnv().project
+      defaultProjectIdentifier: readEnv().project,
     })
     const issue = await client.findOne(CLASS.Issue as Ref<Class<Doc>>, { _id: issueId })
     if (!issue) throw new CliError(ExitCode.NotFound, `issue ${opts.issue} not found`)
@@ -109,7 +130,8 @@ export async function logTime(opts: {
     const dateMs = opts.date
       ? (() => {
           const t = new Date(opts.date).getTime()
-          if (Number.isNaN(t)) throw new CliError(ExitCode.Validation, `invalid --date: ${opts.date} (expected ISO date)`)
+          if (Number.isNaN(t))
+            throw new CliError(ExitCode.Validation, `invalid --date: ${opts.date} (expected ISO date)`)
           return t
         })()
       : Date.now()
@@ -118,19 +140,20 @@ export async function logTime(opts: {
       description,
       date: dateMs,
       employee: account.uuid,
-      space: (issue as Doc).space
+      space: (issue as Doc).space,
     }
     const id = await withSpinner(
       `Logging ${totalMinutes}min on ${opts.issue}…`,
-      () => client.addCollection(
-        CLASS.TimeSpendReport as Ref<Class<TimeSpendReport>>,
-        (issue as Doc).space as Ref<Space>,
-        issueId,
-        CLASS.Issue,
-        'reports',
-        data as any
-      ),
-      opts
+      () =>
+        client.addCollection(
+          CLASS.TimeSpendReport as Ref<Class<TimeSpendReport>>,
+          (issue as Doc).space as Ref<Space>,
+          issueId,
+          CLASS.Issue,
+          'reports',
+          data as any,
+        ),
+      opts,
     )
     invalidateIndex(client, CLASS.TimeSpendReport)
     if (shouldJson({ json: opts.json, ci: opts.ci })) {
@@ -138,10 +161,15 @@ export async function logTime(opts: {
     } else {
       success('logged time', `${totalMinutes}min on ${opts.issue}`, id)
     }
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
-export async function deleteTimeEntries(refs: string[], opts: { workspace?: string; url?: string; yes?: boolean } = {}): Promise<void> {
+export async function deleteTimeEntries(
+  refs: string[],
+  opts: { workspace?: string; url?: string; yes?: boolean } = {},
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const ids = await resolveRefs(refs, {
@@ -152,13 +180,19 @@ export async function deleteTimeEntries(refs: string[], opts: { workspace?: stri
       throw new CliError(
         ExitCode.Validation,
         `destructive: deleting ${ids.length} time entries requires --yes`,
-        're-run with --yes to confirm'
+        're-run with --yes to confirm',
       )
     }
-    let deleted = 0, skipped = 0
+    let deleted = 0,
+      skipped = 0
     for (const id of ids) {
-      const entry = await client.findOne(CLASS.TimeSpendReport as Ref<Class<TimeSpendReport>>, { _id: id as Ref<TimeSpendReport> })
-      if (!entry) { skipped++; continue }
+      const entry = await client.findOne(CLASS.TimeSpendReport as Ref<Class<TimeSpendReport>>, {
+        _id: id as Ref<TimeSpendReport>,
+      })
+      if (!entry) {
+        skipped++
+        continue
+      }
       try {
         await client.removeCollection(
           CLASS.TimeSpendReport as Ref<Class<Doc>>,
@@ -166,7 +200,7 @@ export async function deleteTimeEntries(refs: string[], opts: { workspace?: stri
           id as Ref<Doc>,
           (entry as TimeSpendReport).attachedTo as Ref<Doc>,
           CLASS.Issue,
-          (entry as TimeSpendReport).collection ?? 'reports'
+          (entry as TimeSpendReport).collection ?? 'reports',
         )
         deleted++
       } catch (e) {
@@ -175,9 +209,14 @@ export async function deleteTimeEntries(refs: string[], opts: { workspace?: stri
       }
     }
     bulkRemoved(deleted, skipped)
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
-export async function timeReport(issueRef: string, opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string }): Promise<void> {
+export async function timeReport(
+  issueRef: string,
+  opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string },
+): Promise<void> {
   return listTimeEntries({ ...opts, issue: issueRef })
 }

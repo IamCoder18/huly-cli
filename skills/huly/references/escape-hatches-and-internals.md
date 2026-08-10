@@ -19,6 +19,7 @@ huly api GET /api/v1/private --header "Authorization: Bearer …"
 Methods: `GET | POST | PUT | PATCH | DELETE`. Query params and headers accept repeated `k=v`.
 
 Status codes map to exit codes:
+
 - `2xx` → `Ok`
 - `401` / `403` → `Auth` (3)
 - `429` → `RateLimited` (5)
@@ -26,6 +27,7 @@ Status codes map to exit codes:
 - `5xx` → `Server` (7)
 
 Use this when:
+
 - You want to hit an undocumented endpoint
 - The CLI command exists but doesn't expose a flag you need (rare)
 - You're hitting a custom plugin route
@@ -72,11 +74,13 @@ huly ws findAll '["core:class:Tx", {"objectId":"<doc-id>"}]' --json \
 ```
 
 **Timing:**
+
 - 60s overall timeout per call
 - 5s ping interval (disable with `--no-ping`)
 - Default chunked responses are buffered and flushed as JSON arrays
 
 **When to reach for this:**
+
 - Fulltext search with ES query string operators (`AND`, `OR`, `+`, `-`, `"…"`, `field:value`)
 - Audit-trail queries (`core:class:Tx`)
 - Bulk operations where you want to skip CLI validation
@@ -112,11 +116,13 @@ This is your fallback prompt for the agent — try the candidates, or list them 
 The index lives in `WeakMap<PlatformClient, Map<classId, Map<string, Ref<Doc>>>>`.
 
 **Critical properties:**
+
 - **In-memory, no TTL.** Dies with the `PlatformClient` instance.
 - **Cross-workspace safe.** Keyed on the client, not globally — switching workspaces = fresh client = fresh cache.
 - **Invalidated explicitly after writes.** `invalidateIndex(client, CLASS.X)` is called after every create / label-add / label-remove for that class.
 
 **When you'll see stale data:**
+
 - You renamed a project, then in the same shell tried `huly project get <old-name>`. The cache still has `old-name` mapped. Restart the process, or run any write to the changed class.
 - Cross-class writes: if you changed something in class A, then asked for class B's data using a value derived from A's response, the class B cache may be stale.
 
@@ -128,16 +134,17 @@ The index lives in `WeakMap<PlatformClient, Map<classId, Map<string, Ref<Doc>>>>
 
 There is no single shared algorithm — each flag has its own resolver:
 
-| Flag | Resolver | Substring fallback? |
-|---|---|---|
-| `--assignee` (issue) | `resolveAssignee` in `resources/_helpers.ts:298-322` | **Yes** — falls back to substring match after exact |
-| `--owner` (action) | `resolveEmployeeId` in `resources/todo.ts:65-78` | **No** — strict exact match only |
-| `--person` (DM/channel) | `resolvePersonId` in `resources/channel.ts:61-130` | **No** — strict, throws if multiple matches |
-| `--calendar` (event) | inline in `resources/calendar.ts:649-672` | **No** — exact `id` then `name` lookup |
-| `--members` (variadic) | shares `resolvePersonId` (same as `--person`) | **No** |
+| Flag                    | Resolver                                             | Substring fallback?                                 |
+| ----------------------- | ---------------------------------------------------- | --------------------------------------------------- |
+| `--assignee` (issue)    | `resolveAssignee` in `resources/_helpers.ts:298-322` | **Yes** — falls back to substring match after exact |
+| `--owner` (action)      | `resolveEmployeeId` in `resources/todo.ts:65-78`     | **No** — strict exact match only                    |
+| `--person` (DM/channel) | `resolvePersonId` in `resources/channel.ts:61-130`   | **No** — strict, throws if multiple matches         |
+| `--calendar` (event)    | inline in `resources/calendar.ts:649-672`            | **No** — exact `id` then `name` lookup              |
+| `--members` (variadic)  | shares `resolvePersonId` (same as `--person`)        | **No**                                              |
 
 **The asymmetry to memorize:**
-- `--assignee alice` → looks for "alice" OR any Person whose email/name *contains* "alice". **First match in the `findAll()` result order wins** (the CLI does NOT sort persons). Use `--assignee alice@example.com` to disambiguate.
+
+- `--assignee alice` → looks for "alice" OR any Person whose email/name _contains_ "alice". **First match in the `findAll()` result order wins** (the CLI does NOT sort persons). Use `--assignee alice@example.com` to disambiguate.
 - `--owner alice` → **strict** exact match against `Person.name` OR `Person.email`. No substring fallback. Pass the full name or email.
 
 If you have two people named Bob in your workspace, `--assignee bob` picks whichever Bob appears first in the findAll response (not necessarily alphabetical). Pass full emails.
@@ -146,12 +153,12 @@ If you have two people named Bob in your workspace, `--assignee bob` picks which
 
 ## Output modes — the internals
 
-| Mode | Trigger | Output |
-|---|---|---|
-| Human table | (default) | Auto-sized columns via `output/format.ts`. Colors via chalk (suppressed by `NO_COLOR` or non-TTY). |
-| JSON | `--json` OR `--ci` OR `CI=1` | `console.log(JSON.stringify(data, null, 2))`. Always arrays for `list`, objects for `get/create/update/delete`. |
-| Markdown body | `--markdown` on `get` of a content-bearing resource | `client.fetchMarkup(…, 'markdown')` with 5s timeout. Falls back to raw body string. |
-| Dry-run | `--dry-run` | Prints the would-be tx JSON. No state changes. |
+| Mode          | Trigger                                             | Output                                                                                                          |
+| ------------- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Human table   | (default)                                           | Auto-sized columns via `output/format.ts`. Colors via chalk (suppressed by `NO_COLOR` or non-TTY).              |
+| JSON          | `--json` OR `--ci` OR `CI=1`                        | `console.log(JSON.stringify(data, null, 2))`. Always arrays for `list`, objects for `get/create/update/delete`. |
+| Markdown body | `--markdown` on `get` of a content-bearing resource | `client.fetchMarkup(…, 'markdown')` with 5s timeout. Falls back to raw body string.                             |
+| Dry-run       | `--dry-run`                                         | Prints the would-be tx JSON. No state changes.                                                                  |
 
 `shouldJson(opts)` resolves to `Boolean(opts.json || opts.ci || process.env.CI)` — any of those flips to JSON.
 
@@ -161,17 +168,17 @@ If you have two people named Bob in your workspace, `--assignee bob` picks which
 
 ## Exit codes (always exit, never silent)
 
-| Code | Constant | Trigger |
-|---|---|---|
-| 0 | `Ok` | Success |
-| 1 | `Generic` | Unrecognized error |
-| 2 | `NotFound` | Ref / object not found |
-| 3 | `Auth` | 401, 403 — `huly login` or set `HULY_TOKEN` |
-| 4 | `Validation` | 400, missing arg, bad enum, bad `k=v` |
-| 5 | `RateLimited` | 429 (with 500/2000ms backoff, max 3 attempts) |
-| 6 | `Conflict` | Duplicate, already exists |
-| 7 | `Server` | ≥500 |
-| 8 | `Ambiguous` | Declared, not yet raised |
+| Code | Constant      | Trigger                                       |
+| ---- | ------------- | --------------------------------------------- |
+| 0    | `Ok`          | Success                                       |
+| 1    | `Generic`     | Unrecognized error                            |
+| 2    | `NotFound`    | Ref / object not found                        |
+| 3    | `Auth`        | 401, 403 — `huly login` or set `HULY_TOKEN`   |
+| 4    | `Validation`  | 400, missing arg, bad enum, bad `k=v`         |
+| 5    | `RateLimited` | 429 (with 500/2000ms backoff, max 3 attempts) |
+| 6    | `Conflict`    | Duplicate, already exists                     |
+| 7    | `Server`      | ≥500                                          |
+| 8    | `Ambiguous`   | Declared, not yet raised                      |
 
 All errors throw `CliError(ExitCode.X, msg, hint?)`. `handleError(e)` classifies, prints `error [N]  <message>` + indented hint, then exits.
 
@@ -181,13 +188,13 @@ This means scripts can use `set -e` and `case $? in …` cleanly.
 
 ## Caches
 
-| Cache | Lifetime | Invalidation |
-|---|---|---|
-| Resolver index | In-memory, no TTL, dies with `PlatformClient` | `invalidateIndex(client, classId)` after writes |
-| `_accounts` URL map | In-memory, per process | Never (restart process) |
-| `credentials.json` (disk) | Until `rm`'d or until re-login refreshes | Re-login refreshes account token; preserves workspaces |
-| `active-workspace` (disk) | Until `workspace use` or `--workspace` | `writeActiveWorkspace` overwrites |
-| `active-account` (disk) | Until re-login | Updated on login |
+| Cache                     | Lifetime                                      | Invalidation                                           |
+| ------------------------- | --------------------------------------------- | ------------------------------------------------------ |
+| Resolver index            | In-memory, no TTL, dies with `PlatformClient` | `invalidateIndex(client, classId)` after writes        |
+| `_accounts` URL map       | In-memory, per process                        | Never (restart process)                                |
+| `credentials.json` (disk) | Until `rm`'d or until re-login refreshes      | Re-login refreshes account token; preserves workspaces |
+| `active-workspace` (disk) | Until `workspace use` or `--workspace`        | `writeActiveWorkspace` overwrites                      |
+| `active-account` (disk)   | Until re-login                                | Updated on login                                       |
 
 All on-disk caches are mode 0600.
 
@@ -197,12 +204,12 @@ All on-disk caches are mode 0600.
 
 Used by `huly project update`, `huly issue update`, etc.:
 
-| Value | Coerced to |
-|---|---|
-| `null` | clears the field |
-| `true` / `false` | boolean |
-| `<numeric string>` (e.g. `42`, `-3.14`) | `Number` |
-| anything else | `String` |
+| Value                                   | Coerced to       |
+| --------------------------------------- | ---------------- |
+| `null`                                  | clears the field |
+| `true` / `false`                        | boolean          |
+| `<numeric string>` (e.g. `42`, `-3.14`) | `Number`         |
+| anything else                           | `String`         |
 
 **Reserved keys silently stripped** (so don't try to set them). The set differs between `create` and `update`:
 
@@ -215,20 +222,20 @@ Used by `huly project update`, `huly issue update`, etc.:
 
 ## Filtering & matching semantics (cheat sheet)
 
-| Flag | Match | Notes |
-|---|---|---|
-| `--status` (issue) | exact label, case-insensitive | bad value lists available statuses |
-| `--status-category` | strips `task:statusCategory:` prefix | accepted values are case-sensitive (`UnStarted\|ToDo\|Active\|Won\|Lost`); matching against stored categories is case-insensitive |
-| `--priority` (issue) | exact label, case-insensitive | `Urgent\|High\|Normal\|Low\|None` |
-| `--task-type` (issue) | exact label OR raw `_id` | per-project |
-| `--role` (member) | aliases owner/admin/guest/docguest/readonlyguest/maintainer | case-insensitive |
-| `--priority` (action) | **strict** enum | `Urgent\|High\|Medium\|Low\|NoPriority` — case-SENSITIVE |
-| `--visibility` (action) | **strict** enum | `public\|busy\|private` — case-SENSITIVE |
-| `--archived` | non-strict | `v !== 'false' && v !== '0'` → `true` |
-| `--private` | non-strict | same as `--archived` |
-| `--completed` (action) | `true\|false\|all` | `all` returns both |
-| `--description-search`, `--content-search`, `--title` (action) | MongoDB regex | case-insensitive (`$options: 'i'`), special chars escaped |
-| `--label` (issue) | exact match, repeatable | `{ labels: { $in: opts.label } }` |
+| Flag                                                           | Match                                                       | Notes                                                                                                                             |
+| -------------------------------------------------------------- | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `--status` (issue)                                             | exact label, case-insensitive                               | bad value lists available statuses                                                                                                |
+| `--status-category`                                            | strips `task:statusCategory:` prefix                        | accepted values are case-sensitive (`UnStarted\|ToDo\|Active\|Won\|Lost`); matching against stored categories is case-insensitive |
+| `--priority` (issue)                                           | exact label, case-insensitive                               | `Urgent\|High\|Normal\|Low\|None`                                                                                                 |
+| `--task-type` (issue)                                          | exact label OR raw `_id`                                    | per-project                                                                                                                       |
+| `--role` (member)                                              | aliases owner/admin/guest/docguest/readonlyguest/maintainer | case-insensitive                                                                                                                  |
+| `--priority` (action)                                          | **strict** enum                                             | `Urgent\|High\|Medium\|Low\|NoPriority` — case-SENSITIVE                                                                          |
+| `--visibility` (action)                                        | **strict** enum                                             | `public\|busy\|private` — case-SENSITIVE                                                                                          |
+| `--archived`                                                   | non-strict                                                  | `v !== 'false' && v !== '0'` → `true`                                                                                             |
+| `--private`                                                    | non-strict                                                  | same as `--archived`                                                                                                              |
+| `--completed` (action)                                         | `true\|false\|all`                                          | `all` returns both                                                                                                                |
+| `--description-search`, `--content-search`, `--title` (action) | MongoDB regex                                               | case-insensitive (`$options: 'i'`), special chars escaped                                                                         |
+| `--label` (issue)                                              | exact match, repeatable                                     | `{ labels: { $in: opts.label } }`                                                                                                 |
 
 There is **no server-side pagination**. `--limit / --offset` slice the full result in-memory after `findAll`. For >10k docs of a class, filter by space/date.
 
@@ -249,11 +256,13 @@ If you need collaborative editing features (mentions as actual nodes, embeds), t
 ## Confirming destructive ops
 
 `--yes` is required when:
+
 - `workspace create`
 - `workspace delete` (plus `--force` for the active workspace)
 - ANY `delete <ref...>` with ≥2 refs
 
 NOT required for:
+
 - `dm create --person` (auto-creates)
 - `dm send --person` (auto-creates)
 - `action unschedule` with a single `--slot-id`
@@ -275,11 +284,11 @@ There is **no WebSocket auto-reconnect**. Each command opens a fresh WS, runs, a
 
 The CLI talks to three of the ~16 selfhost services:
 
-| Service | Port | What the CLI does |
-|---|---|---|
-| `account` | 3000 | Login, workspace ops, account token |
-| `transactor` | 3333 | WebSocket RPC (`findAll`, `tx`) |
-| `collaborator` | 3078 | Read path for `fetchMarkup` |
+| Service        | Port | What the CLI does                   |
+| -------------- | ---- | ----------------------------------- |
+| `account`      | 3000 | Login, workspace ops, account token |
+| `transactor`   | 3333 | WebSocket RPC (`findAll`, `tx`)     |
+| `collaborator` | 3078 | Read path for `fetchMarkup`         |
 
 The CLI never talks to `workspace`, `kvs`, `minio`, `redpanda`, `elastic`, `cockroach`, or `front` directly.
 

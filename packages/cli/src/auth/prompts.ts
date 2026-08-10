@@ -17,8 +17,8 @@ export async function promptEmail(defaultEmail?: string, opts: PromptOpts = {}):
       name: 'email',
       message: 'Email:',
       default: defaultEmail,
-      validate: (v) => (v.includes('@') ? true : 'enter a valid email')
-    }
+      validate: (v) => (v.includes('@') ? true : 'enter a valid email'),
+    },
   ])
   return email
 }
@@ -28,40 +28,52 @@ export async function promptPassword(opts: PromptOpts = {}): Promise<string> {
     throw new CliError(ExitCode.Validation, 'no password', 'set HULY_PASSWORD or run interactively')
   }
   const { password } = await inquirer.prompt<{ password: string }>([
-    { type: 'password', name: 'password', message: 'Password:', mask: '*' }
+    { type: 'password', name: 'password', message: 'Password:', mask: '*' },
   ])
   return password
 }
 
 export async function promptText(label: string, opts: PromptOpts = {}): Promise<string> {
   if (!opts.forceInteractive && isNonInteractive()) {
-    throw new CliError(ExitCode.Validation, `no ${label.toLowerCase()}`, `set the env var or run interactively`)
+    throw new CliError(
+      ExitCode.Validation,
+      `no ${label.toLowerCase()}`,
+      `set the env var or run interactively`,
+    )
   }
   const { value } = await inquirer.prompt<{ value: string }>([
-    { type: 'input', name: 'value', message: `${label}:`, validate: (v) => (v.trim().length > 0 ? true : 'required') }
+    {
+      type: 'input',
+      name: 'value',
+      message: `${label}:`,
+      validate: (v) => (v.trim().length > 0 ? true : 'required'),
+    },
   ])
   return value.trim()
 }
 
-export async function promptConfirm(message: string, opts: PromptOpts & { default?: boolean } = {}): Promise<boolean> {
+export async function promptConfirm(
+  message: string,
+  opts: PromptOpts & { default?: boolean } = {},
+): Promise<boolean> {
   if (!opts.forceInteractive && isNonInteractive()) {
     throw new CliError(ExitCode.Validation, 'no confirm answer', 'run interactively or pass an explicit flag')
   }
   const { value } = await inquirer.prompt<{ value: boolean }>([
-    { type: 'confirm', name: 'value', message, default: opts.default ?? false }
+    { type: 'confirm', name: 'value', message, default: opts.default ?? false },
   ])
   return value
 }
 
 export async function pickWorkspace(
   workspaces: WorkspaceInfoWithStatus[],
-  opts: PromptOpts = {}
+  opts: PromptOpts = {},
 ): Promise<WorkspaceInfoWithStatus> {
   if (!opts.forceInteractive && isNonInteractive()) {
     throw new CliError(
       ExitCode.Validation,
       'no workspace selected',
-      'set HULY_WORKSPACE or run interactively'
+      'set HULY_WORKSPACE or run interactively',
     )
   }
   if (workspaces.length === 0) {
@@ -74,23 +86,21 @@ export async function pickWorkspace(
       message: 'Workspace:',
       choices: workspaces.map((w) => ({
         name: `${w.name} (${w.url}) [${w.mode}]`,
-        value: w
-      }))
-    }
+        value: w,
+      })),
+    },
   ])
   return workspace
 }
 
-export async function pickProject<T extends { _id: string; name?: string; identifier?: string; label?: string }>(
-  projects: T[],
-  message = 'Project:',
-  opts: PromptOpts = {}
-): Promise<T> {
+export async function pickProject<
+  T extends { _id: string; name?: string; identifier?: string; label?: string },
+>(projects: T[], message = 'Project:', opts: PromptOpts = {}): Promise<T> {
   if (!opts.forceInteractive && isNonInteractive()) {
     throw new CliError(
       ExitCode.Validation,
       'no project selected',
-      'pass --project, set HULY_PROJECT, or run interactively'
+      'pass --project, set HULY_PROJECT, or run interactively',
     )
   }
   if (projects.length === 0) {
@@ -103,9 +113,9 @@ export async function pickProject<T extends { _id: string; name?: string; identi
       message,
       choices: projects.map((p) => ({
         name: p.label ?? p.name ?? p.identifier ?? p._id,
-        value: p as T
-      }))
-    }
+        value: p as T,
+      })),
+    },
   ])
   return project
 }
