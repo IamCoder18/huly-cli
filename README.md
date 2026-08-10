@@ -1,10 +1,9 @@
 # huly-cli — Drive your self-hosted Huly from any AI agent.
 
-[![npm](https://img.shields.io/npm/v/@iamcoder18/huly-cli?style=flat-square&color=cb3837&logo=npm&logoColor=white)](https://www.npmjs.com/package/@iamcoder18/huly-cli)
-[![npm dl](https://img.shields.io/npm/dm/@iamcoder18/huly-cli?style=flat-square&color=cb3837&logo=npm&logoColor=white)](https://www.npmjs.com/package/@iamcoder18/huly-cli)
-[![Node](https://img.shields.io/badge/node-%3E%3D22.13-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
-[![Agent Skill](https://img.shields.io/badge/skills-compatible-6f42c1?style=flat-square)](https://github.com/IamCoder18/huly-cli/tree/main/skills/huly)
-[![License](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue?style=flat-square)](LICENSE)
+[![npm version](https://img.shields.io/npm/v/@iamcoder18/huly-cli.svg?style=flat-square)](https://www.npmjs.com/package/@iamcoder18/huly-cli)
+[![npm downloads](https://img.shields.io/npm/dm/@iamcoder18/huly-cli.svg?style=flat-square)](https://www.npmjs.com/package/@iamcoder18/huly-cli)
+[![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/IamCoder18/huly-cli/ci.yml?branch=main&style=flat-square)](https://github.com/IamCoder18/huly-cli/actions)
+[![License](https://img.shields.io/npm/l/@iamcoder18/huly-cli.svg?style=flat-square)](LICENSE)
 
 **Issues, projects, channels, docs, calendar & time tracking — from the terminal,
 your AI agent, or OpenClaw.** No browser, no MCP, no Playwright.
