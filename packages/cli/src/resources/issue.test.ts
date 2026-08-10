@@ -9,12 +9,15 @@ function asPriority(d: FakeDoc): PriorityLike {
   return d as unknown as PriorityLike
 }
 
+// Mutable flag read by the isOpinionated mock below — tests flip it to
+// `false` to exercise the `canSeed = false` branch in resolvePriority.
+const opinionatedState = vi.hoisted(() => ({ on: true }))
+
 vi.mock('../auth/env.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../auth/env.js')>()
   return {
     ...actual,
-    // opinionated defaults ON by default; tests opt out per case
-    isOpinionated: () => true,
+    isOpinionated: () => opinionatedState.on,
   }
 })
 
@@ -266,5 +269,51 @@ describe('seedDefaultPriorities', () => {
     for (const call of client.state.createCalls) {
       expect(call.space).toBe('core:space:Model')
     }
+  })
+})
+
+describe('resolvePriority — opinionated defaults OFF', () => {
+  it.beforeAll(() => {
+    opinionatedState.on = false
+  })
+  it.afterAll(() => {
+    opinionatedState.on = true
+  })
+
+  it('does NOT seed and throws CLI-13 when explicit --priority is given against an empty enum', async () => {
+    const client = makeClient()
+    await expect(resolvePriority(client, 'High')).rejects.toMatchObject({
+      code: 4,
+      message: /priority "High" not found/,
+    })
+    expect(client.createDoc).not.toHaveBeenCalled()
+  })
+
+  it('returns undefined (omit priority) for implicit resolution against an empty enum', async () => {
+    const client = makeClient()
+    const id = await resolvePriority(client)
+    expect(id).toBeUndefined()
+    expect(client.createDoc).not.toHaveBeenCalled()
+  })
+
+  it('still resolves an explicit --priority against a populated enum', async () => {
+    const client = makeClient({
+      findAll: [{ _id: 'tracker:priority:Urgent', label: 'Urgent', name: 'Urgent' }],
+    })
+    const id = await resolvePriority(client, 'Urgent')
+    expect(id).toBe('tracker:priority:Urgent')
+    expect(client.createDoc).not.toHaveBeenCalled()
+  })
+
+  it('still resolves an implicit priority against a populated enum (prefers Medium)', async () => {
+    const client = makeClient({
+      findAll: [
+        { _id: 'tracker:priority:Urgent', label: 'Urgent', name: 'Urgent' },
+        { _id: 'tracker:priority:Medium', label: 'Medium', name: 'Medium' },
+      ],
+    })
+    const id = await resolvePriority(client)
+    expect(id).toBe('tracker:priority:Medium')
+    expect(client.createDoc).not.toHaveBeenCalled()
   })
 })
