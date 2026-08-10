@@ -5,19 +5,12 @@
   "keywords": [
     "huly",
     "huly-cli",
-    "huly-mcp",
-    "huly-api",
-    "huly-sdk",
-    "huly-client",
-    "openclaw",
-    "agent-skills",
-    "ai-agent",
-    "mcp-server",
     "cli",
-    "headless",
+    "ai-agent",
     "self-hosted",
     "issue-tracker",
-    "project-management"
+    "skill",
+    "openclaw"
   ],
   "license": "AGPL-3.0-or-later",
   "homepage": "https://github.com/IamCoder18/huly-cli#readme",
