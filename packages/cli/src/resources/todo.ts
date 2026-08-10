@@ -552,6 +552,8 @@ export interface UpdateActionOpts {
   priority?: string
   visibility?: string
   owner?: string
+  attachedTo?: string
+  attachedToClass?: string
   dryRun?: boolean
   json?: boolean
   ci?: boolean
@@ -560,6 +562,21 @@ export interface UpdateActionOpts {
 }
 
 export async function updateAction(ref: string, opts: UpdateActionOpts): Promise<void> {
+  // HULY-8: --attached-to / --attached-to-class on update are wired through
+  // the CLI for parity with 'action create' but reparenting requires a
+  // removeCollection + addCollection round-trip (WorkSlot refs preserved,
+  // but cascade semantics on the new parent fire on the server side). To
+  // avoid shipping a half-implemented move, reject early — BEFORE connectCli
+  // — so workspace-setup failures don't hide the clear "delete + recreate"
+  // guidance from the user.
+  if (opts.attachedTo !== undefined || opts.attachedToClass !== undefined) {
+    throw new CliError(
+      ExitCode.Validation,
+      'reparenting an action via update is not yet supported',
+      'delete the action and recreate it under the new parent: ' +
+        `'huly action delete <ref> --yes' then 'huly action create --attached-to <ref> --attached-to-class <class> ...'`,
+    )
+  }
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const id = await resolveRef(ref, {

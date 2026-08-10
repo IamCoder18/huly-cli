@@ -204,6 +204,7 @@ export async function updateIssueTemplate(
     title?: string
     description?: string
     body?: string
+    bodyFile?: string
     json?: boolean
     ci?: boolean
     dryRun?: boolean
@@ -223,10 +224,22 @@ export async function updateIssueTemplate(
     if (!doc) throw new CliError(ExitCode.NotFound, `issue-template ${ref} not found`)
     const ops: Record<string, unknown> = {}
     if (opts.title) ops.title = opts.title
-    if (opts.body) ops.description = opts.body
+    // HULY-8: --body-file mirrors the file-read path used by createIssueTemplate
+    // (lines 165-167). --body still wins if both are passed (matches create).
+    // Test `!== undefined` rather than truthiness so an explicit `--body ""`
+    // is honored as "clear the description" instead of silently falling
+    // through to opts.description.
+    if (opts.bodyFile) {
+      const fs = await import('node:fs/promises')
+      ops.description = (await fs.readFile(opts.bodyFile, 'utf8')).trim()
+    } else if (opts.body !== undefined) ops.description = opts.body
     else if (opts.description !== undefined) ops.description = opts.description ? opts.description : ''
     if (Object.keys(ops).length === 0)
-      throw new CliError(ExitCode.Validation, 'nothing to update', 'pass --title, --description, or --body')
+      throw new CliError(
+        ExitCode.Validation,
+        'nothing to update',
+        'pass --title, --description, --body, or --body-file',
+      )
     if (opts.dryRun) {
       console.log(`would update issue-template ${id}:`)
       console.log(

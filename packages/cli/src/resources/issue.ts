@@ -89,14 +89,19 @@ function stripStatusCategoryPrefix(cat: string): string {
 }
 
 async function readBody(opts: { body?: string; bodyFile?: string }): Promise<string | undefined> {
-  if (opts.body && opts.bodyFile) {
+  if (opts.body !== undefined && opts.bodyFile !== undefined) {
     throw new CliError(ExitCode.Validation, 'ambiguous body input', 'pass only one of --body or --body-file')
   }
-  if (opts.bodyFile) {
+  if (opts.bodyFile !== undefined) {
     const fs = await import('node:fs/promises')
     return (await fs.readFile(opts.bodyFile, 'utf8')).trim()
   }
-  if (opts.body) return opts.body
+  // HULY-8 (post-review): test `!== undefined` rather than truthiness so an
+  // explicit `--body ""` is preserved as a clear intent on issue update
+  // instead of silently falling through to opts.description / being treated
+  // as "no body provided". Matches the symmetric check added to
+  // issue-template.ts updateIssueTemplate.
+  if (opts.body !== undefined) return opts.body
   return undefined
 }
 
@@ -1080,7 +1085,12 @@ export async function updateIssue(
     assignee?: string
     title?: string
     description?: string
+    body?: string
+    bodyFile?: string
     taskType?: string
+    kind?: string
+    due?: string
+    label?: string[]
     dryRun?: boolean
     minimal?: boolean
     workspace?: string
@@ -1142,33 +1152,52 @@ export async function updateIssue(
         workspace: opts.workspace,
       })) as Ref<Doc>
     if (opts.title) ops.title = opts.title
-    if (opts.description !== undefined) {
-      // Update only the ydoc (issue #3). The ydoc is the source of truth
-      // for collaborative reads; uploading a new JSON blob on every update
-      // leaves orphaned blobs in MinIO and risks partial-write failures
-      // (issue #12). Empty string is a deliberate clear and is forwarded
-      // to updateMarkup (which treats undefined as no-op).
-      await updateMarkup(
-        client,
-        CLASS.Issue as Ref<Class<Doc>>,
-        issue._id as Ref<Doc>,
-        'description',
-        opts.description,
-        'markup',
-      )
-      markupUpdated = true
-    }
+    // HULY-8: --body / --body-file take precedence over --description,
+    // mirroring createIssue's `descriptionSource = body ?? opts.description`
+    // (line 786). Resolve the markup source here but defer the upload until
+    // after the dry-run guard below — otherwise `--body ... --dry-run` would
+    // persist. The --kind / --due resolve calls are intentionally kept where
+    // they are (matches the existing resolveStatus / resolvePriority pattern).
+    const body = await readBody(opts)
+    const markupBody = body ?? opts.description
+    const markupRequested = markupBody !== undefined
     if (opts.taskType) ops.kind = await resolveTaskType(client, opts.taskType)
+    else if (opts.kind) {
+      // HULY-8: --kind <ref> lets power users select any TaskType. Same
+      // validation as --task-type but skips the by-name lookup. Mirrors
+      // the --kind branch in createIssue.
+      ops.kind = await resolveKindByRef(client, opts.kind)
+    }
+    if (opts.due !== undefined) {
+      // HULY-8: --due <iso> on update, mirroring createIssue (line 779).
+      // Empty string clears the due date; ISO string sets it; undefined
+      // (flag absent) leaves the existing due date untouched.
+      ops.dueDate = opts.due === '' ? null : parseDate(opts.due, '--due')
+    }
+    // HULY-8: --label replaces the labels array, matching issue create.
+    // Use 'issue label add' / 'issue label remove' for additive/subtractive
+    // semantics — those go through the TagReference collection, not this
+    // direct field set. Filter empty/whitespace entries so `--label ""` and
+    // accidental `--label "  "` don't silently create bogus tags on the issue.
+    if (opts.label !== undefined) {
+      const cleaned = opts.label.map((l) => l.trim()).filter((l) => l.length > 0)
+      if (cleaned.length > 0) ops.labels = cleaned
+      else if (opts.label.length > 0)
+        // All entries were blank — user clearly meant "no labels". Surface
+        // that intent rather than silently no-op'ing (which would mislead the
+        // "nothing to update" guard below).
+        ops.labels = []
+    }
 
     // --minimal means "I know what I'm doing with --set/--unset, don't
     // second-guess me." It only suppresses the empty-ops guard below,
     // so a minimal but explicit --set still sends through. Was previously
     // a dead flag; now actually does something safe.
-    if (Object.keys(ops).length === 0 && !markupUpdated && !opts.minimal) {
+    if (Object.keys(ops).length === 0 && !markupRequested && !opts.minimal) {
       throw new CliError(
         ExitCode.Validation,
         'nothing to update',
-        'pass --set/--unset, --status, --priority, --assignee, --title, --description, --task-type, or --kind (with --status-category to pick a workflow stage)',
+        'pass --set/--unset, --status, --priority, --assignee, --title, --description, --body, --body-file, --task-type, --kind, --due, or --label (with --status-category to pick a workflow stage)',
       )
     }
 
@@ -1176,12 +1205,24 @@ export async function updateIssue(
       console.log(`would update issue ${issue.identifier} (${issue._id}):`)
       console.log(
         JSON.stringify(
-          { _class: CLASS.Issue, objectId: issue._id, space: issue.space, ops, markupUpdated },
+          { _class: CLASS.Issue, objectId: issue._id, space: issue.space, ops, markupRequested },
           null,
           2,
         ),
       )
       return
+    }
+
+    if (markupRequested) {
+      await updateMarkup(
+        client,
+        CLASS.Issue as Ref<Class<Doc>>,
+        issue._id as Ref<Doc>,
+        'description',
+        markupBody,
+        'markup',
+      )
+      markupUpdated = true
     }
 
     const hasOps = Object.keys(ops).length > 0

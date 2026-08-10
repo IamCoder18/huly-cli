@@ -698,6 +698,7 @@ export async function updateEvent(
   opts: {
     title?: string
     description?: string
+    body?: string
     start?: string
     end?: string
     allDay?: boolean
@@ -720,7 +721,10 @@ export async function updateEvent(
     if (!doc) throw new CliError(ExitCode.NotFound, `event ${ref} not found`)
     const ops: Record<string, unknown> = {}
     if (opts.title) ops.title = opts.title
-    if (opts.description !== undefined) ops.description = opts.description
+    // HULY-8: --body takes precedence over --description, mirroring createEvent
+    // (`description: opts.description ?? opts.body ?? ''`, line 629).
+    if (opts.body !== undefined) ops.description = opts.body
+    else if (opts.description !== undefined) ops.description = opts.description
     if (opts.start) {
       const sd = parseDate(opts.start, '--start')
       ops.startDate = sd
@@ -737,7 +741,7 @@ export async function updateEvent(
       throw new CliError(
         ExitCode.Validation,
         'nothing to update',
-        'pass --title/--description/--start/--end/--all-day/--location/--attendee',
+        'pass --title/--description/--body/--start/--end/--all-day/--location/--attendee',
       )
     if (opts.dryRun) {
       console.log(`would update event ${id}:`)
