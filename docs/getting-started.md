@@ -198,9 +198,9 @@ agent will install the CLI and prompt you to configure credentials.
 ### Skill source
 
 The canonical source for the skill lives in this repo at
-[`packages/huly-skill/SKILL.md`](https://github.com/IamCoder18/huly-cli/blob/main/packages/huly-skill/SKILL.md),
+[`skills/huly/SKILL.md`](https://github.com/IamCoder18/huly-cli/blob/main/skills/huly/SKILL.md),
 with per-surface deep dives under
-[`packages/huly-skill/references/`](https://github.com/IamCoder18/huly-cli/blob/main/packages/huly-skill/references).
+[`skills/huly/references/`](https://github.com/IamCoder18/huly-cli/blob/main/skills/huly/references).
 It is published in lockstep with the CLI.
 
 ---

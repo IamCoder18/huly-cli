@@ -1,5 +1,5 @@
 ---
-name: huly-cli
+name: huly
 description: Drive a self-hosted Huly workspace through the `huly` CLI — issues, projects, cards, documents, calendars, channels, DMs, actions/todos, time tracking, notifications, and approvals. Use this skill for project tracking, time management, or anything that required interfacing with Huly.
 ---
 
