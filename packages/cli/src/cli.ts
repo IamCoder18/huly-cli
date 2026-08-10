@@ -980,7 +980,15 @@ assignee's open todos (doneOn=now) and creates a new ProjectToDo for the
 new assignee. Changing --status to Done/Canceled closes all open todos on
 the issue. Changing --status to Todo/Active on an issue with no todos and
 an assignee creates the first todo. Changing --title propagates to
-parentTitle on every sub-issue.`,
+parentTitle on every sub-issue.
+
+Defaults & auto-creation:
+  --priority   If the workspace has zero TypeIssuePriority records AND
+               opinionated defaults are ON, the 5 platform priorities
+               (Urgent/High/Medium/Low/NoPriority) are seeded into
+               core:space:Model before resolution. Suppress with --minimal
+               or HULY_OPINIONATED=0. --dry-run never persists.
+  Aliases accepted: 'Normal' -> 'Medium', 'None' -> 'NoPriority'.`,
     )
     .action(async (ref, opts, cmd) => {
       try {

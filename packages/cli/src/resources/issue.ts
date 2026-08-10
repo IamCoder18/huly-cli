@@ -241,12 +241,15 @@ async function resolveStatusByCategory(
 // `defaultPriorities`). The CLI's --priority help used to advertise
 // `Normal | None` (CLI-only aliases) — these still resolve via the
 // PRIORITY_ALIASES map below for backward compatibility.
-const PRIORITY_DEFAULTS: Array<{ label: string; rank: string }> = [
-  { label: 'Urgent', rank: '0|a0000:' },
-  { label: 'High', rank: '1|a0000:' },
-  { label: 'Medium', rank: '2|a0000:' },
-  { label: 'Low', rank: '3|a0000:' },
-  { label: 'NoPriority', rank: '4|a0000:' },
+// Each entry also carries a deterministic `_id` so re-seeding is a no-op
+// (the platform rejects duplicate _id, and any in-flight race between
+// two concurrent CLI invocations resolves to the same single record).
+const PRIORITY_DEFAULTS: Array<{ _id: string; label: string; rank: string }> = [
+  { _id: 'tracker:priority:Urgent', label: 'Urgent', rank: '0|a0000:' },
+  { _id: 'tracker:priority:High', label: 'High', rank: '1|a0000:' },
+  { _id: 'tracker:priority:Medium', label: 'Medium', rank: '2|a0000:' },
+  { _id: 'tracker:priority:Low', label: 'Low', rank: '3|a0000:' },
+  { _id: 'tracker:priority:NoPriority', label: 'NoPriority', rank: '4|a0000:' },
 ]
 
 // Aliases accepted on the CLI surface but normalized to platform labels
@@ -257,12 +260,12 @@ const PRIORITY_ALIASES: Record<string, string> = {
   none: 'NoPriority',
 }
 
-function normalizePriorityInput(raw: string): string {
+export function normalizePriorityInput(raw: string): string {
   const lower = raw.toLowerCase()
   return PRIORITY_ALIASES[lower] ?? raw
 }
 
-const findPriorityHit = (
+export const findPriorityHit = (
   all: Array<Doc & { label?: string; name?: string }>,
   target: string,
 ): (Doc & { _id: Ref<Doc> }) | undefined =>
@@ -271,34 +274,44 @@ const findPriorityHit = (
   )
 
 /**
- * Seed the 5 classic IssuePriority records into DOMAIN_MODEL. Idempotent —
- * createDoc on an existing _id returns the existing ref, and any per-doc
- * failure (local-model routing issue, already-exists) is swallowed.
+ * Seed the 5 classic IssuePriority records into DOMAIN_MODEL. Idempotent
+ * because every record carries a deterministic `_id` — if the platform
+ * already has a record with that id the createDoc call fails with a
+ * duplicate-id error which we swallow. Concurrent CLI invocations on the
+ * same empty-enum workspace both submit the same 5 ids; the second is
+ * rejected and ends up no-op. Any other failure (local model routing,
+ * attached-doc misconception, transport) is also swallowed so the
+ * self-heal path never breaks a real write.
  *
  * HULY-7: workspaces created with `INIT_REPO_DIR=/no-init-scripts` skip the
  * default-content init scripts, leaving TypeIssuePriority empty. Seeding
- * here is the self-healing path. Gated by `--minimal` / `HULY_OPINIONATED=0`
- * like every other opinionated default in this CLI.
+ * here is the self-healing path. Gated by `--minimal` /
+ * `HULY_OPINIONATED=0` like every other opinionated default in this CLI,
+ * and skipped entirely during `--dry-run`.
  */
-async function seedDefaultPriorities(client: PlatformClient): Promise<void> {
+export async function seedDefaultPriorities(client: PlatformClient): Promise<void> {
   for (const p of PRIORITY_DEFAULTS) {
     try {
       await client.createDoc(
         CLASS.TypeIssuePriority as Ref<Class<Doc>>,
         'core:space:Model' as Ref<Space>,
         { name: p.label, label: p.label, rank: p.rank } as any,
+        p._id as Ref<Doc>,
       )
     } catch {
-      // ignore — local model routing failure, attached-doc misconception,
-      // or already-exists (model-upgrade tx beat us to it)
+      // ignore — duplicate id (idempotent re-seed), local model routing
+      // failure, attached-doc misconception, or transport error. The
+      // outer caller will re-query and either find the seeded record
+      // (created by a concurrent caller or a model-upgrade tx) or fall
+      // through to its own CLI-13 error path.
     }
   }
 }
 
-async function resolvePriority(
+export async function resolvePriority(
   client: PlatformClient,
   name?: string,
-  opts?: { minimal?: boolean },
+  opts?: { minimal?: boolean; dryRun?: boolean },
 ): Promise<Ref<Doc> | undefined> {
   // TypeIssuePriority lives in DOMAIN_MODEL. The CLI's local model is incomplete
   // so both client.findAll (local model) and conn.findAll (server may not have
@@ -318,13 +331,14 @@ async function resolvePriority(
     const r = await client.findAll(CLASS.TypeIssuePriority as Ref<Class<Doc>>, {})
     return r as unknown as Array<Doc & { label?: string; name?: string }>
   }
+  const canSeed = !opts?.minimal && !opts?.dryRun && isOpinionated()
   // CLI-13: explicit --priority always needs a match. When the enum is
   // empty AND the user is in opinionated mode, auto-seed before throwing.
   if (name) {
     const normalized = normalizePriorityInput(name)
     let all = await queryAll()
     let hit = findPriorityHit(all, normalized)
-    if (!hit && all.length === 0 && !opts?.minimal && isOpinionated()) {
+    if (!hit && all.length === 0 && canSeed) {
       await seedDefaultPriorities(client)
       all = await queryAll()
       hit = findPriorityHit(all, normalized)
@@ -340,21 +354,23 @@ async function resolvePriority(
 
   // Implicit (no --priority). Prefer Medium (the platform default), falling
   // back to first available. If the enum is empty and opinionated mode is
-  // on, seed and try again; otherwise omit the field entirely.
-  const all = await queryAll()
-  const medium = all.find((p) => p.label === 'Medium' || p.label === 'Normal')
+  // on (and not dry-run), seed and try again; otherwise omit the field
+  // entirely.
+  let all = await queryAll()
+  let medium = findPriorityHit(all, 'Medium') ?? findPriorityHit(all, 'Normal')
   if (medium) return medium._id
   if (all.length > 0) return all[0]._id
-  if (!opts?.minimal && isOpinionated()) {
+  if (canSeed) {
     await seedDefaultPriorities(client)
-    const reseeded = await queryAll()
-    const seededMedium = reseeded.find((p) => p.label === 'Medium' || p.label === 'Normal')
-    if (seededMedium) return seededMedium._id
-    if (reseeded.length > 0) return reseeded[0]._id
+    all = await queryAll()
+    medium = findPriorityHit(all, 'Medium') ?? findPriorityHit(all, 'Normal')
+    if (medium) return medium._id
+    if (all.length > 0) return all[0]._id
   }
-  // No priorities and no migration. Skip priority — the issue will be created
-  // without a priority field (workspaces without migration have no priorities
-  // but can still create issues via direct tx).
+  // No priorities and no migration (or opinionated defaults disabled or
+  // dry-run). Skip priority — the issue will be created without a priority
+  // field (workspaces without migration have no priorities but can still
+  // create issues via direct tx).
   return undefined
 }
 
@@ -755,7 +771,10 @@ export async function createIssue(opts: IssueCreateOpts): Promise<void> {
                 }
               })()
             : await resolveStatus(client, project, opts.status)
-    const priority = await resolvePriority(client, opts.priority, { minimal: opts.minimal })
+    const priority = await resolvePriority(client, opts.priority, {
+      minimal: opts.minimal,
+      dryRun: opts.dryRun,
+    })
     const body = await readBody(opts)
     const dueDate = opts.due ? parseDate(opts.due, '--due') : null
 
@@ -1114,7 +1133,7 @@ export async function updateIssue(
     else if (opts.statusCategory)
       ops.status = await resolveStatusByCategory(client, project, opts.statusCategory)
     if (opts.priority) {
-      const p = await resolvePriority(client, opts.priority, { minimal: opts.minimal })
+      const p = await resolvePriority(client, opts.priority, { minimal: opts.minimal, dryRun: opts.dryRun })
       if (p !== undefined) ops.priority = p
     }
     if (opts.assignee)
