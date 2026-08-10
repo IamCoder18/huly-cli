@@ -3,21 +3,14 @@
   "version": "1.0.3",
   "description": "AI-agent-first CLI for self-hosted Huly. Automate issues, projects, channels, docs, calendar & time tracking — no browser, no MCP, no Playwright.",
   "keywords": [
-    "agent-skills",
-    "ai-agent",
-    "cli",
-    "headless",
     "huly",
-    "huly-api",
     "huly-cli",
-    "huly-client",
-    "huly-mcp",
-    "huly-sdk",
+    "cli",
+    "ai-agent",
+    "self-hosted",
     "issue-tracker",
-    "mcp-server",
-    "openclaw",
-    "project-management",
-    "self-hosted"
+    "skill",
+    "openclaw"
   ],
   "homepage": "https://github.com/IamCoder18/huly-cli#readme",
   "bugs": {
