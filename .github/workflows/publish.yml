@@ -209,8 +209,8 @@ jobs:
       - name: Write ClawHub config
         # The clawhub CLI reads its registry URL and auth token from a JSON
         # config file at the path in $CLAWHUB_CONFIG_PATH (see
-        # packages/clawhub/src/config.ts). Writing it here means the publish
-        # step itself does not need to inline the token.
+        # clawhub-source/packages/clawhub/src/config.ts). Writing it here means
+        # the publish step itself does not need to inline the token.
         env:
           CLAWHUB_TOKEN: ${{ secrets.CLAWHUB_TOKEN }}
         run: |
