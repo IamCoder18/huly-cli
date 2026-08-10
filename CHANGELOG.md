@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`huly issue create` / `issue update` auto-seed the 5 platform `TypeIssuePriority`
+  records (HULY-7).** When the workspace has zero `tracker:class:TypeIssuePriority`
+  entries (e.g. self-hosted installs created with `INIT_REPO_DIR=/no-init-scripts`
+  in the `workspace` service), `resolvePriority` now seeds
+  `Urgent / High / Medium / Low / NoPriority` into `core:space:Model` before
+  resolving `--priority`. Self-healing. Gated by `--minimal` /
+  `HULY_OPINIONATED=0` (the existing opinionated-defaults master switch).
+  Aliases `--priority Normal` → `Medium` and `--priority None` →
+  `NoPriority` are accepted for backward compatibility with the old
+  `--priority` help text. Verified against `huly.aaravlabs.com` (workspace
+  `Life`): auto-seeded all 5 priorities, `--priority High` resolved,
+  `--priority Normal` resolved to `Medium`, `issue update --priority
+  Urgent` updated correctly, `--minimal` still throws CLI-13 on bogus
+  names.
 - **`huly signup`** — new command to create an account on the Huly server.
   Accepts `--headless` (use env vars only, no prompts) and `--create-workspace
   <name>` to create a workspace as part of signup. The interactive mode prompts

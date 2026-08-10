@@ -891,7 +891,10 @@ Examples:
     .option('--body-file <path>')
     .option('--status <name>')
     .option('--status-category <c>', 'UnStarted | ToDo | Active | Won | Lost')
-    .option('--priority <p>', 'Urgent | High | Normal | Low | None')
+    .option(
+      '--priority <p>',
+      'Urgent | High | Medium | Low | NoPriority  (aliases: Normal→Medium, None→NoPriority)',
+    )
     .option('--assignee <email>', 'must be a workspace member')
     .option('--label <l...>', 'repeatable: --label bug --label auth')
     .option('--due <iso>', 'ISO 8601 e.g. 2026-07-01T14:00:00Z')
@@ -909,8 +912,9 @@ Examples:
       --due 2026-08-01T00:00:00Z
   $ huly issue create --project TSK --title "Sub-task" --parent TSK-5
 
-Required: --project, --title. Valid priority values: Urgent, High, Normal,
-Low, None. Assignee must be a workspace member.
+Required: --project, --title. Valid priority values: Urgent, High, Medium,
+Low, NoPriority (aliases 'Normal' -> 'Medium' and 'None' -> 'NoPriority' are
+accepted for backward compatibility). Assignee must be a workspace member.
 
 Side effects: in a classic project (Tracker default), setting --assignee on
 an issue in status category Todo or Active auto-creates a ProjectToDo for the
@@ -920,7 +924,12 @@ trigger fires on the category, not the literal name.
 
 Defaults & auto-creation:
   --status   lowest-rank IssueStatus (Backlog) if omitted
-  --priority 'Normal' if it exists, else first available priority, else omitted
+  --priority 'Medium' (alias 'Normal') if it exists, else first available
+              priority, else omitted. If the workspace has zero priority
+              records AND opinionated defaults are ON, the 5 platform
+              priorities (Urgent/High/Medium/Low/NoPriority) are seeded into
+              core:space:Model before resolution. Pass --minimal or set
+              HULY_OPINIONATED=0 to suppress this auto-seed.
   --task-type 'tracker:issue:default' if omitted
   parent     null (top-level) unless --minimal
   space      project._id unless --minimal
@@ -947,7 +956,10 @@ behaviors and smart defaults' in README.md for full resolution order.`,
     .option('--unset <key...>')
     .option('--status <name>')
     .option('--status-category <c>', 'UnStarted | ToDo | Active | Won | Lost')
-    .option('--priority <p>', 'Urgent | High | Normal | Low | None')
+    .option(
+      '--priority <p>',
+      'Urgent | High | Medium | Low | NoPriority  (aliases: Normal→Medium, None→NoPriority)',
+    )
     .option('--assignee <email>')
     .option('--title <t>')
     .option('--description <text>')
