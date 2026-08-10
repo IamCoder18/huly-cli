@@ -963,7 +963,18 @@ behaviors and smart defaults' in README.md for full resolution order.`,
     .option('--assignee <email>')
     .option('--title <t>')
     .option('--description <text>')
+    .option('--body <md>')
+    .option('--body-file <path>')
     .option('--task-type <name|id>')
+    .option('--kind <ref>', 'TaskType ref (e.g. tracker:taskTypes:Issue); power-user bypass of name lookup')
+    .option(
+      '--due <iso>',
+      'ISO 8601 e.g. 2026-07-01T14:00:00Z; pass an empty string ("") to clear an existing due date',
+    )
+    .option(
+      '--label <l...>',
+      'repeatable: --label bug --label auth (replaces existing labels); use --unset labels to clear all',
+    )
     .addHelpText(
       'after',
       `
@@ -972,8 +983,15 @@ Examples:
   $ huly issue update TSK-1 --description "Updated text"
   $ huly issue update TSK-1 --set priority=High --set assignee=bob@example.com
   $ huly issue update TSK-1 --set description=null  # clear field
+  $ huly issue update TSK-1 --label bug --label p1   # set labels (replaces)
+  $ huly issue update TSK-1 --due 2026-09-01T00:00:00Z
+  $ huly issue update TSK-1 --body-file ./updated-spec.md
 
-Pass any combination of --status/--priority/--assignee/--title/--description/--set.
+Pass any combination of --status/--priority/--assignee/--title/--description/--body/--body-file/--label/--due/--task-type/--kind/--set.
+
+For adding/removing labels without replacing the existing list, use the
+subcommands: 'huly issue label add <ref> --label <name>' and
+'huly issue label remove <ref> --label <name>'.
 
 Side effects (classic projects): changing --assignee closes the previous
 assignee's open todos (doneOn=now) and creates a new ProjectToDo for the
@@ -1322,6 +1340,7 @@ Examples:
     .option('--title <t>')
     .option('--description <text>')
     .option('--body <md>')
+    .option('--body-file <path>')
     .action(async (ref, opts, cmd) => {
       try {
         await updateIssueTemplate(ref, { ...opts, ...globalsFrom(cmd) })
@@ -2124,6 +2143,26 @@ exact email or full name — e.g. '--owner alice@example.com' or
     .option('--priority <p>')
     .option('--visibility <v>')
     .option('--owner <email>')
+    .option('--attached-to <ref>', 'NOT YET SUPPORTED — would reparent the task; throws on use')
+    .option(
+      '--attached-to-class <class>',
+      'class id; use tracker:class:Issue to attach to an issue. Required with --attached-to. NOT YET SUPPORTED.',
+    )
+    .addHelpText(
+      'after',
+      `
+Note on --attached-to / --attached-to-class:
+  Passing these to 'action update' is rejected. Reparenting would need a
+  'removeCollection' on the old parent + 'addCollection' on the new parent,
+  and WorkSlots attached to the task would need to be migrated too. Until
+  that gets a dedicated 'action move' subcommand, reparent by deleting the
+  task and recreating it under the new parent:
+      huly action delete <ref> --yes
+      huly action create --attached-to <ref> --attached-to-class <class> ...
+
+  Caveat: delete + recreate issues a NEW _id. Any references to the old task
+  id (e.g. in issues, comments, time entries) will need to be updated manually.`,
+    )
     .action(async (ref, opts, cmd) => {
       try {
         await updateAction(ref, { ...opts, ...globalsFrom(cmd) })
@@ -2539,6 +2578,7 @@ To fetch a calendar (the container, not an event inside it), use
     .description('Update an event')
     .option('--title <t>')
     .option('--description <text>')
+    .option('--body <md>')
     .option('--start <iso>')
     .option('--end <iso>')
     .option('--all-day')
