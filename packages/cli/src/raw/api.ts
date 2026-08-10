@@ -42,10 +42,10 @@ export async function apiCommand(method: string, path: string, opts: ApiOpts = {
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    ...parseKv(opts.header)
+    ...parseKv(opts.header),
   }
 
-  const token = opts.token ?? env.token ?? await resolveToken({ url }).catch(() => undefined)
+  const token = opts.token ?? env.token ?? (await resolveToken({ url }).catch(() => undefined))
   if (token) headers['Authorization'] = `Bearer ${token}`
 
   const init: RequestInit = { method, headers }
@@ -69,9 +69,17 @@ export async function apiCommand(method: string, path: string, opts: ApiOpts = {
     }
   }
   if (res.status >= 400) {
-    handleError(new CliError(
-      res.status >= 500 ? ExitCode.Server : res.status === 401 || res.status === 403 ? ExitCode.Auth : res.status === 429 ? ExitCode.RateLimited : ExitCode.Generic,
-      `HTTP ${res.status} ${res.statusText}`
-    ))
+    handleError(
+      new CliError(
+        res.status >= 500
+          ? ExitCode.Server
+          : res.status === 401 || res.status === 403
+            ? ExitCode.Auth
+            : res.status === 429
+              ? ExitCode.RateLimited
+              : ExitCode.Generic,
+        `HTTP ${res.status} ${res.statusText}`,
+      ),
+    )
   }
 }

@@ -49,7 +49,7 @@ export function readEnv(env: NodeJS.ProcessEnv = process.env): HulyEnv {
     project: env.HULY_PROJECT,
     teamspace: env.HULY_TEAMSPACE,
     firstName: env.HULY_FIRST_NAME,
-    lastName: env.HULY_LAST_NAME
+    lastName: env.HULY_LAST_NAME,
   }
 }
 
@@ -61,7 +61,11 @@ export function readEnv(env: NodeJS.ProcessEnv = process.env): HulyEnv {
  */
 export function requireUrl(url: string | undefined): string {
   if (!url || url.trim() === '') {
-    throw new CliError(ExitCode.Validation, 'HULY_URL is required', 'pass --url <server> or set HULY_URL in your env')
+    throw new CliError(
+      ExitCode.Validation,
+      'HULY_URL is required',
+      'pass --url <server> or set HULY_URL in your env',
+    )
   }
   return url
 }
@@ -147,7 +151,9 @@ export function applyInsecureTLS(): void {
   process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
   try {
     https.globalAgent.options.rejectUnauthorized = false
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 }
 
 export function isHttp(env: NodeJS.ProcessEnv = process.env): boolean {

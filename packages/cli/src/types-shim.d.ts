@@ -16,16 +16,53 @@ declare module '@hcengineering/api-client' {
   export interface PlatformClient {
     getHierarchy(): any
     getModel(): any
-    getAccount(): Promise<{ uuid: string; role: string; primarySocialId?: string; socialIds?: string[]; fullSocialIds?: any[]; person?: string }>
+    getAccount(): Promise<{
+      uuid: string
+      role: string
+      primarySocialId?: string
+      socialIds?: string[]
+      fullSocialIds?: any[]
+      person?: string
+    }>
     close(): Promise<void>
     findOne<T = any>(_class: any, query: any, options?: any): Promise<T | undefined>
     findAll<T = any>(_class: any, query: any, options?: any): Promise<T[]>
     createDoc<T = any>(_class: any, space: any, attributes: any, id?: any): Promise<string>
-    updateDoc<T = any>(_class: any, space: any, objectId: any, operations: any, retrieve?: boolean): Promise<any>
+    updateDoc<T = any>(
+      _class: any,
+      space: any,
+      objectId: any,
+      operations: any,
+      retrieve?: boolean,
+    ): Promise<any>
     removeDoc<T = any>(_class: any, space: any, objectId: any): Promise<any>
-    addCollection<T = any, P = any>(_class: any, space: any, attachedTo: any, attachedToClass: any, collection: any, attributes: any, id?: any): Promise<string>
-    updateCollection<T = any, P = any>(_class: any, space: any, objectId: any, attachedTo: any, attachedToClass: any, collection: any, operations: any, retrieve?: boolean): Promise<any>
-    removeCollection<T = any, P = any>(_class: any, space: any, objectId: any, attachedTo: any, attachedToClass: any, collection: any): Promise<any>
+    addCollection<T = any, P = any>(
+      _class: any,
+      space: any,
+      attachedTo: any,
+      attachedToClass: any,
+      collection: any,
+      attributes: any,
+      id?: any,
+    ): Promise<string>
+    updateCollection<T = any, P = any>(
+      _class: any,
+      space: any,
+      objectId: any,
+      attachedTo: any,
+      attachedToClass: any,
+      collection: any,
+      operations: any,
+      retrieve?: boolean,
+    ): Promise<any>
+    removeCollection<T = any, P = any>(
+      _class: any,
+      space: any,
+      objectId: any,
+      attachedTo: any,
+      attachedToClass: any,
+      collection: any,
+    ): Promise<any>
     createMixin(...args: any[]): Promise<any>
     updateMixin(...args: any[]): Promise<any>
     fetchMarkup(_class: any, id: any, attr: string, markup: MarkupRef, format: MarkupFormat): Promise<string>
@@ -108,7 +145,11 @@ declare module '@hcengineering/account-client' {
   export interface AccountClient {
     getProviders(): Promise<any[]>
     getUserWorkspaces(): Promise<WorkspaceInfoWithStatus[]>
-    selectWorkspace(workspaceUrl: string, kind?: string, externalRegions?: string[]): Promise<WorkspaceLoginInfo>
+    selectWorkspace(
+      workspaceUrl: string,
+      kind?: string,
+      externalRegions?: string[],
+    ): Promise<WorkspaceLoginInfo>
     login(email: string, password: string): Promise<LoginInfo>
     getSocialIds(includeDeleted?: boolean): Promise<SocialId[]>
     findPersonBySocialKey(socialKey: string, requireAccount?: boolean): Promise<string | undefined>

@@ -35,7 +35,10 @@ export async function listWorkspaces(g: GlobalOpts = {}): Promise<void> {
     return
   }
 
-  table(workspaces as unknown as Record<string, unknown>[], COLUMNS.workspace(), { count: true, title: 'workspaces' })
+  table(workspaces as unknown as Record<string, unknown>[], COLUMNS.workspace(), {
+    count: true,
+    title: 'workspaces',
+  })
 }
 
 export async function currentWorkspace(g: GlobalOpts = {}): Promise<void> {
@@ -60,7 +63,7 @@ export async function useWorkspace(name: string, g: GlobalOpts = {}): Promise<vo
     throw new CliError(
       ExitCode.Validation,
       'cannot `workspace use` while --workspace/HULY_WORKSPACE is set',
-      'unset HULY_WORKSPACE or pass --workspace explicitly per command'
+      'unset HULY_WORKSPACE or pass --workspace explicitly per command',
     )
   }
   await writeActiveWorkspace(name)
@@ -82,7 +85,7 @@ export async function createWorkspace(opts: {
     throw new CliError(
       ExitCode.Validation,
       'creating a workspace is destructive',
-      'pass --yes to confirm; or use `huly workspace create --name <n> --region <r> --yes`'
+      'pass --yes to confirm; or use `huly workspace create --name <n> --region <r> --yes`',
     )
   }
   if (opts.dryRun) {
@@ -93,7 +96,7 @@ export async function createWorkspace(opts: {
   const result = await withSpinner(
     `Creating workspace "${opts.name}"…`,
     () => ac.createWorkspace(opts.name!, opts.region),
-    opts
+    opts,
   )
   if (shouldJson({ json: opts.json, ci: opts.ci })) {
     json(result)
@@ -119,13 +122,17 @@ export async function deleteWorkspace(opts: {
   const active = await readActiveWorkspace()
   const target = opts.name ?? opts.workspace ?? env.workspace ?? active
   if (!target) {
-    throw new CliError(ExitCode.Validation, 'no workspace resolved', 'pass --workspace, a positional name, or run `huly workspace use <n>` first')
+    throw new CliError(
+      ExitCode.Validation,
+      'no workspace resolved',
+      'pass --workspace, a positional name, or run `huly workspace use <n>` first',
+    )
   }
   if (!opts.force && target === (env.workspace ?? active)) {
     throw new CliError(
       ExitCode.Validation,
       `cannot delete workspace ${target} while it is the active --workspace/HULY_WORKSPACE`,
-      'unset HULY_WORKSPACE and run `huly workspace use <other>` first, or pass --force'
+      'unset HULY_WORKSPACE and run `huly workspace use <other>` first, or pass --force',
     )
   }
   if (!opts.yes) {
@@ -136,11 +143,7 @@ export async function deleteWorkspace(opts: {
     return
   }
   const ac = await connectAccountCli({ url: opts.url, workspace: target })
-  await withSpinner(
-    `Deleting workspace ${target}…`,
-    () => ac.deleteWorkspace(),
-    opts
-  )
+  await withSpinner(`Deleting workspace ${target}…`, () => ac.deleteWorkspace(), opts)
   console.log(`deleted workspace: ${target}`)
 }
 
@@ -161,7 +164,9 @@ export async function listMembers(g: GlobalOpts & { role?: string } = {}): Promi
   try {
     const me = await ac.getPerson().catch(() => null)
     myUuid = me?.uuid ?? null
-  } catch { /* best effort */ }
+  } catch {
+    /* best effort */
+  }
   const rows = filtered.map((m) => {
     const mAny = m as Record<string, unknown>
     const acc = mAny.account as Record<string, unknown> | undefined
@@ -172,39 +177,63 @@ export async function listMembers(g: GlobalOpts & { role?: string } = {}): Promi
     // email/name. Fall back to the cached login email ONLY when the uuid
     // matches the operator (otherwise we'd leak the caller's email to every
     // member whose uuid is non-null but not equal to self).
-    const uuid = (acc?.uuid as string | undefined) ?? (mAny.person as string | undefined) ?? (mAny._id as string | undefined) ?? null
+    const uuid =
+      (acc?.uuid as string | undefined) ??
+      (mAny.person as string | undefined) ??
+      (mAny._id as string | undefined) ??
+      null
     const isSelf = myUuid !== null && uuid !== null && uuid === myUuid
     const finalEmail = email ?? (isSelf && myEmail != null ? myEmail : null)
     return {
       name: fullName ?? finalEmail,
       role: (acc?.role as string | undefined) ?? (mAny.role as string | undefined) ?? null,
       email: finalEmail,
-      uuid
+      uuid,
     }
   })
   if (shouldJson({ json: g.json, ci: g.ci })) {
     json(rows)
     return
   }
-  table(rows as unknown as Record<string, unknown>[], [
-    { key: 'name', header: 'NAME', format: (r) => {
-      const n = (r as { name: string | null }).name
-      return n !== null ? C.emphasis(n) : C.muted('—')
-    } },
-    { key: 'email', header: 'EMAIL', format: (r) => {
-      const e = (r as { email: string | null }).email
-      return e !== null ? e : C.muted('—')
-    } },
-    { key: 'role', header: 'ROLE', format: (r) => {
-      const role = (r as { role: string | null }).role
-      if (role == null) return C.muted('—')
-      return role.toLowerCase() === 'owner' ? C.yellow(role) : C.muted(role)
-    } },
-    { key: 'uuid', header: 'UUID', format: (r) => {
-      const u = (r as { uuid: string | null }).uuid
-      return u !== null ? C.id(u.slice(0, 12) + '…') : C.muted('—')
-    } }
-  ], { count: true, title: 'members' })
+  table(
+    rows as unknown as Record<string, unknown>[],
+    [
+      {
+        key: 'name',
+        header: 'NAME',
+        format: (r) => {
+          const n = (r as { name: string | null }).name
+          return n !== null ? C.emphasis(n) : C.muted('—')
+        },
+      },
+      {
+        key: 'email',
+        header: 'EMAIL',
+        format: (r) => {
+          const e = (r as { email: string | null }).email
+          return e !== null ? e : C.muted('—')
+        },
+      },
+      {
+        key: 'role',
+        header: 'ROLE',
+        format: (r) => {
+          const role = (r as { role: string | null }).role
+          if (role == null) return C.muted('—')
+          return role.toLowerCase() === 'owner' ? C.yellow(role) : C.muted(role)
+        },
+      },
+      {
+        key: 'uuid',
+        header: 'UUID',
+        format: (r) => {
+          const u = (r as { uuid: string | null }).uuid
+          return u !== null ? C.id(u.slice(0, 12) + '…') : C.muted('—')
+        },
+      },
+    ],
+    { count: true, title: 'members' },
+  )
 }
 
 export async function updateMemberRole(opts: {
@@ -217,16 +246,25 @@ export async function updateMemberRole(opts: {
   dryRun?: boolean
 }): Promise<void> {
   if (!opts.target) throw new CliError(ExitCode.Validation, 'missing <account>')
-  if (!opts.role) throw new CliError(ExitCode.Validation, 'missing --role (Owner|Admin|Guest|DocGuest|ReadOnlyGuest)')
+  if (!opts.role)
+    throw new CliError(ExitCode.Validation, 'missing --role (Owner|Admin|Guest|DocGuest|ReadOnlyGuest)')
   const ROLE_MAP: Record<string, string> = {
-    owner: 'Owner', admin: 'Admin', guest: 'Guest', docguest: 'DocGuest',
-    readonlyguest: 'ReadOnlyGuest', read_only_guest: 'ReadOnlyGuest',
-    maintainer: 'Admin'
+    owner: 'Owner',
+    admin: 'Admin',
+    guest: 'Guest',
+    docguest: 'DocGuest',
+    readonlyguest: 'ReadOnlyGuest',
+    read_only_guest: 'ReadOnlyGuest',
+    maintainer: 'Admin',
   }
   const normalized = ROLE_MAP[opts.role.toLowerCase()] ?? opts.role
   const VALID = new Set(['Owner', 'Admin', 'Guest', 'ReadOnlyGuest', 'DocGuest'])
   if (!VALID.has(normalized)) {
-    throw new CliError(ExitCode.Validation, `invalid --role: ${opts.role}`, `expected one of ${[...VALID].join(' | ')}`)
+    throw new CliError(
+      ExitCode.Validation,
+      `invalid --role: ${opts.role}`,
+      `expected one of ${[...VALID].join(' | ')}`,
+    )
   }
   if (opts.dryRun) {
     console.log(`would set role=${normalized} for ${opts.target}`)
@@ -236,14 +274,18 @@ export async function updateMemberRole(opts: {
   await withSpinner(
     `Setting role=${normalized} for ${opts.target}…`,
     () => ac.updateWorkspaceRole(opts.target!, normalized),
-    opts
+    opts,
   )
   console.log(`updated member role: ${opts.target} → ${normalized}`)
 }
 
 export async function workspaceInfo(g: GlobalOpts = {}): Promise<void> {
   const ac = await connectAccountCli({ url: g.url, workspace: g.workspace })
-  const info = (await withSpinner('Fetching workspace info…', () => ac.getWorkspaceInfo(false), g)) as WorkspaceInfo
+  const info = (await withSpinner(
+    'Fetching workspace info…',
+    () => ac.getWorkspaceInfo(false),
+    g,
+  )) as WorkspaceInfo
   if (shouldJson({ json: g.json, ci: g.ci })) {
     json(info)
     return
@@ -253,7 +295,7 @@ export async function workspaceInfo(g: GlobalOpts = {}): Promise<void> {
     ['URL', info.url],
     ['UUID', info.uuid],
     ['Mode', info.mode ?? '—'],
-    ['Region', info.region ?? '—']
+    ['Region', info.region ?? '—'],
   ])
 }
 
@@ -271,11 +313,7 @@ export async function updateWorkspaceName(opts: {
     return
   }
   const ac = await connectAccountCli({ url: opts.url, workspace: opts.workspace })
-  await withSpinner(
-    `Renaming workspace to "${opts.name}"…`,
-    () => ac.updateWorkspaceName(opts.name!),
-    opts
-  )
+  await withSpinner(`Renaming workspace to "${opts.name}"…`, () => ac.updateWorkspaceName(opts.name!), opts)
   console.log(`renamed workspace: ${opts.name}`)
 }
 
@@ -292,7 +330,7 @@ export async function workspaceGuests(opts: {
     throw new CliError(
       ExitCode.Validation,
       'no flags given',
-      'pass --read-only true|false or --sign-up true|false to update guest settings'
+      'pass --read-only true|false or --sign-up true|false to update guest settings',
     )
   }
   if (opts.dryRun) {
@@ -305,7 +343,7 @@ export async function workspaceGuests(opts: {
     await withSpinner(
       `Setting allowReadOnlyGuests=${opts.readOnly}…`,
       () => ac.updateAllowReadOnlyGuests(Boolean(opts.readOnly)),
-      opts
+      opts,
     )
     console.log(`allowReadOnlyGuests=${opts.readOnly}`)
   }
@@ -313,7 +351,7 @@ export async function workspaceGuests(opts: {
     await withSpinner(
       `Setting allowGuestSignUp=${opts.signUp}…`,
       () => ac.updateAllowGuestSignUp(Boolean(opts.signUp)),
-      opts
+      opts,
     )
     console.log(`allowGuestSignUp=${opts.signUp}`)
   }
@@ -321,7 +359,7 @@ export async function workspaceGuests(opts: {
     throw new CliError(
       ExitCode.Validation,
       'no flags given',
-      'pass --read-only true|false or --sign-up true|false to update guest settings'
+      'pass --read-only true|false or --sign-up true|false to update guest settings',
     )
   }
 }
@@ -337,7 +375,8 @@ export async function createAccessLink(opts: {
   ci?: boolean
   dryRun?: boolean
 }): Promise<void> {
-  if (!opts.role) throw new CliError(ExitCode.Validation, 'missing --role (Guest|ReadOnlyGuest|DocGuest|Admin|Owner)')
+  if (!opts.role)
+    throw new CliError(ExitCode.Validation, 'missing --role (Guest|ReadOnlyGuest|DocGuest|Admin|Owner)')
   const options: Record<string, unknown> = {}
   if (opts.expHours !== undefined) options.expHours = opts.expHours
   if (opts.autoJoin !== undefined) options.autoJoin = opts.autoJoin
@@ -351,7 +390,7 @@ export async function createAccessLink(opts: {
   const result = await withSpinner(
     `Creating access link (role=${opts.role})…`,
     () => ac.createAccessLink(opts.role!, options),
-    opts
+    opts,
   )
   if (shouldJson({ json: opts.json, ci: opts.ci })) {
     json(result)
@@ -369,11 +408,23 @@ export async function listRegions(g: GlobalOpts = {}): Promise<void> {
     return
   }
   if (Array.isArray(regions)) {
-    table(regions as unknown as Record<string, unknown>[], [
-      { key: 'name', header: 'NAME', format: (r) => C.emphasis(String((r as { name: string }).name ?? '')) },
-      { key: 'region', header: 'REGION', format: (r) => C.muted(String((r as { region: string }).region ?? '')) },
-      { key: 'url', header: 'URL', format: (r) => C.id(String((r as { url: string }).url ?? '')) }
-    ], { count: true, title: 'regions' })
+    table(
+      regions as unknown as Record<string, unknown>[],
+      [
+        {
+          key: 'name',
+          header: 'NAME',
+          format: (r) => C.emphasis(String((r as { name: string }).name ?? '')),
+        },
+        {
+          key: 'region',
+          header: 'REGION',
+          format: (r) => C.muted(String((r as { region: string }).region ?? '')),
+        },
+        { key: 'url', header: 'URL', format: (r) => C.id(String((r as { url: string }).url ?? '')) },
+      ],
+      { count: true, title: 'regions' },
+    )
   } else {
     console.log(JSON.stringify(regions, null, 2))
   }

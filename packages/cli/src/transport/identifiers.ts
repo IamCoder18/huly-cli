@@ -68,7 +68,7 @@ export const CLASS = {
   Notification: 'notification:class:Notification' as const,
 
   // request (approvals)
-  Request: 'request:class:Request' as const
+  Request: 'request:class:Request' as const,
 } as const
 
 export const SPACE = {
@@ -77,7 +77,7 @@ export const SPACE = {
   PersonalTaskList: 'task:space:MyTasks' as const,
   DocumentRoot: 'document:space:Document' as const,
   CalendarPersonal: 'calendar:space:Personal' as const,
-  Contacts: 'contact:space:Contacts' as const
+  Contacts: 'contact:space:Contacts' as const,
 } as const
 
 export type ClassRef = (typeof CLASS)[keyof typeof CLASS]

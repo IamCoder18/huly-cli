@@ -23,36 +23,20 @@ function accountKey(host: string, workspace: string, accountUuid: string): strin
   return `${normalizeHost(host)}\n${workspace}\n${accountUuid}`
 }
 
-function isWorkspaceAccountKnownBootstrapped(
-  host: string,
-  workspace: string,
-  accountUuid: string
-): boolean {
+function isWorkspaceAccountKnownBootstrapped(host: string, workspace: string, accountUuid: string): boolean {
   return bootstrappedAccounts.has(accountKey(host, workspace, accountUuid))
 }
 
-function isWorkspaceAccountKnownAbsent(
-  host: string,
-  workspace: string,
-  accountUuid: string
-): boolean {
+function isWorkspaceAccountKnownAbsent(host: string, workspace: string, accountUuid: string): boolean {
   return unknownAccounts.has(accountKey(host, workspace, accountUuid))
 }
 
-function rememberWorkspaceAccountBootstrapped(
-  host: string,
-  workspace: string,
-  accountUuid: string
-): void {
+function rememberWorkspaceAccountBootstrapped(host: string, workspace: string, accountUuid: string): void {
   bootstrappedAccounts.add(accountKey(host, workspace, accountUuid))
   unknownAccounts.delete(accountKey(host, workspace, accountUuid))
 }
 
-function rememberWorkspaceAccountAbsent(
-  host: string,
-  workspace: string,
-  accountUuid: string
-): void {
+function rememberWorkspaceAccountAbsent(host: string, workspace: string, accountUuid: string): void {
   unknownAccounts.add(accountKey(host, workspace, accountUuid))
   bootstrappedAccounts.delete(accountKey(host, workspace, accountUuid))
 }
@@ -106,48 +90,52 @@ interface ConnectionAdapter {
       _class: string,
       space: string,
       attributes: Record<string, unknown>,
-      objectId?: string
+      objectId?: string,
     ) => unknown
     createTxUpdateDoc: (
       _class: string,
       space: string,
       objectId: string,
-      attributes: Record<string, unknown>
+      attributes: Record<string, unknown>,
     ) => unknown
     createTxCollectionCUD: (
       _class: string,
       objectId: string,
       space: string,
       collection: string,
-      tx: unknown
+      tx: unknown,
     ) => unknown
     createTxMixin: (
       objectId: string,
       objectClass: string,
       objectSpace: string,
       mixin: string,
-      attributes: Record<string, unknown>
+      attributes: Record<string, unknown>,
     ) => unknown
   }
 }
 
 function getConnection(client: PlatformClient): ConnectionAdapter {
-  const conn = (client as unknown as {
-    connection?: { tx: (tx: unknown) => Promise<unknown> }
-  }).connection
+  const conn = (
+    client as unknown as {
+      connection?: { tx: (tx: unknown) => Promise<unknown> }
+    }
+  ).connection
   if (conn?.tx === undefined) {
     throw new Error('platform client has no .connection.tx; bootstrap requires a connected transactor')
   }
-  const txFactory = (client as unknown as {
-    client?: {
-      txFactory?: {
-        createTxCreateDoc: ConnectionAdapter['txFactory']['createTxCreateDoc']
-        createTxUpdateDoc: ConnectionAdapter['txFactory']['createTxUpdateDoc']
-        createTxCollectionCUD: ConnectionAdapter['txFactory']['createTxCollectionCUD']
-        createTxMixin: ConnectionAdapter['txFactory']['createTxMixin']
+  const txFactory = (
+    client as unknown as {
+      client?: {
+        txFactory?: {
+          createTxCreateDoc: ConnectionAdapter['txFactory']['createTxCreateDoc']
+          createTxUpdateDoc: ConnectionAdapter['txFactory']['createTxUpdateDoc']
+          createTxCollectionCUD: ConnectionAdapter['txFactory']['createTxCollectionCUD']
+          createTxMixin: ConnectionAdapter['txFactory']['createTxMixin']
+        }
       }
     }
-  }).client?.txFactory
+  ).client?.txFactory
   if (txFactory === undefined) {
     throw new Error('platform client has no .client.txFactory; bootstrap requires TxFactory access')
   }
@@ -165,16 +153,14 @@ function deriveName(fullSocialIds: Array<Record<string, unknown>>): string {
   // social id value, then empty. The UI gets names from the global account
   // Person which we don't have here without an extra account-pod round trip.
   const email = fullSocialIds.find(
-    (s) => s.type === 'email' && (s.isDeleted === undefined || s.isDeleted === false)
+    (s) => s.type === 'email' && (s.isDeleted === undefined || s.isDeleted === false),
   )
   const emailVal = email?.value
   if (typeof emailVal === 'string' && emailVal.length > 0) {
     const at = emailVal.indexOf('@')
     return at > 0 ? emailVal.slice(0, at) : emailVal
   }
-  const first = fullSocialIds.find(
-    (s) => s.isDeleted === undefined || s.isDeleted === false
-  )
+  const first = fullSocialIds.find((s) => s.isDeleted === undefined || s.isDeleted === false)
   const firstVal = first?.value
   return typeof firstVal === 'string' ? firstVal : ''
 }
@@ -199,7 +185,7 @@ export async function bootstrapEmployee(args: BootstrapArgs): Promise<BootstrapR
   } catch (err) {
     return {
       state: 'skipped',
-      reason: `getAccount failed: ${err instanceof Error ? err.message : String(err)}`
+      reason: `getAccount failed: ${err instanceof Error ? err.message : String(err)}`,
     }
   }
   if (account === undefined || account.uuid === undefined || account.uuid === '') {
@@ -234,7 +220,7 @@ export async function bootstrapEmployee(args: BootstrapArgs): Promise<BootstrapR
 
 async function bootstrapFromAccount(
   args: BootstrapArgs,
-  account: NonNullable<Awaited<ReturnType<PlatformClient['getAccount']>>>
+  account: NonNullable<Awaited<ReturnType<PlatformClient['getAccount']>>>,
 ): Promise<BootstrapResult> {
   if (!isWorkspaceAccountKnownAbsent(args.url, args.workspace, account.uuid)) {
     const file = await loadBootstrap()
@@ -242,8 +228,7 @@ async function bootstrapFromAccount(
     // marker under the same workspace must NOT short-circuit this
     // account's bootstrap.
     const hostKey = normalizeHost(args.url)
-    const accountHasMarker =
-      file[hostKey]?.[args.workspace]?.[account.uuid] !== undefined
+    const accountHasMarker = file[hostKey]?.[args.workspace]?.[account.uuid] !== undefined
     if (accountHasMarker) {
       rememberWorkspaceAccountBootstrapped(args.url, args.workspace, account.uuid)
       return { state: 'already-bootstrapped' }
@@ -274,10 +259,9 @@ async function bootstrapFromAccount(
     // the account's social id refs, then pick the first attachedTo.
     const socialIdRefs = Array.isArray(account.socialIds) ? account.socialIds : []
     if (socialIdRefs.length > 0) {
-      const foundSids = await args.client.findAll<{ attachedTo?: string }>(
-        CLASS.SocialIdentity,
-        { _id: { $in: socialIdRefs } }
-      )
+      const foundSids = await args.client.findAll<{ attachedTo?: string }>(CLASS.SocialIdentity, {
+        _id: { $in: socialIdRefs },
+      })
       const found = foundSids.find((s) => s.attachedTo !== undefined)
       if (found?.attachedTo !== undefined) {
         personId = found.attachedTo
@@ -288,24 +272,26 @@ async function bootstrapFromAccount(
   if (personId === undefined) {
     personId = randomUUID()
     await tx(
-      txFactory.createTxCreateDoc(CLASS.Person, SPACE.Contacts, {
-        personUuid: account.uuid,
-        name: deriveName(fullSocialIds),
-        city: '',
-        avatarType: AVATAR_TYPE_COLOR
-      }, personId)
+      txFactory.createTxCreateDoc(
+        CLASS.Person,
+        SPACE.Contacts,
+        {
+          personUuid: account.uuid,
+          name: deriveName(fullSocialIds),
+          city: '',
+          avatarType: AVATAR_TYPE_COLOR,
+        },
+        personId,
+      ),
     )
   } else {
     // If we recovered via attachedTo, ensure personUuid is set.
-    const existing = await args.client.findOne<{ personUuid?: string }>(
-      CLASS.Person,
-      { _id: personId }
-    )
+    const existing = await args.client.findOne<{ personUuid?: string }>(CLASS.Person, { _id: personId })
     if (existing?.personUuid === undefined) {
       await tx(
         txFactory.createTxUpdateDoc(CLASS.Person, SPACE.Contacts, personId, {
-          personUuid: account.uuid
-        })
+          personUuid: account.uuid,
+        }),
       )
     }
   }
@@ -317,10 +303,9 @@ async function bootstrapFromAccount(
   // with an empty socialIds collection.
   if (fullSocialIds.length > 0) {
     const fullSidsIds = fullSocialIds.map((s) => s._id)
-    const existingSids = await args.client.findAll<{ _id: string }>(
-      CLASS.SocialIdentity,
-      { _id: { $in: fullSidsIds } }
-    )
+    const existingSids = await args.client.findAll<{ _id: string }>(CLASS.SocialIdentity, {
+      _id: { $in: fullSidsIds },
+    })
     const existingSet = new Set(existingSids.map((s) => s._id))
     for (const sid of fullSocialIds) {
       if (existingSet.has(sid._id)) continue
@@ -341,11 +326,11 @@ async function bootstrapFromAccount(
               value: sid.value,
               key: sid.key ?? buildSocialIdKey(sid.type, sid.value),
               verifiedOn: sid.verifiedOn,
-              isDeleted: sid.isDeleted ?? false
+              isDeleted: sid.isDeleted ?? false,
             },
-            sid._id
-          )
-        )
+            sid._id,
+          ),
+        ),
       )
     }
   }
@@ -355,21 +340,16 @@ async function bootstrapFromAccount(
   // a promotion/demotion between User/Guest must propagate so that
   // role-gated UI features (auto-join for guests, etc.) stay correct.
   const employeeRole = employeeRoleFor(account.role)
-  const employee = await args.client.findOne<{ active?: boolean; role?: string }>(
-    CLASS.Employee,
-    { _id: personId }
-  )
-  const isFreshEmployee =
-    employee !== undefined && employee.active === true && employee.role === employeeRole
+  const employee = await args.client.findOne<{ active?: boolean; role?: string }>(CLASS.Employee, {
+    _id: personId,
+  })
+  const isFreshEmployee = employee !== undefined && employee.active === true && employee.role === employeeRole
   if (!isFreshEmployee) {
     await tx(
-      txFactory.createTxMixin(
-        personId,
-        CLASS.Person,
-        SPACE.Contacts,
-        CLASS.Employee,
-        { active: true, role: employeeRole }
-      )
+      txFactory.createTxMixin(personId, CLASS.Person, SPACE.Contacts, CLASS.Employee, {
+        active: true,
+        role: employeeRole,
+      }),
     )
   }
 

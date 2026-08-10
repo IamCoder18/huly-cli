@@ -7,7 +7,10 @@ export function shouldShow(opts?: { ci?: boolean; json?: boolean; nonInteractive
   return true
 }
 
-export function spinner(label: string, opts?: { ci?: boolean; json?: boolean; nonInteractive?: boolean }): Ora | null {
+export function spinner(
+  label: string,
+  opts?: { ci?: boolean; json?: boolean; nonInteractive?: boolean },
+): Ora | null {
   if (!shouldShow(opts)) return null
   return ora({ text: label, stream: process.stderr }).start()
 }
@@ -15,7 +18,7 @@ export function spinner(label: string, opts?: { ci?: boolean; json?: boolean; no
 export async function withSpinner<T>(
   label: string,
   fn: () => Promise<T>,
-  opts?: { ci?: boolean; json?: boolean; nonInteractive?: boolean }
+  opts?: { ci?: boolean; json?: boolean; nonInteractive?: boolean },
 ): Promise<T> {
   const s = spinner(label, opts)
   try {

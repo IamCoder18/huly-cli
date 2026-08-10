@@ -3,37 +3,41 @@
   "version": "1.0.2",
   "description": "AI-agent-first CLI for self-hosted Huly. Automate issues, projects, channels, docs, calendar & time tracking — no browser, no MCP, no Playwright.",
   "keywords": [
-    "huly",
-    "huly-cli",
-    "huly-mcp",
-    "huly-api",
-    "huly-sdk",
-    "huly-client",
-    "openclaw",
     "agent-skills",
     "ai-agent",
-    "mcp-server",
     "cli",
     "headless",
-    "self-hosted",
+    "huly",
+    "huly-api",
+    "huly-cli",
+    "huly-client",
+    "huly-mcp",
+    "huly-sdk",
     "issue-tracker",
-    "project-management"
+    "mcp-server",
+    "openclaw",
+    "project-management",
+    "self-hosted"
   ],
-  "license": "AGPL-3.0-or-later",
   "homepage": "https://github.com/IamCoder18/huly-cli#readme",
   "bugs": {
     "url": "https://github.com/IamCoder18/huly-cli/issues"
   },
-  "type": "module",
+  "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/IamCoder18/huly-cli.git"
+  },
   "bin": {
     "huly": "./bin/huly"
   },
-  "main": "./dist/index.js",
   "files": [
     "dist",
     "bin",
     "LICENSE"
   ],
+  "type": "module",
+  "main": "./dist/index.js",
   "scripts": {
     "build": "tsc -p tsconfig.build.json && chmod +x dist/index.js",
     "dev": "tsx src/index.ts",
@@ -43,13 +47,6 @@
     "test:watch": "vitest",
     "prepublishOnly": "node -e \"const fs=require('fs'); fs.copyFileSync('../../README.md','./README.md'); fs.copyFileSync('../../LICENSE','./LICENSE')\"",
     "postpublish": "node -e \"require('fs').rmSync('./README.md',{force:true}); require('fs').rmSync('./LICENSE',{force:true})\""
-  },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/IamCoder18/huly-cli.git"
-  },
-  "engines": {
-    "node": ">=22.13"
   },
   "dependencies": {
     "@hcengineering/account-client": "^0.7.423",
@@ -72,5 +69,8 @@
     "tsx": "^4.19.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.10"
+  },
+  "engines": {
+    "node": ">=22.13"
   }
 }

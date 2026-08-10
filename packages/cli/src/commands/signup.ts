@@ -20,12 +20,14 @@ interface SignupOpts {
 }
 
 function slugify(name: string): string {
-  return name
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 24) || 'workspace'
+  return (
+    name
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 24) || 'workspace'
+  )
 }
 
 export async function signupCommand(opts: SignupOpts = {}): Promise<void> {
@@ -48,7 +50,7 @@ export async function signupCommand(opts: SignupOpts = {}): Promise<void> {
       throw new CliError(
         ExitCode.Validation,
         'signup requires all of: ' + missing.join(', '),
-        'run without --headless to be prompted, or set the env vars'
+        'run without --headless to be prompted, or set the env vars',
       )
     }
     if (!email) email = await promptEmail(undefined, { forceInteractive })
@@ -64,7 +66,7 @@ export async function signupCommand(opts: SignupOpts = {}): Promise<void> {
   const result = await withSpinner(
     `Signing up ${email}…`,
     () => signUpAndCache(url, email!, password!, firstName!, lastName!),
-    { ci: opts.headless }
+    { ci: opts.headless },
   )
 
   // After signup, the new account has zero workspaces. In headless mode
@@ -77,7 +79,7 @@ export async function signupCommand(opts: SignupOpts = {}): Promise<void> {
     const want = await promptConfirm('Create a new workspace now?', { forceInteractive, default: true })
     if (want) {
       const defaultName = slugify(`${firstName}-ws`)
-      workspaceName = await promptText('Workspace name (URL slug)', { forceInteractive }) || defaultName
+      workspaceName = (await promptText('Workspace name (URL slug)', { forceInteractive })) || defaultName
     }
   }
 
@@ -86,19 +88,25 @@ export async function signupCommand(opts: SignupOpts = {}): Promise<void> {
     const ws = await withSpinner(
       `Creating workspace ${workspaceName}…`,
       () => createWorkspace(url, result.token, email!, workspaceName!),
-      { ci: opts.headless }
+      { ci: opts.headless },
     )
     await writeActiveWorkspace(workspaceName)
     createdWorkspace = { name: workspaceName, uuid: ws.workspaceId }
   }
 
   if (shouldJson({ json: opts.json, ci: opts.ci })) {
-    console.log(JSON.stringify({
-      email,
-      account: result.account,
-      name: `${firstName} ${lastName}`,
-      workspace: createdWorkspace ?? null
-    }, null, 2))
+    console.log(
+      JSON.stringify(
+        {
+          email,
+          account: result.account,
+          name: `${firstName} ${lastName}`,
+          workspace: createdWorkspace ?? null,
+        },
+        null,
+        2,
+      ),
+    )
     return
   }
   console.log(`signed up as ${email}`)

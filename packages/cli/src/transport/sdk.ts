@@ -1,6 +1,17 @@
-import { connectPlatform, type PlatformClient, type AccountClient, resolveToken, accountClient } from '../auth/client.js'
+import {
+  connectPlatform,
+  type PlatformClient,
+  type AccountClient,
+  resolveToken,
+  accountClient,
+} from '../auth/client.js'
 import { readEnv, requireUrl, skipBootstrap } from '../auth/env.js'
-import { readActiveWorkspace, getCachedWorkspaceToken, readActiveAccount, setCachedWorkspaceToken } from '../auth/cache.js'
+import {
+  readActiveWorkspace,
+  getCachedWorkspaceToken,
+  readActiveAccount,
+  setCachedWorkspaceToken,
+} from '../auth/cache.js'
 import { bootstrapEmployee } from '../auth/bootstrap.js'
 import { CliError, ExitCode } from '../output/errors.js'
 
@@ -24,7 +35,7 @@ export async function resolveWorkspace(opts: ConnectOpts): Promise<string> {
     throw new CliError(
       ExitCode.Validation,
       'no workspace resolved',
-      'set --workspace, HULY_WORKSPACE, or run `huly workspace use <name>`'
+      'set --workspace, HULY_WORKSPACE, or run `huly workspace use <name>`',
     )
   }
   return ws
@@ -105,8 +116,10 @@ export async function connectAccountCli(opts: ConnectOpts = {}): Promise<Account
             token: selected.token,
             role: selected.role,
             endpoint: selected.endpoint,
-            workspaceId: selected.workspace
-          }).catch(() => { /* ignore cache write failures */ })
+            workspaceId: selected.workspace,
+          }).catch(() => {
+            /* ignore cache write failures */
+          })
         }
       }
     } catch {

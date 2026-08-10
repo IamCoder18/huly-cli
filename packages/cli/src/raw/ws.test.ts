@@ -21,7 +21,10 @@ vi.mock('ws', () => {
       if (event === 'close') this.onclose = callback as (code: number, reason: Buffer) => void
     }
 
-    constructor(public url: string, public options?: unknown) {
+    constructor(
+      public url: string,
+      public options?: unknown,
+    ) {
       wsMock.current = this
       queueMicrotask(() => this.onopen?.())
     }
@@ -38,56 +41,56 @@ vi.mock('../auth/env.js', async (importOriginal) => {
       email: undefined,
       password: undefined,
       token: 'tok',
-      workspace: undefined
+      workspace: undefined,
     }),
     requireUrl: (u?: string) => u ?? 'wss://huly.example',
-    insecureTLS: () => false
+    insecureTLS: () => false,
   }
 })
 
 vi.mock('../auth/cache.js', () => ({
-  readActiveWorkspace: async () => undefined
+  readActiveWorkspace: async () => undefined,
 }))
 
 vi.mock('../auth/client.js', () => ({
   resolveToken: async () => 'should-not-be-called',
-  accountClient: async () => ({ selectWorkspace: async () => ({}) })
+  accountClient: async () => ({ selectWorkspace: async () => ({}) }),
 }))
 
 describe('buildWsUrl', () => {
   it('does not append /_transactor twice for self-hosted endpoints', () => {
     expect(buildWsUrl('wss://huly.example/_transactor', 'token', 'abc123')).toBe(
-      'wss://huly.example/_transactor/token?sessionId=abc123'
+      'wss://huly.example/_transactor/token?sessionId=abc123',
     )
   })
 
   it('adds /_transactor for plain self-hosted endpoints', () => {
     expect(buildWsUrl('wss://huly.example', 'token', 'abc123')).toBe(
-      'wss://huly.example/_transactor/token?sessionId=abc123'
+      'wss://huly.example/_transactor/token?sessionId=abc123',
     )
   })
 
   it('derives wss from an https endpoint', () => {
     expect(buildWsUrl('https://huly.example', 'token', 'abc123')).toBe(
-      'wss://huly.example/_transactor/token?sessionId=abc123'
+      'wss://huly.example/_transactor/token?sessionId=abc123',
     )
   })
 
   it('derives ws from an http endpoint', () => {
     expect(buildWsUrl('http://huly.example', 'token', 'abc123')).toBe(
-      'ws://huly.example/_transactor/token?sessionId=abc123'
+      'ws://huly.example/_transactor/token?sessionId=abc123',
     )
   })
 
   it('strips a trailing slash from the host', () => {
     expect(buildWsUrl('wss://huly.example/', 'token', 'abc123')).toBe(
-      'wss://huly.example/_transactor/token?sessionId=abc123'
+      'wss://huly.example/_transactor/token?sessionId=abc123',
     )
   })
 
   it('encodes token and session id', () => {
     expect(buildWsUrl('wss://huly.example', 'a/b?c', 'x/y')).toBe(
-      'wss://huly.example/_transactor/a%2Fb%3Fc?sessionId=x%2Fy'
+      'wss://huly.example/_transactor/a%2Fb%3Fc?sessionId=x%2Fy',
     )
   })
 })
@@ -122,7 +125,7 @@ describe('wsCommand', () => {
   it('rejects a hello error fast and closes the socket', async () => {
     const promise = wsCommand('test.method', '[]', {
       url: 'wss://huly.example',
-      token: 'tok'
+      token: 'tok',
     })
 
     await new Promise((resolve) => setTimeout(resolve, 0))
@@ -130,12 +133,12 @@ describe('wsCommand', () => {
     expect(wsMock.current).not.toBeNull()
     expect(wsMock.current.url).toContain('/_transactor/tok?')
     wsMock.current.onmessage?.({
-      toString: () => JSON.stringify({ id: -1, error: { message: 'bad token' } })
+      toString: () => JSON.stringify({ id: -1, error: { message: 'bad token' } }),
     })
 
     await expect(promise).rejects.toMatchObject({
       code: 7,
-      message: /hello failed/
+      message: /hello failed/,
     })
     expect(wsMock.current.close).toHaveBeenCalled()
   })
@@ -143,14 +146,14 @@ describe('wsCommand', () => {
   it('completes the happy path: hello -> RPC -> result', async () => {
     const promise = wsCommand('test.method', '[]', {
       url: 'wss://huly.example',
-      token: 'tok'
+      token: 'tok',
     })
 
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     expect(wsMock.current).not.toBeNull()
     wsMock.current.onmessage?.({
-      toString: () => JSON.stringify({ id: -1, result: 'hello' })
+      toString: () => JSON.stringify({ id: -1, result: 'hello' }),
     })
 
     await new Promise((resolve) => setTimeout(resolve, 0))
@@ -160,7 +163,7 @@ describe('wsCommand', () => {
     expect(sent[1]).toContain('"method":"test.method"')
 
     wsMock.current.onmessage?.({
-      toString: () => JSON.stringify({ id: 1, result: { value: ['ok'], total: 1 } })
+      toString: () => JSON.stringify({ id: 1, result: { value: ['ok'], total: 1 } }),
     })
 
     await expect(promise).resolves.toBeUndefined()
@@ -169,7 +172,7 @@ describe('wsCommand', () => {
   it('ignores non-object JSON payloads (null / array / number / string)', async () => {
     const promise = wsCommand('test.method', '[]', {
       url: 'wss://huly.example',
-      token: 'tok'
+      token: 'tok',
     })
     promise.catch(() => {})
 
@@ -181,10 +184,10 @@ describe('wsCommand', () => {
     }
 
     wsMock.current.onmessage?.({
-      toString: () => JSON.stringify({ id: -1, result: 'hello' })
+      toString: () => JSON.stringify({ id: -1, result: 'hello' }),
     })
     wsMock.current.onmessage?.({
-      toString: () => JSON.stringify({ id: 1, result: { value: ['ok'] } })
+      toString: () => JSON.stringify({ id: 1, result: { value: ['ok'] } }),
     })
 
     await expect(promise).resolves.toBeUndefined()
@@ -193,7 +196,7 @@ describe('wsCommand', () => {
   it('ignores malformed JSON and keeps the connection alive', async () => {
     const promise = wsCommand('test.method', '[]', {
       url: 'wss://huly.example',
-      token: 'tok'
+      token: 'tok',
     })
     promise.catch(() => {})
 
@@ -202,10 +205,10 @@ describe('wsCommand', () => {
 
     wsMock.current.onmessage?.({ toString: () => 'not json {{{' })
     wsMock.current.onmessage?.({
-      toString: () => JSON.stringify({ id: -1, result: 'hello' })
+      toString: () => JSON.stringify({ id: -1, result: 'hello' }),
     })
     wsMock.current.onmessage?.({
-      toString: () => JSON.stringify({ id: 1, result: { value: ['ok'] } })
+      toString: () => JSON.stringify({ id: 1, result: { value: ['ok'] } }),
     })
 
     await expect(promise).resolves.toBeUndefined()

@@ -4,7 +4,9 @@ import { readActiveWorkspace, findAnyCachedCreds } from '../auth/cache.js'
 import { shouldJson, json, kv, header, C, colorizeStatus } from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 
-export async function whoamiCommand(opts: { url?: string; workspace?: string; json?: boolean; ci?: boolean } = {}): Promise<void> {
+export async function whoamiCommand(
+  opts: { url?: string; workspace?: string; json?: boolean; ci?: boolean } = {},
+): Promise<void> {
   const env = readEnv()
   const url = requireUrl(opts.url ?? env.url)
   const active = await readActiveWorkspace()
@@ -13,9 +15,9 @@ export async function whoamiCommand(opts: { url?: string; workspace?: string; js
   const token = await resolveToken({ url })
   const cached = await findAnyCachedCreds(url)
   // Prefer the env-specified email: `resolveToken` will have logged in with
-  // it (or used its cached cred). Only fall back to the first cached
-  // account when no env email is set — otherwise whoami could report the
-  // wrong account on machines with multiple cached accounts for the same
+  // the env email (or used its cached cred). Only fall back to the first
+  // cached account when no env email is set — otherwise whoami could report
+  // the wrong account on machines with multiple cached accounts for the same
   // server (resolveToken may silently return a token for an unrelated
   // account when env.email doesn't match any cache).
   let email = env.email
@@ -36,8 +38,8 @@ export async function whoamiCommand(opts: { url?: string; workspace?: string; js
       name: w.name,
       url: w.url,
       uuid: w.uuid,
-      mode: w.mode
-    }))
+      mode: w.mode,
+    })),
   }
 
   if (shouldJson({ json: opts.json, ci: opts.ci })) {
@@ -49,7 +51,7 @@ export async function whoamiCommand(opts: { url?: string; workspace?: string; js
   kv([
     ['Server', C.id(result.url)],
     ['Account', C.emphasis(result.account ?? '—')],
-    ['Active workspace', result.active_workspace ? C.emphasis(result.active_workspace) : C.muted('(none)')]
+    ['Active workspace', result.active_workspace ? C.emphasis(result.active_workspace) : C.muted('(none)')],
   ])
 
   if (workspaces.length > 0) {
@@ -60,7 +62,9 @@ export async function whoamiCommand(opts: { url?: string; workspace?: string; js
       const isActive = w.url === workspace
       const marker = isActive ? C.ok('') + ' ' : C.muted('○ ')
       const mode = colorizeStatus(w.mode)
-      console.log(`  ${marker} ${C.emphasis(w.name)} ${C.muted('(' + w.url + ')')}  ${mode}  ${C.id(w.uuid.slice(0, 8) + '…')}`)
+      console.log(
+        `  ${marker} ${C.emphasis(w.name)} ${C.muted('(' + w.url + ')')}  ${mode}  ${C.id(w.uuid.slice(0, 8) + '…')}`,
+      )
     }
   }
 
@@ -69,7 +73,9 @@ export async function whoamiCommand(opts: { url?: string; workspace?: string; js
       const client = await connectPlatform({ token, workspace, url })
       const account = await client.getAccount()
       console.log()
-      console.log(C.muted(`connected to workspace: ${C.emphasis(account.uuid)} (role: ${C.emphasis(account.role)})`))
+      console.log(
+        C.muted(`connected to workspace: ${C.emphasis(account.uuid)} (role: ${C.emphasis(account.role)})`),
+      )
       await client.close()
     } catch (err) {
       console.log()

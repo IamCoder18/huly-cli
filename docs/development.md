@@ -39,6 +39,26 @@ bash scripts/smoke.sh
 `dist/index.js` is the bundled artifact that npm publishes. The CLI's
 `bin/huly` is a 1-line wrapper: `node dist/index.js "$@"`.
 
+## Quality checks
+
+The repo uses [oxc](https://oxc.rs/) (`oxfmt` + `oxlint`) for formatting
+and linting. Run them locally before opening a PR:
+
+```bash
+pnpm format           # write formatted files
+pnpm format:check     # check formatting (CI)
+pnpm lint             # lint (CI)
+pnpm typecheck        # TS type-check (CI)
+pnpm test             # vitest (CI)
+pnpm build            # emit dist/ (CI)
+pnpm verify           # all of the above
+```
+
+CI runs `verify` on every push to `main` and on every PR. The workflow
+file is [`.github/workflows/ci.yml`](../.github/workflows/ci.yml). To
+contribute, format your code (`pnpm format`) and ensure `pnpm lint`
+passes before pushing.
+
 ## Adding a new command
 
 1. Add the resource function under `src/resources/<surface>.ts` —
@@ -87,7 +107,6 @@ src/
     workspace.ts      # workspace ops
     todo.ts           # legacy todo (replaced by action)
     project.parse.ts  # project parsing helpers
-    misc.ts           # misc utilities
   transport/
     sdk.ts            # connectCli, connectAccountCli, resolveWorkspace
     identifiers.ts    # CLASS, CLASS_ICON, ref helpers

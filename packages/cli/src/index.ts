@@ -20,12 +20,16 @@ proc.emit = function (this: unknown, event: string, ...args: unknown[]) {
 // Polyfill `window` for Node.js >= 22 where `sessionStorage` is provided as a
 // built-in but `window` is not. The Huly SDK checks `typeof sessionStorage`
 // to decide if it is in a browser context and only then reads `window`.
-const g = globalThis as unknown as { window?: unknown; WebSocket?: unknown; console?: { log?: (...a: unknown[]) => void } }
+const g = globalThis as unknown as {
+  window?: unknown
+  WebSocket?: unknown
+  console?: { log?: (...a: unknown[]) => void }
+}
 if (g.window === undefined) {
   g.window = {
     addEventListener: () => {},
     removeEventListener: () => {},
-    location: { href: '' }
+    location: { href: '' },
   }
 }
 if (typeof g.WebSocket === 'undefined') {
@@ -38,7 +42,8 @@ if (typeof g.WebSocket === 'undefined') {
 // The model-upgrade retry warnings ("no document found, failed to apply model
 // transaction, skipping ...") come from ctx.warn() → console.warn.
 // Filter all of these to keep CLI output clean.
-const sdkNoisePattern = /^(Generate new SessionId|Connected to server:|findfull model|.* measure slow findAll|.*measure slow findAll|Client: onConnect|no document found, failed to apply model transaction)/
+const sdkNoisePattern =
+  /^(Generate new SessionId|Connected to server:|findfull model|.* measure slow findAll|.*measure slow findAll|Client: onConnect|no document found, failed to apply model transaction)/
 type ConsoleFn = (...args: unknown[]) => void
 const consoleObj = g.console as { log?: ConsoleFn; warn?: ConsoleFn; info?: ConsoleFn; error?: ConsoleFn }
 const wrapConsole = (orig: ConsoleFn | undefined): ConsoleFn => {

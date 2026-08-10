@@ -47,11 +47,13 @@ huly project create \
 **Identifier rules:** uppercase letters and digits only, 1-5 chars typical. Unique per workspace. The CLI pre-checks for duplicates (`findAll({ identifier })` before create) — if found, returns the existing project's `_id` (idempotent). Selfhost's server does not enforce uniqueness, so this is a defense-in-depth check.
 
 **Smart defaults you cannot skip:**
+
 - `members: [<current-user>]` is injected (required by `SpaceSecurityMiddleware` so the creator can `findAll` their own project). `--minimal` does NOT drop this — it's security-critical.
 - `sequence: 0` (incremented by `$inc` on every `huly issue create` to mint the next number).
 - `archived: false`, `defaultTimeReportDay: 0`, `defaultAssignee: null`.
 
 **Opinionated defaults (gated by `HULY_OPINIONATED`, default `1`):**
+
 - `type: tracker:ids:ClassingProjectType` — pins the project to the classic tracker ProjectType so it participates in the issue↔action cascade (auto-create `ProjectToDo` on `--assignee`, status auto-advance/rollback on todo lifecycle). Note the server-side typo "Classing" (not "Classic") — preserved verbatim in the platform's model. Without this default, projects may be created without a `type` and miss the cascade. Disable with `--minimal` or `HULY_OPINIONATED=0`.
 
 **`--minimal` / `HULY_OPINIONATED=0` skip:** `description`, `type` pin. **Do NOT skip:** `members` injection (security-critical), `sequence`, `defaultTimeReportDay`, `defaultAssignee` (schema-required).
@@ -111,6 +113,7 @@ huly milestone delete "v1.0"
 ```
 
 **Smart defaults:**
+
 - `status: 'planned'` (raw string, NO state-machine validation client-side)
 - `targetDate: Date.now() + 30 days` if `--target-date` omitted
 - `description: ''` if omitted
@@ -214,7 +217,7 @@ huly ws findAll '["core:class:Tx",{"space":"<project-space-id>","modifiedOn":{"$
 - **`issue-template add-child`** uses `{ id }` in `children[]`, but other trackers' relations usually use `{ _id }`. Don't apply cross-template patterns blindly.
 - **`project create --sequence 0`** is automatic. Don't try to override it; the issue-number minting depends on it.
 - **`project create --members <emails>` does NOT exist.** The CLI auto-injects the current user as `members[0]`. There is no flag to override. If you want additional members, use `huly workspace members --role Admin` for global or `huly space add-member` for per-space (on channels / DMs).
-- **`--minimal` and `--description`:** with opinionated defaults ON (default), `project create` stores `description: ''` (empty string) when `--description` is omitted. With `--minimal` / `HULY_OPINIONATED=0`, an *omitted* `--description` is omitted from the create payload entirely; an *explicit* `--description ''` is still preserved verbatim. So if a downstream consumer distinguishes "missing" from "empty", pass `--description ''` explicitly when running with `--minimal`.
+- **`--minimal` and `--description`:** with opinionated defaults ON (default), `project create` stores `description: ''` (empty string) when `--description` is omitted. With `--minimal` / `HULY_OPINIONATED=0`, an _omitted_ `--description` is omitted from the create payload entirely; an _explicit_ `--description ''` is still preserved verbatim. So if a downstream consumer distinguishes "missing" from "empty", pass `--description ''` explicitly when running with `--minimal`.
 - **Custom space types are only available on NEW projects.** Create a new project if you need to change the type.
 
 ---

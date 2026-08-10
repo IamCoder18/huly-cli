@@ -6,14 +6,14 @@ Cards are the knowledge primitive you should reach for FIRST when the user asks 
 
 ## Decision: Cards vs Documents
 
-| Use Cards when… | Use Documents when… |
-|---|---|
-| You want a flat-by-Type organization | You want a nested wiki hierarchy (parent + rank) |
-| You need custom typed attributes per MasterTag | You need versioned snapshots per doc |
-| Knowledge is structured (record-like) | Knowledge is narrative (article-like) |
-| The user said "note", "page", "record", "create a card" | The user said "document", "wiki", "article", "page with versions" |
+| Use Cards when…                                          | Use Documents when…                                                |
+| -------------------------------------------------------- | ------------------------------------------------------------------ |
+| You want a flat-by-Type organization                     | You want a nested wiki hierarchy (parent + rank)                   |
+| You need custom typed attributes per MasterTag           | You need versioned snapshots per doc                               |
+| Knowledge is structured (record-like)                    | Knowledge is narrative (article-like)                              |
+| The user said "note", "page", "record", "create a card"  | The user said "document", "wiki", "article", "page with versions"  |
 | The user said "doc"/"page" without further specification | The user mentioned "ControlledDocument", e-signatures, or training |
-| You want kanban-style by Type/Tag | You want sidebar-by-teamspace organization |
+| You want kanban-style by Type/Tag                        | You want sidebar-by-teamspace organization                         |
 
 When in doubt, USE CARDS. The CLI surfaces card creation more conveniently, custom attributes are a major capability, and you can always migrate to Documents later if the structure demands it.
 
@@ -64,6 +64,7 @@ huly card create \
 **Resolution:** `--master-tag foo` matches `foo` against `label`, `name`, or raw `_id`. Look at `master-tag list --json` to see what's available.
 
 **Defaults silently applied:**
+
 - `card-space`: With **opinionated defaults ON** (default; `HULY_OPINIONATED=1`): the CLI picks the first available `CardSpace` automatically — `findAll({ archived: false }, { sort: { createdOn: 1 }, limit: 1 })` resolves to the oldest non-archived card space. Pass `--card-space <name>` to override. With `HULY_OPINIONATED=0` or `--minimal`: literal `card:space:Default` — **this usually does not exist**; if you don't have a card space, the create will fail with `PLATFORM_NOT_FOUND`. Pass `--card-space <name>` explicitly in that mode.
 - `parentInfo`: `[]` (no parent). Pass `--parent <card-ref>` to nest.
 - `rank: '0|aaaaa:'`, `blobs: {}`.
@@ -84,11 +85,13 @@ huly card update <ref> --body-file ./body.md
 ```
 
 **Mutual-exclusion rules on update:**
+
 - `--body` + `--body-file` → error.
 - `--body|--body-file` + `--description` → error (use one or the other).
 - `--description` without `--replace-content` AND without `--body|--body-file` → "would overwrite the card body" guard.
 
 So:
+
 - Replace the rich body: `--body "…"` OR `--body-file <path>`.
 - Replace the short summary: `--description "…"` (this changes a summary field — the `description` attribute — NOT the body).
 - Force `--description` to mean "new body content": `--replace-content`.
@@ -169,10 +172,10 @@ When a Type derives from another, all parent attributes propagate. The CLI has n
 
 ### Bi-directional relations, one-directional references
 
-| Type | One-way or Bi-directional? |
-|---|---|
-| Relation between Types A↔B | Bi-directional (both cards see each other) |
-| Reference on Type A | One-directional (only on A); can be made into a sort/filter criterion |
+| Type                       | One-way or Bi-directional?                                            |
+| -------------------------- | --------------------------------------------------------------------- |
+| Relation between Types A↔B | Bi-directional (both cards see each other)                            |
+| Reference on Type A        | One-directional (only on A); can be made into a sort/filter criterion |
 
 The CLI has no command for managing card relations. Web UI only.
 
@@ -254,11 +257,11 @@ $FREEFORM"
 
 ## When to migrate a card to a document (or vice versa)
 
-| Move from cards to documents if… | Move from documents to cards if… |
-|---|---|
-| Need versioned snapshots per item | Need fine-grained per-type attributes |
-| Need to enforce Approver/Reviewer workflow | Need kanban-by-Type organization |
-| Need inline comments with notification | Want flexible, user-defined schema |
-| Need nesting beyond 2 levels | Have minimal hierarchy needs |
+| Move from cards to documents if…           | Move from documents to cards if…      |
+| ------------------------------------------ | ------------------------------------- |
+| Need versioned snapshots per item          | Need fine-grained per-type attributes |
+| Need to enforce Approver/Reviewer workflow | Need kanban-by-Type organization      |
+| Need inline comments with notification     | Want flexible, user-defined schema    |
+| Need nesting beyond 2 levels               | Have minimal hierarchy needs          |
 
 There is no migration command. Plan the right primitive up front.

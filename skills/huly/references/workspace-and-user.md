@@ -50,18 +50,18 @@ Reversible. Requires OWNER.
 
 ## Permissions — what each role can do
 
-| Action | OWNER | MAINTAINER (Admin) | GUEST | READONLY |
-|---|---|---|---|---|
-| `workspace delete` | ✓ | ✗ | ✗ | ✗ |
-| `workspace member add` | ✓ | ✗ | ✗ | ✗ |
-| `workspace rename` | ✓ | ✗ | ✗ | ✗ |
-| `workspace guests` settings | ✓ | ✗ | ✗ | ✗ |
-| `workspace access-link` create | ✓ | ✗ | ✗ | ✗ |
-| `workspace info` / `members` / `list` / `current` / `regions` | ✓ | ✓ | ✓ | ✓ |
-| Create projects, channels, calendars | ✓ | ✓ | ✗ | ✗ |
-| Read flagged-accessible spaces | ✓ | ✓ | ✓ | n/a |
-| Write anywhere | ✓ | ✓ | ✗ | ✗ |
-| Archive `#general` / `#random` | ✓ | needs Spaces Admin | ✗ | ✗ |
+| Action                                                        | OWNER | MAINTAINER (Admin) | GUEST | READONLY |
+| ------------------------------------------------------------- | ----- | ------------------ | ----- | -------- |
+| `workspace delete`                                            | ✓     | ✗                  | ✗     | ✗        |
+| `workspace member add`                                        | ✓     | ✗                  | ✗     | ✗        |
+| `workspace rename`                                            | ✓     | ✗                  | ✗     | ✗        |
+| `workspace guests` settings                                   | ✓     | ✗                  | ✗     | ✗        |
+| `workspace access-link` create                                | ✓     | ✗                  | ✗     | ✗        |
+| `workspace info` / `members` / `list` / `current` / `regions` | ✓     | ✓                  | ✓     | ✓        |
+| Create projects, channels, calendars                          | ✓     | ✓                  | ✗     | ✗        |
+| Read flagged-accessible spaces                                | ✓     | ✓                  | ✓     | n/a      |
+| Write anywhere                                                | ✓     | ✓                  | ✗     | ✗        |
+| Archive `#general` / `#random`                                | ✓     | needs Spaces Admin | ✗     | ✗        |
 
 `MAINTAINER` cannot change their own role. Use the role alias `MAINTAINER` (or `admin`) — both normalize to `Admin`. The full set: `Owner | Admin | Guest | ReadOnlyGuest | DocGuest`.
 
@@ -149,8 +149,9 @@ The CLI tries in order:
 2. **Workspace-local:** scans `contact:class:Person` docs (limit 200) in your workspace, matches `name` case-insensitively (no email match).
 
 Returns:
+
 ```json
-{"email": "alice@example.com", "personUuid": "…", "source": "account"}
+{ "email": "alice@example.com", "personUuid": "…", "source": "account" }
 ```
 
 When this command is useful: you need someone's `Person._id` for `schedule create --owner`, or you're trying to figure out whether someone is in the workspace at all.

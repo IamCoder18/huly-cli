@@ -3,10 +3,21 @@ type Tx = any
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, invalidateIndex } from '../transport/ref-resolver.js'
-import { shouldJson, json, table, header, kv, C, success, updated, bulkRemoved, refString, relTime } from '../output/format.js'
+import {
+  shouldJson,
+  json,
+  table,
+  header,
+  kv,
+  C,
+  success,
+  updated,
+  bulkRemoved,
+  refString,
+  relTime,
+} from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
-import { readEnv } from '../auth/env.js'
 
 const REQUEST_STATUSES = ['Active', 'Completed', 'Rejected', 'Cancelled'] as const
 type RequestStatus = (typeof REQUEST_STATUSES)[number]
@@ -44,7 +55,10 @@ function currentUserId(account: { person?: Ref<Doc>; uuid: Ref<Doc> }): Ref<Doc>
   return account.person ?? account.uuid
 }
 
-async function resolvePersonIds(client: Awaited<ReturnType<typeof connectCli>>, emails: string[]): Promise<Ref<Doc>[]> {
+async function resolvePersonIds(
+  client: Awaited<ReturnType<typeof connectCli>>,
+  emails: string[],
+): Promise<Ref<Doc>[]> {
   const persons = (await client.findAll(PERSON_CLASS, {}, { limit: 500 })) as Person[]
   const map = new Map<string, Person>()
   for (const p of persons) {
@@ -70,8 +84,11 @@ async function resolvePersonIds(client: Awaited<ReturnType<typeof connectCli>>, 
   return ids
 }
 
-async function fetchRequest(client: Awaited<ReturnType<typeof connectCli>>, ref: string): Promise<{ id: Ref<RequestDoc>; doc: RequestDoc }> {
-  const id = await resolveRef(ref, { client, classId: REQUEST_CLASS as Ref<Class<Doc>> }) as Ref<RequestDoc>
+async function fetchRequest(
+  client: Awaited<ReturnType<typeof connectCli>>,
+  ref: string,
+): Promise<{ id: Ref<RequestDoc>; doc: RequestDoc }> {
+  const id = (await resolveRef(ref, { client, classId: REQUEST_CLASS as Ref<Class<Doc>> })) as Ref<RequestDoc>
   const doc = await client.findOne(REQUEST_CLASS, { _id: id })
   if (!doc) throw new CliError(ExitCode.NotFound, `approval ${ref} not found`)
   return { id, doc }
@@ -97,36 +114,84 @@ export async function listApprovals(opts: ListApprovalsOpts = {}): Promise<void>
       // Caller may pin the target class via --attached-to-class; default to Issue.
       // Without the right class ref, resolveRef throws "not found" for valid
       // requests attached to other doc types (documents, commits, etc.).
-      const aClass = ((opts as { attachedToClass?: string }).attachedToClass ?? CLASS.Issue) as Ref<Class<Doc>>
+      const aClass = ((opts as { attachedToClass?: string }).attachedToClass ?? CLASS.Issue) as Ref<
+        Class<Doc>
+      >
       q.attachedTo = await resolveRef(opts.attachedTo, { client, classId: aClass })
     }
-    const docs = (await withSpinner('Loading approvals…', () => client.findAll(REQUEST_CLASS, q as any), opts)) as RequestDoc[]
-    if (shouldJson({ json: opts.json, ci: opts.ci })) { json(docs); return }
-    if (docs.length === 0) { console.log(C.muted('(no approval requests)')); return }
-    table(docs as unknown as Record<string, unknown>[], [
-      { key: 'status', header: 'STATUS', format: (r) => {
-        const s = String((r as RequestDoc).status ?? '—')
-        if (s === 'Active') return C.warn(s)
-        if (s === 'Completed') return C.ok(s)
-        if (s === 'Rejected' || s === 'Cancelled') return C.fail(s)
-        return C.muted(s)
-      } },
-      { key: 'attachedTo', header: 'TARGET', format: (r) => C.id(String((r as RequestDoc).attachedTo ?? '').slice(-12)) },
-      { key: 'requested', header: 'REQUESTED', format: (r) => String(((r as RequestDoc).requested ?? []).length) },
-      { key: 'approved', header: 'APPROVED', format: (r) => String(((r as RequestDoc).approved ?? []).length) + '/' + String((r as RequestDoc).requiredApprovesCount) },
-      { key: 'createdOn', header: 'WHEN', align: 'right', format: (r) => relTime((r as RequestDoc).createdOn as number | null) },
-      { key: '_id', header: '_ID', format: (r) => C.id(String((r as RequestDoc)._id).slice(-12)) }
-    ], { count: true, title: 'approval-requests' })
-  } finally { await client.close() }
+    const docs = (await withSpinner(
+      'Loading approvals…',
+      () => client.findAll(REQUEST_CLASS, q as any),
+      opts,
+    )) as RequestDoc[]
+    if (shouldJson({ json: opts.json, ci: opts.ci })) {
+      json(docs)
+      return
+    }
+    if (docs.length === 0) {
+      console.log(C.muted('(no approval requests)'))
+      return
+    }
+    table(
+      docs as unknown as Record<string, unknown>[],
+      [
+        {
+          key: 'status',
+          header: 'STATUS',
+          format: (r) => {
+            const s = String((r as RequestDoc).status ?? '—')
+            if (s === 'Active') return C.warn(s)
+            if (s === 'Completed') return C.ok(s)
+            if (s === 'Rejected' || s === 'Cancelled') return C.fail(s)
+            return C.muted(s)
+          },
+        },
+        {
+          key: 'attachedTo',
+          header: 'TARGET',
+          format: (r) => C.id(String((r as RequestDoc).attachedTo ?? '').slice(-12)),
+        },
+        {
+          key: 'requested',
+          header: 'REQUESTED',
+          format: (r) => String(((r as RequestDoc).requested ?? []).length),
+        },
+        {
+          key: 'approved',
+          header: 'APPROVED',
+          format: (r) =>
+            String(((r as RequestDoc).approved ?? []).length) +
+            '/' +
+            String((r as RequestDoc).requiredApprovesCount),
+        },
+        {
+          key: 'createdOn',
+          header: 'WHEN',
+          align: 'right',
+          format: (r) => relTime((r as RequestDoc).createdOn as number | null),
+        },
+        { key: '_id', header: '_ID', format: (r) => C.id(String((r as RequestDoc)._id).slice(-12)) },
+      ],
+      { count: true, title: 'approval-requests' },
+    )
+  } finally {
+    await client.close()
+  }
 }
 
 // ---- get ----
 
-export async function getApproval(ref: string, opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string } = {}): Promise<void> {
+export async function getApproval(
+  ref: string,
+  opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string } = {},
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const { id, doc } = await fetchRequest(client, ref)
-    if (shouldJson({ json: opts.json, ci: opts.ci })) { json(doc); return }
+    if (shouldJson({ json: opts.json, ci: opts.ci })) {
+      json(doc)
+      return
+    }
     header(`Approval — ${String(id).slice(-12)}`, { subtitle: String(doc.status ?? '—') })
     kv([
       ['ID', C.id(String(id))],
@@ -136,9 +201,11 @@ export async function getApproval(ref: string, opts: { json?: boolean; ci?: bool
       ['Requested by', String((doc.requested ?? []).length) + ' person(s)'],
       ['Approved', String((doc.approved ?? []).length)],
       ['Rejected by', doc.rejected ? C.id(String(doc.rejected)) : C.muted('—')],
-      ['Has tx', doc.tx ? C.ok('yes') : C.muted('no')]
+      ['Has tx', doc.tx ? C.ok('yes') : C.muted('no')],
     ])
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
 // ---- request (create) ----
@@ -161,7 +228,8 @@ export interface CreateApprovalOpts {
 
 export async function createApproval(opts: CreateApprovalOpts): Promise<void> {
   if (!opts.attachedTo) throw new CliError(ExitCode.Validation, 'missing --attached-to')
-  if (!opts.requested || opts.requested.length === 0) throw new CliError(ExitCode.Validation, 'missing --requested <emails...>')
+  if (!opts.requested || opts.requested.length === 0)
+    throw new CliError(ExitCode.Validation, 'missing --requested <emails...>')
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const aClass = (opts.attachedToClass ?? CLASS.Issue) as Ref<Class<Doc>>
@@ -176,7 +244,7 @@ export async function createApproval(opts: CreateApprovalOpts): Promise<void> {
       throw new CliError(
         ExitCode.Validation,
         'missing --tx-json',
-        'a tx descriptor is required to create an approval request (try: huly approval request --help)'
+        'a tx descriptor is required to create an approval request (try: huly approval request --help)',
       )
     }
     const tx: Tx = JSON.parse(opts.txJson)
@@ -185,13 +253,30 @@ export async function createApproval(opts: CreateApprovalOpts): Promise<void> {
       approved: [],
       requiredApprovesCount: opts.requiredCount ?? personIds.length,
       status: 'Active',
-      tx
+      tx,
     }
-    const id = await withSpinner('Creating approval request…', () => client.addCollection(REQUEST_CLASS, (target as Doc).space as Ref<Doc>, aId, aClass, 'requests', data as any), opts)
+    const id = await withSpinner(
+      'Creating approval request…',
+      () =>
+        client.addCollection(
+          REQUEST_CLASS,
+          (target as Doc).space as Ref<Doc>,
+          aId,
+          aClass,
+          'requests',
+          data as any,
+        ),
+      opts,
+    )
     invalidateIndex(client, REQUEST_CLASS)
-    if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ _id: id, ...data }); return }
+    if (shouldJson({ json: opts.json, ci: opts.ci })) {
+      json({ _id: id, ...data })
+      return
+    }
     success('created approval', '', refString(id))
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
 // ---- comment (a ChatMessage in the comments collection with the
@@ -214,9 +299,23 @@ export async function commentOnApproval(opts: CommentOpts): Promise<void> {
     const { id, doc } = await fetchRequest(client, opts.ref!)
     const data: Record<string, unknown> = { message: opts.body }
     if (opts.decision) data.decision = opts.decision
-    const cid = await withSpinner('Commenting…', () => client.addCollection('chunter:class:ChatMessage' as Ref<Class<Doc>>, doc.space as Ref<Doc>, id, REQUEST_CLASS, 'comments', data as any), opts)
+    const cid = await withSpinner(
+      'Commenting…',
+      () =>
+        client.addCollection(
+          'chunter:class:ChatMessage' as Ref<Class<Doc>>,
+          doc.space as Ref<Doc>,
+          id,
+          REQUEST_CLASS,
+          'comments',
+          data as any,
+        ),
+      opts,
+    )
     success('commented', '', refString(cid))
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
 // ---- approve / reject / cancel ----
@@ -234,24 +333,48 @@ export async function approveRequest(opts: ApproveOpts): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const { id, doc } = await fetchRequest(client, opts.ref!)
-    if (doc.status !== 'Active') throw new CliError(ExitCode.Validation, `request is ${doc.status}, not Active`)
+    if (doc.status !== 'Active')
+      throw new CliError(ExitCode.Validation, `request is ${doc.status}, not Active`)
     const account = await client.getAccount()
     // Resolve the current user's Person id when present; the requested/approved
     // arrays store Person refs. Without an account.person, fall back to
     // account.uuid so empty-filter serialization doesn't accidentally match
     // some other account's Person.
-    const me = account.person !== undefined
-      ? await client.findOne(PERSON_CLASS, { _id: account.person as unknown as Ref<Doc> })
-      : null
+    const me =
+      account.person !== undefined
+        ? await client.findOne(PERSON_CLASS, { _id: account.person as unknown as Ref<Doc> })
+        : null
     const approverId = (me?._id ?? account.uuid) as Ref<Doc>
     // The trigger auto-completes when requiredApprovesCount is reached.
     const ops: Record<string, unknown> = { $push: { approved: approverId } }
-    await withSpinner('Approving…', () => client.updateCollection(REQUEST_CLASS, doc.space as unknown as Ref<Space>, id as Ref<Doc>, doc.attachedTo, doc.attachedToClass, 'requests', ops as any), opts)
+    await withSpinner(
+      'Approving…',
+      () =>
+        client.updateCollection(
+          REQUEST_CLASS,
+          doc.space as unknown as Ref<Space>,
+          id as Ref<Doc>,
+          doc.attachedTo,
+          doc.attachedToClass,
+          'requests',
+          ops as any,
+        ),
+      opts,
+    )
     if (opts.comment) {
-      await client.addCollection('chunter:class:ChatMessage' as Ref<Class<Doc>>, doc.space as Ref<Doc>, id, REQUEST_CLASS, 'comments', { message: opts.comment, decision: 'approve' } as any)
+      await client.addCollection(
+        'chunter:class:ChatMessage' as Ref<Class<Doc>>,
+        doc.space as Ref<Doc>,
+        id,
+        REQUEST_CLASS,
+        'comments',
+        { message: opts.comment, decision: 'approve' } as any,
+      )
     }
     updated('approved', refString(id))
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
 export interface RejectOpts {
@@ -269,28 +392,55 @@ export async function rejectRequest(opts: RejectOpts): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const { id, doc } = await fetchRequest(client, opts.ref!)
-    if (doc.status !== 'Active') throw new CliError(ExitCode.Validation, `request is ${doc.status}, not Active`)
+    if (doc.status !== 'Active')
+      throw new CliError(ExitCode.Validation, `request is ${doc.status}, not Active`)
     const account = await client.getAccount()
-    const me = account.person !== undefined
-      ? await client.findOne(PERSON_CLASS, { _id: account.person as unknown as Ref<Doc> })
-      : null
+    const me =
+      account.person !== undefined
+        ? await client.findOne(PERSON_CLASS, { _id: account.person as unknown as Ref<Doc> })
+        : null
     const rejecterId = (me?._id ?? account.uuid) as Ref<Doc>
     const ops: Record<string, unknown> = {
       status: 'Rejected',
-      rejected: rejecterId
+      rejected: rejecterId,
     }
     if (opts.rejectedTxJson) ops.rejectedTx = JSON.parse(opts.rejectedTxJson)
-    await withSpinner('Rejecting…', () => client.updateCollection(REQUEST_CLASS, doc.space as unknown as Ref<Space>, id as Ref<Doc>, doc.attachedTo, doc.attachedToClass, 'requests', ops as any), opts)
-    await client.addCollection('chunter:class:ChatMessage' as Ref<Class<Doc>>, doc.space as Ref<Doc>, id, REQUEST_CLASS, 'comments', { message: opts.comment, decision: 'reject' } as any)
+    await withSpinner(
+      'Rejecting…',
+      () =>
+        client.updateCollection(
+          REQUEST_CLASS,
+          doc.space as unknown as Ref<Space>,
+          id as Ref<Doc>,
+          doc.attachedTo,
+          doc.attachedToClass,
+          'requests',
+          ops as any,
+        ),
+      opts,
+    )
+    await client.addCollection(
+      'chunter:class:ChatMessage' as Ref<Class<Doc>>,
+      doc.space as Ref<Doc>,
+      id,
+      REQUEST_CLASS,
+      'comments',
+      { message: opts.comment, decision: 'reject' } as any,
+    )
     updated('rejected', refString(id))
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
-export async function cancelRequest(opts: { ref?: string; workspace?: string; url?: string; json?: boolean; ci?: boolean } = {}): Promise<void> {
+export async function cancelRequest(
+  opts: { ref?: string; workspace?: string; url?: string; json?: boolean; ci?: boolean } = {},
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const { id, doc } = await fetchRequest(client, opts.ref!)
-    if (doc.status !== 'Active') throw new CliError(ExitCode.Validation, `request is ${doc.status}, not Active`)
+    if (doc.status !== 'Active')
+      throw new CliError(ExitCode.Validation, `request is ${doc.status}, not Active`)
     const account = await client.getAccount()
     // Cancel allowed only by the requester. Use the canonical "current
     // user" identity (Person._id when present, else account.uuid) so
@@ -302,25 +452,56 @@ export async function cancelRequest(opts: { ref?: string; workspace?: string; ur
       throw new CliError(ExitCode.Auth, 'only requesters can cancel')
     }
     const ops: Record<string, unknown> = { status: 'Cancelled' }
-    await withSpinner('Cancelling…', () => client.updateCollection(REQUEST_CLASS, doc.space as unknown as Ref<Space>, id as Ref<Doc>, doc.attachedTo, doc.attachedToClass, 'requests', ops as any), opts)
+    await withSpinner(
+      'Cancelling…',
+      () =>
+        client.updateCollection(
+          REQUEST_CLASS,
+          doc.space as unknown as Ref<Space>,
+          id as Ref<Doc>,
+          doc.attachedTo,
+          doc.attachedToClass,
+          'requests',
+          ops as any,
+        ),
+      opts,
+    )
     updated('cancelled', refString(id))
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
-export async function deleteApprovals(refs: string[], opts: { workspace?: string; url?: string; yes?: boolean; json?: boolean; ci?: boolean } = {}): Promise<void> {
+export async function deleteApprovals(
+  refs: string[],
+  opts: { workspace?: string; url?: string; yes?: boolean; json?: boolean; ci?: boolean } = {},
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const ids = await resolveRefs(refs, { client, classId: REQUEST_CLASS as Ref<Class<Doc>> })
-    if (!opts.yes && ids.length > 1) throw new CliError(ExitCode.Validation, `destructive: deleting ${ids.length} approvals requires --yes`)
+    if (!opts.yes && ids.length > 1)
+      throw new CliError(ExitCode.Validation, `destructive: deleting ${ids.length} approvals requires --yes`)
     const removed: Ref<Doc>[] = []
     const errors: Array<{ id: string; message: string }> = []
     for (const id of ids) {
-      const doc = (await client.findOne(REQUEST_CLASS, { _id: id as Ref<RequestDoc> })) as RequestDoc | undefined
-      if (!doc) { errors.push({ id: String(id), message: 'not found' }); continue }
+      const doc = (await client.findOne(REQUEST_CLASS, { _id: id as Ref<RequestDoc> })) as
+        | RequestDoc
+        | undefined
+      if (!doc) {
+        errors.push({ id: String(id), message: 'not found' })
+        continue
+      }
       try {
         // Request is an AttachedDoc — delete via removeCollection against
         // the 'requests' collection tuple on the attachedTo doc.
-        await client.removeCollection(REQUEST_CLASS, doc.space as Ref<Doc>, id as Ref<Doc>, doc.attachedTo, doc.attachedToClass, 'requests')
+        await client.removeCollection(
+          REQUEST_CLASS,
+          doc.space as Ref<Doc>,
+          id as Ref<Doc>,
+          doc.attachedTo,
+          doc.attachedToClass,
+          'requests',
+        )
         removed.push(id as Ref<Doc>)
       } catch (err) {
         // Surface non-silent failures to make debugging possible.
@@ -333,5 +514,7 @@ export async function deleteApprovals(refs: string[], opts: { workspace?: string
     }
     if (errors.length > 0) for (const e of errors) console.error(`  ${e.id}: ${e.message}`)
     bulkRemoved(removed.length, errors.length, 'approvals')
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
