@@ -1,4 +1,4 @@
-import { C, red, yellow } from './format.js'
+import { C } from './format.js'
 
 export const ExitCode = {
   Ok: 0,
@@ -9,7 +9,7 @@ export const ExitCode = {
   RateLimited: 5,
   Conflict: 6,
   Server: 7,
-  Ambiguous: 8
+  Ambiguous: 8,
 } as const
 
 export type ExitCodeValue = (typeof ExitCode)[keyof typeof ExitCode]
@@ -18,7 +18,7 @@ export class CliError extends Error {
   constructor(
     public readonly code: ExitCodeValue,
     message: string,
-    public readonly hint?: string
+    public readonly hint?: string,
   ) {
     super(message)
     this.name = 'CliError'
@@ -30,7 +30,7 @@ const codeHints: Record<number, string> = {
   403: 'hint: insufficient permissions for this workspace',
   404: 'hint: check the ref or run `huly <resource> list`',
   409: 'hint: resource already exists or has been modified',
-  429: 'hint: rate-limited; retries exhausted'
+  429: 'hint: rate-limited; retries exhausted',
 }
 
 function printError(code: number, msg: string, hint?: string): void {
@@ -83,13 +83,15 @@ export function handleError(err: unknown): never {
 
 export function retry<T>(
   fn: () => Promise<T>,
-  opts: { maxAttempts?: number; shouldRetry?: (err: unknown) => boolean } = {}
+  opts: { maxAttempts?: number; shouldRetry?: (err: unknown) => boolean } = {},
 ): Promise<T> {
   const maxAttempts = opts.maxAttempts ?? 3
-  const shouldRetry = opts.shouldRetry ?? ((err: unknown) => {
-    const c = (err as { code?: number | string })?.code
-    return c === 429 || c === 'PLATFORM_RATE_LIMITED'
-  })
+  const shouldRetry =
+    opts.shouldRetry ??
+    ((err: unknown) => {
+      const c = (err as { code?: number | string })?.code
+      return c === 429 || c === 'PLATFORM_RATE_LIMITED'
+    })
 
   return (async () => {
     let lastErr: unknown

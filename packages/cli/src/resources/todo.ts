@@ -1,9 +1,21 @@
 import type { Doc, Ref, Class, Space } from '@hcengineering/core'
-import pkg from '@hcengineering/api-client'
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, invalidateIndex } from '../transport/ref-resolver.js'
-import { shouldJson, json, table, kv, header, COLUMNS, C, withTimeout, success, updated, relTime, isoDate, bulkRemoved } from "../output/format.js"
+import {
+  shouldJson,
+  json,
+  table,
+  kv,
+  header,
+  C,
+  withTimeout,
+  success,
+  updated,
+  relTime,
+  isoDate,
+  bulkRemoved,
+} from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
 import { readEnv } from '../auth/env.js'
@@ -53,7 +65,7 @@ const PRIMARY_CALENDAR_PREF = 'calendar:class:PrimaryCalendar' as Ref<Class<Doc>
  * Used to distinguish "this workspace doesn't model Employee/Person/Calendar"
  * from real network/auth failures, which must surface to the caller.
  */
-function isDomainNotFound (err: unknown): boolean {
+function isDomainNotFound(err: unknown): boolean {
   // Hierarchy throws `Error('domain not found: <class>')` when the queried
   // class isn't in the workspace model. Match case-insensitively so a
   // future SDK message tweak (casing, translation) doesn't silently break
@@ -79,14 +91,23 @@ function isDomainNotFound (err: unknown): boolean {
 async function resolvePrimaryCalendar(
   client: Awaited<ReturnType<typeof connectCli>>,
   primarySocialId: string,
-  accountUuid: string
+  accountUuid: string,
 ): Promise<Ref<Doc>> {
-  let calendars: Array<Doc & { _id: Ref<Doc>; _class?: Ref<Class<Doc>>; user?: string; hidden?: boolean; access?: string; default?: boolean }>
+  let calendars: Array<
+    Doc & {
+      _id: Ref<Doc>
+      _class?: Ref<Class<Doc>>
+      user?: string
+      hidden?: boolean
+      access?: string
+      default?: boolean
+    }
+  >
   try {
     calendars = (await client.findAll(CALENDAR_CLASS, {
       user: primarySocialId,
       hidden: false,
-      access: { $in: ['owner', 'writer'] }
+      access: { $in: ['owner', 'writer'] },
     })) as typeof calendars
   } catch (err) {
     // "domain not found" means this workspace doesn't model Calendar — fall
@@ -101,7 +122,9 @@ async function resolvePrimaryCalendar(
   // workspace singleton there), so we match that contract instead of
   // guessing a user-scoped filter.
   try {
-    const pref = (await client.findOne(PRIMARY_CALENDAR_PREF, {})) as (Doc & { attachedTo?: Ref<Doc> }) | undefined
+    const pref = (await client.findOne(PRIMARY_CALENDAR_PREF, {})) as
+      | (Doc & { attachedTo?: Ref<Doc> })
+      | undefined
     if (pref?.attachedTo !== undefined) {
       const match = calendars.find((c) => c._id === pref.attachedTo)
       if (match !== undefined) return match._id
@@ -125,7 +148,8 @@ async function resolvePrimaryCalendar(
 
 function parseDate(value: string, field: string): number {
   const t = new Date(value).getTime()
-  if (Number.isNaN(t)) throw new CliError(ExitCode.Validation, `invalid ${field}: ${value} (expected ISO date)`)
+  if (Number.isNaN(t))
+    throw new CliError(ExitCode.Validation, `invalid ${field}: ${value} (expected ISO date)`)
   return t
 }
 
@@ -157,8 +181,8 @@ async function readBodyText(opts: { body?: string; bodyFile?: string }): Promise
 async function resolveEmployeeId(
   client: Awaited<ReturnType<typeof connectCli>>,
   email?: string,
-  resolveOpts: ResolveOpts = {}
-): Promise<{ ref: Ref<Doc>, class: Ref<Class<Doc>> }> {
+  resolveOpts: ResolveOpts = {},
+): Promise<{ ref: Ref<Doc>; class: Ref<Class<Doc>> }> {
   if (email) {
     // Todo `user` accepts either an Employee or a Person ref depending on
     // the workspace model, so try Employee first then Person via the shared
@@ -168,7 +192,7 @@ async function resolveEmployeeId(
         client,
         email,
         ['contact:class:Employee', 'contact:class:Person'],
-        resolveOpts
+        resolveOpts,
       )
       if (id !== undefined) {
         // The helper returns only the _id, not the class. Probe to find
@@ -192,11 +216,11 @@ async function resolveEmployeeId(
     const lower = email.toLowerCase()
     for (const classId of ['contact:class:Employee', 'contact:class:Person']) {
       try {
-        const docs = (await client.findAll(
-          classId as Ref<Class<Doc>>, {}, { limit: 500 }
-        )) as Array<Doc & { name?: string; email?: string }>
+        const docs = (await client.findAll(classId as Ref<Class<Doc>>, {}, { limit: 500 })) as Array<
+          Doc & { name?: string; email?: string }
+        >
         const hit = docs.find(
-          (p) => (p.name ?? '').toLowerCase() === lower || (p.email ?? '').toLowerCase() === lower
+          (p) => (p.name ?? '').toLowerCase() === lower || (p.email ?? '').toLowerCase() === lower,
         )
         if (hit) return { ref: hit._id, class: classId as Ref<Class<Doc>> }
       } catch (err) {
@@ -215,10 +239,9 @@ async function resolveEmployeeId(
   const account = await client.getAccount()
   for (const classId of ['contact:class:Employee', 'contact:class:Person']) {
     try {
-      const doc = (await client.findOne(
-        classId as Ref<Class<Doc>>,
-        { personUuid: account.uuid }
-      )) as Doc | undefined
+      const doc = (await client.findOne(classId as Ref<Class<Doc>>, { personUuid: account.uuid })) as
+        | Doc
+        | undefined
       if (doc !== undefined) return { ref: doc._id, class: classId as Ref<Class<Doc>> }
     } catch (err) {
       if (!isDomainNotFound(err)) throw err
@@ -228,7 +251,7 @@ async function resolveEmployeeId(
   throw new CliError(
     ExitCode.NotFound,
     `no contact:class:Person or contact:class:Employee provisioned for current account`,
-    'open the workspace once in the browser, or re-run without omitting --owner'
+    'open the workspace once in the browser, or re-run without omitting --owner',
   )
 }
 
@@ -255,16 +278,27 @@ export async function listActions(opts: ListActionsOpts = {}): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const query: Record<string, unknown> = {}
-    if (opts.owner) query.user = (await resolveEmployeeId(client, opts.owner, { url: opts.url, workspace: opts.workspace })).ref
+    if (opts.owner)
+      query.user = (
+        await resolveEmployeeId(client, opts.owner, { url: opts.url, workspace: opts.workspace })
+      ).ref
     if (opts.priority) {
       if (!TODO_PRIORITIES.has(opts.priority)) {
-        throw new CliError(ExitCode.Validation, `invalid --priority: ${opts.priority}`, `expected one of ${[...TODO_PRIORITIES].join(' | ')}`)
+        throw new CliError(
+          ExitCode.Validation,
+          `invalid --priority: ${opts.priority}`,
+          `expected one of ${[...TODO_PRIORITIES].join(' | ')}`,
+        )
       }
       query.priority = opts.priority
     }
     if (opts.visibility) {
       if (!TODO_VISIBILITIES.has(opts.visibility)) {
-        throw new CliError(ExitCode.Validation, `invalid --visibility: ${opts.visibility}`, `expected one of ${[...TODO_VISIBILITIES].join(' | ')}`)
+        throw new CliError(
+          ExitCode.Validation,
+          `invalid --visibility: ${opts.visibility}`,
+          `expected one of ${[...TODO_VISIBILITIES].join(' | ')}`,
+        )
       }
       query.visibility = opts.visibility
     }
@@ -279,7 +313,7 @@ export async function listActions(opts: ListActionsOpts = {}): Promise<void> {
       const issueId = await resolveRef(opts.issue, {
         client,
         classId: CLASS.Issue as Ref<Class<Doc>>,
-        defaultProjectIdentifier: readEnv().project
+        defaultProjectIdentifier: readEnv().project,
       })
       query.attachedTo = issueId
       query.attachedToClass = CLASS.Issue
@@ -287,24 +321,45 @@ export async function listActions(opts: ListActionsOpts = {}): Promise<void> {
     if (opts.completed === true) query.doneOn = { $ne: null }
     else if (opts.completed === false) query.doneOn = null
 
-    const docs = (await withSpinner('Loading actions…', () =>
-      client.findAll(TODO_CLASS, query as any), opts
+    const docs = (await withSpinner(
+      'Loading actions…',
+      () => client.findAll(TODO_CLASS, query as any),
+      opts,
     )) as unknown as ToDo[]
 
     let r = docs
     if (opts.offset && opts.offset > 0) r = r.slice(opts.offset)
     if (opts.limit && opts.limit > 0) r = r.slice(0, opts.limit)
 
-    if (shouldJson({ json: opts.json, ci: opts.ci })) { json(r); return }
-    table(r as unknown as Record<string, unknown>[], [
-      { key: 'title', header: 'TITLE', format: (r) => String((r as ToDo).title ?? '').slice(0, 50) },
-      { key: 'priority', header: 'PRIORITY' },
-      { key: 'visibility', header: 'VIS' },
-      { key: 'dueDate', header: 'DUE', format: (r) => (r as ToDo).dueDate ? new Date(Number((r as ToDo).dueDate)).toISOString().slice(0, 10) : '—' },
-      { key: 'doneOn', header: 'DONE', format: (r) => (r as ToDo).doneOn ? new Date(Number((r as ToDo).doneOn)).toISOString().slice(0, 10) : '—' },
-      { key: '_id', header: '_ID', format: (r) => String((r as ToDo)._id).slice(-12) }
-    ], { count: true, title: 'todos' })
-  } finally { await client.close() }
+    if (shouldJson({ json: opts.json, ci: opts.ci })) {
+      json(r)
+      return
+    }
+    table(
+      r as unknown as Record<string, unknown>[],
+      [
+        { key: 'title', header: 'TITLE', format: (r) => String((r as ToDo).title ?? '').slice(0, 50) },
+        { key: 'priority', header: 'PRIORITY' },
+        { key: 'visibility', header: 'VIS' },
+        {
+          key: 'dueDate',
+          header: 'DUE',
+          format: (r) =>
+            (r as ToDo).dueDate ? new Date(Number((r as ToDo).dueDate)).toISOString().slice(0, 10) : '—',
+        },
+        {
+          key: 'doneOn',
+          header: 'DONE',
+          format: (r) =>
+            (r as ToDo).doneOn ? new Date(Number((r as ToDo).doneOn)).toISOString().slice(0, 10) : '—',
+        },
+        { key: '_id', header: '_ID', format: (r) => String((r as ToDo)._id).slice(-12) },
+      ],
+      { count: true, title: 'todos' },
+    )
+  } finally {
+    await client.close()
+  }
 }
 
 // ---- get ----
@@ -329,17 +384,31 @@ export async function getAction(ref: string, opts: GetActionOpts = {}): Promise<
     if (opts.markdown && doc.description) {
       try {
         const body = await withTimeout(
-          client.fetchMarkup(TODO_CLASS as Ref<Class<Doc>>, doc._id, 'description', doc.description as any, 'markdown'),
+          client.fetchMarkup(
+            TODO_CLASS as Ref<Class<Doc>>,
+            doc._id,
+            'description',
+            doc.description as any,
+            'markdown',
+          ),
           5000,
-          '(body fetch timed out)'
+          '(body fetch timed out)',
         )
         console.log(body)
         return
-      } catch { console.log(String(doc.description)); return }
+      } catch {
+        console.log(String(doc.description))
+        return
+      }
     }
-    if (shouldJson({ json: opts.json, ci: opts.ci })) { json(doc); return }
+    if (shouldJson({ json: opts.json, ci: opts.ci })) {
+      json(doc)
+      return
+    }
 
-    header(`Action — ${doc.title ?? '(untitled)'}`, { subtitle: `created ${relTime(doc.createdOn as number | null)}` })
+    header(`Action — ${doc.title ?? '(untitled)'}`, {
+      subtitle: `created ${relTime(doc.createdOn as number | null)}`,
+    })
     const rows: Array<[string, string]> = [
       ['ID', C.emphasis(String(doc._id))],
       ['Title', String(doc.title ?? '—')],
@@ -348,11 +417,22 @@ export async function getAction(ref: string, opts: GetActionOpts = {}): Promise<
       ['Due', doc.dueDate != null ? isoDate(doc.dueDate) : C.muted('none')],
       ['Owner', String(doc.assignedTo ?? doc.user ?? '—')],
       ['Created by', String(doc.createdBy ?? '—')],
-      ['Created', doc.createdOn != null ? `${isoDate(doc.createdOn)} (${relTime(doc.createdOn as number | null)})` : C.muted('—')],
-      ['Modified', doc.modifiedOn != null ? `${isoDate(doc.modifiedOn)} (${relTime(doc.modifiedOn as number | null)})` : C.muted('—')],
-      ['_class', C.id(String(doc._class))]
+      [
+        'Created',
+        doc.createdOn != null
+          ? `${isoDate(doc.createdOn)} (${relTime(doc.createdOn as number | null)})`
+          : C.muted('—'),
+      ],
+      [
+        'Modified',
+        doc.modifiedOn != null
+          ? `${isoDate(doc.modifiedOn)} (${relTime(doc.modifiedOn as number | null)})`
+          : C.muted('—'),
+      ],
+      ['_class', C.id(String(doc._class))],
     ]
-    if (doc.doneOn != null) rows.push(['Done', `${isoDate(doc.doneOn)} (${relTime(doc.doneOn as number | null)})`])
+    if (doc.doneOn != null)
+      rows.push(['Done', `${isoDate(doc.doneOn)} (${relTime(doc.doneOn as number | null)})`])
     kv(rows)
     if (doc.description && doc.description !== '' && !opts.markdown) {
       console.log()
@@ -361,7 +441,9 @@ export async function getAction(ref: string, opts: GetActionOpts = {}): Promise<
       const desc = String(doc.description)
       console.log(desc.length > 500 ? desc.slice(0, 500) + '…' : desc)
     }
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
 // ---- create ----
@@ -388,17 +470,26 @@ export interface CreateActionOpts {
 export async function createAction(opts: CreateActionOpts): Promise<void> {
   if (!opts.title) throw new CliError(ExitCode.Validation, 'missing --title')
   const body = await readBodyText(opts)
-  const description = body
-    ? body
-    : (opts.description ? opts.description : '')
+  const description = body ? body : opts.description ? opts.description : ''
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const { ref: user, class: userClass } = await resolveEmployeeId(client, opts.owner, { url: opts.url, workspace: opts.workspace })
+    const { ref: user, class: userClass } = await resolveEmployeeId(client, opts.owner, {
+      url: opts.url,
+      workspace: opts.workspace,
+    })
     if (opts.priority && !TODO_PRIORITIES.has(opts.priority)) {
-      throw new CliError(ExitCode.Validation, `invalid --priority: ${opts.priority}`, `expected one of ${[...TODO_PRIORITIES].join(' | ')}`)
+      throw new CliError(
+        ExitCode.Validation,
+        `invalid --priority: ${opts.priority}`,
+        `expected one of ${[...TODO_PRIORITIES].join(' | ')}`,
+      )
     }
     if (opts.visibility && !TODO_VISIBILITIES.has(opts.visibility)) {
-      throw new CliError(ExitCode.Validation, `invalid --visibility: ${opts.visibility}`, `expected one of ${[...TODO_VISIBILITIES].join(' | ')}`)
+      throw new CliError(
+        ExitCode.Validation,
+        `invalid --visibility: ${opts.visibility}`,
+        `expected one of ${[...TODO_VISIBILITIES].join(' | ')}`,
+      )
     }
     const priority = opts.priority ?? 'NoPriority'
     const visibility = opts.visibility ?? 'public'
@@ -425,7 +516,7 @@ export async function createAction(opts: CreateActionOpts): Promise<void> {
       priority,
       visibility,
       doneOn: null,
-      rank: '0|aaaaa:'
+      rank: '0|aaaaa:',
     }
     if (opts.due) data.dueDate = parseDate(opts.due, '--due')
     else data.dueDate = null
@@ -437,12 +528,17 @@ export async function createAction(opts: CreateActionOpts): Promise<void> {
     }
 
     const id = await withSpinner('Creating action…', () =>
-      client.addCollection(TODO_CLASS, TODO_SPACE, attachedTo, attachedToClass, 'todos', data as any)
+      client.addCollection(TODO_CLASS, TODO_SPACE, attachedTo, attachedToClass, 'todos', data as any),
     )
     invalidateIndex(client, TODO_CLASS)
-    if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ _id: id, ...data }); return }
+    if (shouldJson({ json: opts.json, ci: opts.ci })) {
+      json({ _id: id, ...data })
+      return
+    }
     success(`created action`, opts.title, id)
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
 // ---- update ----
@@ -491,10 +587,17 @@ export async function updateAction(ref: string, opts: UpdateActionOpts): Promise
       }
       ops.visibility = opts.visibility
     }
-    if (opts.owner) ops.user = (await resolveEmployeeId(client, opts.owner, { url: opts.url, workspace: opts.workspace })).ref
+    if (opts.owner)
+      ops.user = (
+        await resolveEmployeeId(client, opts.owner, { url: opts.url, workspace: opts.workspace })
+      ).ref
 
     if (Object.keys(ops).length === 0) {
-      throw new CliError(ExitCode.Validation, 'nothing to update', 'pass --title, --description, --due, --priority, --visibility, or --owner')
+      throw new CliError(
+        ExitCode.Validation,
+        'nothing to update',
+        'pass --title, --description, --due, --priority, --visibility, or --owner',
+      )
     }
     if (opts.dryRun) {
       console.log(`would update action ${id}:`)
@@ -506,24 +609,30 @@ export async function updateAction(ref: string, opts: UpdateActionOpts): Promise
     // 'todos' collection.
     await withSpinner(
       'Updating…',
-      () => client.updateCollection(
-        TODO_CLASS,
-        todo.space as unknown as Ref<Space>,
-        id as Ref<ToDo>,
-        todo.attachedTo as Ref<Doc>,
-        (todo.attachedToClass ?? 'contact:class:Person') as Ref<Class<Doc>>,
-        todo.collection ?? 'todos',
-        ops as any
-      ),
-      opts
+      () =>
+        client.updateCollection(
+          TODO_CLASS,
+          todo.space as unknown as Ref<Space>,
+          id as Ref<ToDo>,
+          todo.attachedTo as Ref<Doc>,
+          (todo.attachedToClass ?? 'contact:class:Person') as Ref<Class<Doc>>,
+          todo.collection ?? 'todos',
+          ops as any,
+        ),
+      opts,
     )
     updated(`updated action`, id)
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
 // ---- complete / reopen ----
 
-export async function completeAction(ref: string, opts: { dryRun?: boolean; json?: boolean; ci?: boolean; workspace?: string; url?: string } = {}): Promise<void> {
+export async function completeAction(
+  ref: string,
+  opts: { dryRun?: boolean; json?: boolean; ci?: boolean; workspace?: string; url?: string } = {},
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const id = await resolveRef(ref, {
@@ -538,22 +647,28 @@ export async function completeAction(ref: string, opts: { dryRun?: boolean; json
     }
     await withSpinner(
       'Completing…',
-      () => client.updateCollection(
-        TODO_CLASS,
-        todo.space as unknown as Ref<Space>,
-        id as Ref<ToDo>,
-        todo.attachedTo as Ref<Doc>,
-        (todo.attachedToClass ?? 'contact:class:Person') as Ref<Class<Doc>>,
-        todo.collection ?? 'todos',
-        { doneOn: Date.now() } as any
-      ),
-      opts
+      () =>
+        client.updateCollection(
+          TODO_CLASS,
+          todo.space as unknown as Ref<Space>,
+          id as Ref<ToDo>,
+          todo.attachedTo as Ref<Doc>,
+          (todo.attachedToClass ?? 'contact:class:Person') as Ref<Class<Doc>>,
+          todo.collection ?? 'todos',
+          { doneOn: Date.now() } as any,
+        ),
+      opts,
     )
     console.log(`completed action: ${id}`)
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
-export async function reopenAction(ref: string, opts: { dryRun?: boolean; json?: boolean; ci?: boolean; workspace?: string; url?: string } = {}): Promise<void> {
+export async function reopenAction(
+  ref: string,
+  opts: { dryRun?: boolean; json?: boolean; ci?: boolean; workspace?: string; url?: string } = {},
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const id = await resolveRef(ref, {
@@ -568,35 +683,50 @@ export async function reopenAction(ref: string, opts: { dryRun?: boolean; json?:
     }
     await withSpinner(
       'Reopening…',
-      () => client.updateCollection(
-        TODO_CLASS,
-        todo.space as unknown as Ref<Space>,
-        id as Ref<ToDo>,
-        todo.attachedTo as Ref<Doc>,
-        (todo.attachedToClass ?? 'contact:class:Person') as Ref<Class<Doc>>,
-        todo.collection ?? 'todos',
-        { doneOn: null } as any
-      ),
-      opts
+      () =>
+        client.updateCollection(
+          TODO_CLASS,
+          todo.space as unknown as Ref<Space>,
+          id as Ref<ToDo>,
+          todo.attachedTo as Ref<Doc>,
+          (todo.attachedToClass ?? 'contact:class:Person') as Ref<Class<Doc>>,
+          todo.collection ?? 'todos',
+          { doneOn: null } as any,
+        ),
+      opts,
     )
     console.log(`reopened action: ${id}`)
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
 // ---- delete ----
 
-export async function deleteActions(refs: string[], opts: { dryRun?: boolean; workspace?: string; url?: string; yes?: boolean } = {}): Promise<void> {
+export async function deleteActions(
+  refs: string[],
+  opts: { dryRun?: boolean; workspace?: string; url?: string; yes?: boolean } = {},
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const ids = await resolveRefs(refs, {
       client,
       classId: TODO_CLASS as Ref<Class<Doc>>,
     })
-    if (!opts.yes && ids.length > 1) throw new CliError(ExitCode.Validation, `destructive: deleting ${refs.length} actions requires --yes`, 're-run with --yes to confirm')
-    let deleted = 0, skipped = 0
+    if (!opts.yes && ids.length > 1)
+      throw new CliError(
+        ExitCode.Validation,
+        `destructive: deleting ${refs.length} actions requires --yes`,
+        're-run with --yes to confirm',
+      )
+    let deleted = 0,
+      skipped = 0
     for (const id of ids) {
       const todo = await client.findOne(TODO_CLASS, { _id: id as Ref<ToDo> })
-      if (!todo) { skipped++; continue }
+      if (!todo) {
+        skipped++
+        continue
+      }
       try {
         await client.removeCollection(
           TODO_CLASS,
@@ -604,7 +734,7 @@ export async function deleteActions(refs: string[], opts: { dryRun?: boolean; wo
           id as Ref<ToDo>,
           todo.attachedTo as Ref<Doc>,
           (todo.attachedToClass ?? 'contact:class:Person') as Ref<Class<Doc>>,
-          todo.collection ?? 'todos'
+          todo.collection ?? 'todos',
         )
         deleted++
       } catch (e) {
@@ -613,7 +743,9 @@ export async function deleteActions(refs: string[], opts: { dryRun?: boolean; wo
       }
     }
     bulkRemoved(deleted, skipped)
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
 // ---- schedule (WorkSlot) / unschedule ----
@@ -648,9 +780,10 @@ export async function scheduleAction(ref: string, opts: ScheduleActionOpts): Pro
     // (see time-resources/utils.ts: findPrimaryCalendar). `todo.user` is an
     // Employee ref — using it as the `calendar` field makes the WorkSlot
     // invisible to the Schedule Calendar UI, which filters by Calendar ref.
-    const calendarRef = account.primarySocialId !== undefined
-      ? await resolvePrimaryCalendar(client, account.primarySocialId, account.uuid)
-      : (`${account.uuid}_calendar` as Ref<Doc>)
+    const calendarRef =
+      account.primarySocialId !== undefined
+        ? await resolvePrimaryCalendar(client, account.primarySocialId, account.uuid)
+        : (`${account.uuid}_calendar` as Ref<Doc>)
     const data: Record<string, unknown> = {
       title: todo.title,
       date: startMs,
@@ -661,31 +794,53 @@ export async function scheduleAction(ref: string, opts: ScheduleActionOpts): Pro
       access: 'owner',
       visibility: todo.visibility ?? 'public',
       blockTime: !opts.allDay,
-      user: account.primarySocialId
+      user: account.primarySocialId,
     }
     if (opts.dryRun) {
       console.log('would create work-slot:')
-      console.log(JSON.stringify({ _class: WORKSLOT_CLASS, space: CALENDAR_SPACE, attachedTo: todoId, attachedToClass: TODO_CLASS, collection: 'workslots', data }, null, 2))
+      console.log(
+        JSON.stringify(
+          {
+            _class: WORKSLOT_CLASS,
+            space: CALENDAR_SPACE,
+            attachedTo: todoId,
+            attachedToClass: TODO_CLASS,
+            collection: 'workslots',
+            data,
+          },
+          null,
+          2,
+        ),
+      )
       return
     }
     const id = await withSpinner(
       'Scheduling…',
-      () => client.addCollection(
-        WORKSLOT_CLASS,
-        CALENDAR_SPACE,
-        todoId as Ref<Doc>,
-        TODO_CLASS,
-        'workslots',
-        data as any
-      ),
-      opts
+      () =>
+        client.addCollection(
+          WORKSLOT_CLASS,
+          CALENDAR_SPACE,
+          todoId as Ref<Doc>,
+          TODO_CLASS,
+          'workslots',
+          data as any,
+        ),
+      opts,
     )
-    if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ _id: id, attachedTo: todoId, ...data }); return }
+    if (shouldJson({ json: opts.json, ci: opts.ci })) {
+      json({ _id: id, attachedTo: todoId, ...data })
+      return
+    }
     console.log(`scheduled: ${id}`)
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
-export async function unscheduleAction(ref: string, opts: { slotId?: string; yes?: boolean; dryRun?: boolean; workspace?: string; url?: string } = {}): Promise<void> {
+export async function unscheduleAction(
+  ref: string,
+  opts: { slotId?: string; yes?: boolean; dryRun?: boolean; workspace?: string; url?: string } = {},
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const todoId = await resolveRef(ref, {
@@ -712,10 +867,11 @@ export async function unscheduleAction(ref: string, opts: { slotId?: string; yes
       throw new CliError(
         ExitCode.Validation,
         `destructive: unscheduling ${slots.length} work-slots requires --yes`,
-        're-run with --yes to confirm'
+        're-run with --yes to confirm',
       )
     }
-    let removed = 0, skipped = 0
+    let removed = 0,
+      skipped = 0
     for (const s of slots) {
       if (opts.dryRun) {
         console.log(`would unschedule ${s._id}`)
@@ -728,7 +884,7 @@ export async function unscheduleAction(ref: string, opts: { slotId?: string; yes
           s._id as Ref<Doc>,
           todoId as Ref<Doc>,
           TODO_CLASS,
-          s.collection ?? 'workslots'
+          s.collection ?? 'workslots',
         )
         removed++
       } catch (e) {
@@ -737,5 +893,7 @@ export async function unscheduleAction(ref: string, opts: { slotId?: string; yes
       }
     }
     console.log(`unscheduled: ${removed}, skipped: ${skipped}`)
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }

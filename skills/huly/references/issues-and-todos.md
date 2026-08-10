@@ -19,12 +19,12 @@ ALWAYS `--json` for any read that leads to a write. Tables hide fields you'll ne
 
 ## Decision: where to put new work?
 
-| User says… | Use |
-|---|---|
-| "create a bug", "track this", "file an issue", "bug report" | `huly issue create` |
-| "remind me to…", "task to…", "todo:", "follow up on…" | `huly action create` |
-| "log time on…" | `huly time log` |
-| "add a comment to TSK-1" | `huly comment add --issue TSK-1` |
+| User says…                                                  | Use                              |
+| ----------------------------------------------------------- | -------------------------------- |
+| "create a bug", "track this", "file an issue", "bug report" | `huly issue create`              |
+| "remind me to…", "task to…", "todo:", "follow up on…"       | `huly action create`             |
+| "log time on…"                                              | `huly time log`                  |
+| "add a comment to TSK-1"                                    | `huly comment add --issue TSK-1` |
 
 If the user says "task" without specifying, ASK whether they mean a tracker issue (`huly issue create`) or a Planner action (`huly action create`). These are different objects. Conflating them is the most common agent mistake on this surface.
 
@@ -64,17 +64,17 @@ huly issue create \
 
 Defaults the CLI silently applies (use `--minimal` or `HULY_OPINIONATED=0` to skip the opinionated ones):
 
-| Default | What gets set | How to skip |
-|---|---|---|
-| `status` | lowest-rank IssueStatus in category `ToDo` (usually `To do`) — NOT `Backlog` | `--status "Backlog"`, `--status "Done"`, etc. |
-| `priority` | `Normal` or first available | `--priority High` |
-| `task-type` | first available TaskType for the project; if none, falls back to `tracker:taskTypes:Issue` (NOT `tracker:issue:default` — that ref is invalid and the create errors) | `--task-type "Story"` |
-| `parent` | `null` (top-level) | `--parent TSK-42` |
-| `members` (on project) | current user added | cannot skip on `project create` |
-| `description` | `''` | `--body "…"` |
-| `assignee` | **current user's email** (resolved from `getAccount().fullSocialIds`) | `--assignee <other-email>` to override; `--assignee ''` to leave unassigned |
-| issue number | `$inc` the project's `sequence` field, before create | n/a (automatic) |
-| `--body` vs `--description` | both stored; `--body` is the rich Markdown | pass one or the other |
+| Default                     | What gets set                                                                                                                                                        | How to skip                                                                 |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `status`                    | lowest-rank IssueStatus in category `ToDo` (usually `To do`) — NOT `Backlog`                                                                                         | `--status "Backlog"`, `--status "Done"`, etc.                               |
+| `priority`                  | `Normal` or first available                                                                                                                                          | `--priority High`                                                           |
+| `task-type`                 | first available TaskType for the project; if none, falls back to `tracker:taskTypes:Issue` (NOT `tracker:issue:default` — that ref is invalid and the create errors) | `--task-type "Story"`                                                       |
+| `parent`                    | `null` (top-level)                                                                                                                                                   | `--parent TSK-42`                                                           |
+| `members` (on project)      | current user added                                                                                                                                                   | cannot skip on `project create`                                             |
+| `description`               | `''`                                                                                                                                                                 | `--body "…"`                                                                |
+| `assignee`                  | **current user's email** (resolved from `getAccount().fullSocialIds`)                                                                                                | `--assignee <other-email>` to override; `--assignee ''` to leave unassigned |
+| issue number                | `$inc` the project's `sequence` field, before create                                                                                                                 | n/a (automatic)                                                             |
+| `--body` vs `--description` | both stored; `--body` is the rich Markdown                                                                                                                           | pass one or the other                                                       |
 
 **Opinionated defaults master switch:** the new opinionated defaults (`status` = `ToDo` category, `assignee` = current user's email) AND the pre-existing `--minimal`-gated fields (`parent: null` and `space: project._id` on `issue create`, plus `description` omission on `project create`) are all disabled by `HULY_OPINIONATED=0` (or `false` / `no` / `off`) or by passing `--minimal`. With opinionated defaults OFF, `status` reverts to the workspace's lowest-rank status overall (usually `Backlog`), `assignee` is unset (unless you pass `--assignee <email>` or `--assignee ''`), `parent` and `space` are omitted entirely from the issue payload, and `description` is omitted from `project create`. The remaining defaults that are NOT gated by `HULY_OPINIONATED` continue to apply: `priority` resolves to `Normal` or first available; `task-type` resolves to the first available TaskType; the issue number is always `$inc`'d; `body`/`description` storage and the `--body` vs `--description` precedence are unaffected.
 
@@ -161,6 +161,7 @@ huly comment delete <comment-ref>...    # --yes for ≥2
 ```
 
 Side effects on `comment add` (server-side, not the CLI):
+
 - Author auto-added as `Collaborator` on the issue
 - Every `@mention` in body parsed → inbox notification per collaborator + per mention
 - An `ActivityMessage` is emitted, appears in `huly activity list`
@@ -179,6 +180,7 @@ huly time delete <entry-ref>... --yes
 ```
 
 **Critical side effect:**
+
 - The CLI stores time as **man-hours** (`value = minutes / 60`).
 - `time log` updates `reportedTime` and recomputes `remainingTime` on the issue.
 - **If the issue has a parent issue, the recompute walks UP the parent chain.** No opt-out.
@@ -222,6 +224,7 @@ huly action create --title "…" --attached-to TSK-1 --attached-to-class tracker
 ```
 
 Strict enums on write:
+
 - `--priority` ∈ `Urgent | High | Medium | Low | NoPriority` (case-SENSITIVE — `NoPriority` is one word)
 - `--visibility` ∈ `public | busy | private` (case-SENSITIVE)
 
@@ -264,33 +267,33 @@ ALL of the following happen server-side via mixins on classic projects (`Project
 
 ### Creates
 
-| Your command | Server does |
-|---|---|
-| `huly issue create --assignee <email>` when status is `ToDo` or `Active` category | Auto-creates `ProjectToDo` for the assignee + sends inbox notification. |
-| Same, but status is `Backlog`, `Done`, or `Canceled` | Nothing. **Category matters, not literal name.** |
-| `huly issue update --assignee <new>` while issue has open todos | Closes existing assignee's open todos (`doneOn=now`), creates new `ProjectToDo` for new assignee. |
-| `huly issue update --status Done\|Canceled` | All open todos on this issue get `doneOn=now`. |
-| `huly issue update --status ToDo\|Active` on a todo-less assigned issue | Creates the FIRST `ProjectToDo`. |
+| Your command                                                                      | Server does                                                                                       |
+| --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `huly issue create --assignee <email>` when status is `ToDo` or `Active` category | Auto-creates `ProjectToDo` for the assignee + sends inbox notification.                           |
+| Same, but status is `Backlog`, `Done`, or `Canceled`                              | Nothing. **Category matters, not literal name.**                                                  |
+| `huly issue update --assignee <new>` while issue has open todos                   | Closes existing assignee's open todos (`doneOn=now`), creates new `ProjectToDo` for new assignee. |
+| `huly issue update --status Done\|Canceled`                                       | All open todos on this issue get `doneOn=now`.                                                    |
+| `huly issue update --status ToDo\|Active` on a todo-less assigned issue           | Creates the FIRST `ProjectToDo`.                                                                  |
 
 ### Action → Issue
 
-| Your command | Server does |
-|---|---|
-| `huly action complete <ref>` (last open todo on its issue) | Auto-advances issue status past the last `Active` state, via `IssueToDoDone` mixin. |
-| `huly action schedule <ref>` (first WorkSlot, issue status = Backlog or Todo) | Auto-advances issue status to the next `Active` state, via `OnWorkSlotCreate`. |
-| Subsequent WorkSlots on the same action | None (already in Active state). |
-| `huly action unschedule <ref>` | Removes WorkSlots. **Does NOT roll back status.** Only `OnToDoRemove` (i.e. `action delete`) triggers rollback. |
-| `huly action reopen <ref>` after IssueToDoDone advanced the status | Status stays advanced. User must `huly issue update --status <previous>` manually. |
-| `huly action delete <ref>` (was the last open todo on the issue) | Auto-rolls back issue status to the previous un-started state. |
-| `huly action update --title\|--description\|--visibility` | Mirrors to all WorkSlots of that todo (`OnToDoUpdate` → `OnWorkSlotUpdate`). |
-| `huly action update --priority` or `--due` | NOT mirrored to WorkSlots. |
+| Your command                                                                  | Server does                                                                                                     |
+| ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `huly action complete <ref>` (last open todo on its issue)                    | Auto-advances issue status past the last `Active` state, via `IssueToDoDone` mixin.                             |
+| `huly action schedule <ref>` (first WorkSlot, issue status = Backlog or Todo) | Auto-advances issue status to the next `Active` state, via `OnWorkSlotCreate`.                                  |
+| Subsequent WorkSlots on the same action                                       | None (already in Active state).                                                                                 |
+| `huly action unschedule <ref>`                                                | Removes WorkSlots. **Does NOT roll back status.** Only `OnToDoRemove` (i.e. `action delete`) triggers rollback. |
+| `huly action reopen <ref>` after IssueToDoDone advanced the status            | Status stays advanced. User must `huly issue update --status <previous>` manually.                              |
+| `huly action delete <ref>` (was the last open todo on the issue)              | Auto-rolls back issue status to the previous un-started state.                                                  |
+| `huly action update --title\|--description\|--visibility`                     | Mirrors to all WorkSlots of that todo (`OnToDoUpdate` → `OnWorkSlotUpdate`).                                    |
+| `huly action update --priority` or `--due`                                    | NOT mirrored to WorkSlots.                                                                                      |
 
 ### Issue → everything
 
-| Your command | Side effect |
-|---|---|
+| Your command                                               | Side effect                                                     |
+| ---------------------------------------------------------- | --------------------------------------------------------------- |
 | `huly issue update --title "New"` on issue with sub-issues | Propagates new title into each sub-issue's `parentTitle` field. |
-| `huly time log --issue <ref>` on issue with parent | Walks parent chain recompute (`OnIssueUpdate`). **No opt-out.** |
+| `huly time log --issue <ref>` on issue with parent         | Walks parent chain recompute (`OnIssueUpdate`). **No opt-out.** |
 
 ### Status categories
 
@@ -320,11 +323,11 @@ huly action list --issue TSK-1 --completed true --json    # closed todos
 
 Server-auto-created `ProjectToDo`s (e.g. those from `--assignee` cascades) use `createTxCollectionCUD` and live under **both** the issue's `todos` collection AND the assignee's `time:space:ToDos` personal index. **CLI-created actions are single-parent** — the true dual-parent shape is not reproducible in one CLI call.
 
-| Shape | Lives in | Created by |
-|---|---|---|
-| Dual-parent | issue's `todos` collection AND assignee's personal `time:space:ToDos` | Server mixin (`createTxCollectionCUD`) — not CLI-reproducible |
-| Single-parent on issue | issue's `todos` collection only | `huly action create --attached-to TSK-1 --attached-to-class tracker:class:Issue` |
-| Single-parent on Person | assignee's personal `time:space:ToDos` only | `huly action create` with no `--attached-to` (defaults to current user's `account.uuid`, or resolved Person `_id` if `--owner` is passed) |
+| Shape                   | Lives in                                                              | Created by                                                                                                                                |
+| ----------------------- | --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Dual-parent             | issue's `todos` collection AND assignee's personal `time:space:ToDos` | Server mixin (`createTxCollectionCUD`) — not CLI-reproducible                                                                             |
+| Single-parent on issue  | issue's `todos` collection only                                       | `huly action create --attached-to TSK-1 --attached-to-class tracker:class:Issue`                                                          |
+| Single-parent on Person | assignee's personal `time:space:ToDos` only                           | `huly action create` with no `--attached-to` (defaults to current user's `account.uuid`, or resolved Person `_id` if `--owner` is passed) |
 
 To make a CLI-created action appear in the assignee's personal todo list, omit `--attached-to` entirely so the todo attaches to the Person doc. To get the action under BOTH the issue's `todos` and the assignee's personal list (the server's dual-parent shape), you need to create two separate actions.
 

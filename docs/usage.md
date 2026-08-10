@@ -28,17 +28,17 @@ huly --workspace prod issue list
 huly issue list --workspace prod        # equivalent
 ```
 
-| Flag | Description |
-|---|---|
-| `--url <url>` | Server URL (overrides `HULY_URL`) |
-| `--workspace <name>` | Active workspace (overrides `HULY_WORKSPACE`). Name or UUID. |
-| `--json` | Output machine-readable JSON |
-| `--ci` | Alias for `--json`. Same effect; signals non-interactive intent. |
-| `--markdown` | Output body content as rendered Markdown (read commands). Falls back to raw prosemirror-JSON with a stderr warning if conversion fails. |
-| `--dry-run` | Print the tx that would be applied, do not apply |
-| `--minimal` | Skip smart defaults (no auto-Teamspace, no auto-IssueStatus, no project-type pinning, no opinionated status/assignee/card-space defaults). Equivalent to setting `HULY_OPINIONATED=0` for this invocation only. |
-| `-y, --yes` | Skip confirmation prompts (required for destructive ops) |
-| `--non-interactive` | Same as `--yes` + disable any interactive prompts |
+| Flag                 | Description                                                                                                                                                                                                     |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--url <url>`        | Server URL (overrides `HULY_URL`)                                                                                                                                                                               |
+| `--workspace <name>` | Active workspace (overrides `HULY_WORKSPACE`). Name or UUID.                                                                                                                                                    |
+| `--json`             | Output machine-readable JSON                                                                                                                                                                                    |
+| `--ci`               | Alias for `--json`. Same effect; signals non-interactive intent.                                                                                                                                                |
+| `--markdown`         | Output body content as rendered Markdown (read commands). Falls back to raw prosemirror-JSON with a stderr warning if conversion fails.                                                                         |
+| `--dry-run`          | Print the tx that would be applied, do not apply                                                                                                                                                                |
+| `--minimal`          | Skip smart defaults (no auto-Teamspace, no auto-IssueStatus, no project-type pinning, no opinionated status/assignee/card-space defaults). Equivalent to setting `HULY_OPINIONATED=0` for this invocation only. |
+| `-y, --yes`          | Skip confirmation prompts (required for destructive ops)                                                                                                                                                        |
+| `--non-interactive`  | Same as `--yes` + disable any interactive prompts                                                                                                                                                               |
 
 ### Precedence rules
 
@@ -52,17 +52,17 @@ huly issue list --workspace prod        # equivalent
 These are the values defined in `ExitCode` (`packages/cli/src/output/errors.ts`).
 All errors are exit-coded; pipe-friendly. `set -e` works as expected.
 
-| Code | Name | Meaning |
-|---|---|---|
-| 0 | `Ok` | Success |
-| 1 | `Generic` | Generic error (uncaught exception, network failure, etc.) |
-| 2 | `NotFound` | Ref doesn't exist (`PLATFORM_NOT_FOUND` / 404) |
-| 3 | `Auth` | Unauthorized (`PLATFORM_UNAUTHORIZED` / 401) **or** forbidden (`PLATFORM_FORBIDDEN` / 403) |
-| 4 | `Validation` | Bad input (`PLATFORM_VALIDATION` / 400), unknown priority, etc. |
-| 5 | `RateLimited` | Rate-limited (`429`); retries exhausted |
-| 6 | `Conflict` | Resource already exists (`PLATFORM_ALREADY_EXISTS` / 409) |
-| 7 | `Server` | Server-side failure (`>=500`) |
-| 8 | `Ambiguous` | A ref matched more than one document and the resolver couldn't pick one |
+| Code | Name          | Meaning                                                                                    |
+| ---- | ------------- | ------------------------------------------------------------------------------------------ |
+| 0    | `Ok`          | Success                                                                                    |
+| 1    | `Generic`     | Generic error (uncaught exception, network failure, etc.)                                  |
+| 2    | `NotFound`    | Ref doesn't exist (`PLATFORM_NOT_FOUND` / 404)                                             |
+| 3    | `Auth`        | Unauthorized (`PLATFORM_UNAUTHORIZED` / 401) **or** forbidden (`PLATFORM_FORBIDDEN` / 403) |
+| 4    | `Validation`  | Bad input (`PLATFORM_VALIDATION` / 400), unknown priority, etc.                            |
+| 5    | `RateLimited` | Rate-limited (`429`); retries exhausted                                                    |
+| 6    | `Conflict`    | Resource already exists (`PLATFORM_ALREADY_EXISTS` / 409)                                  |
+| 7    | `Server`      | Server-side failure (`>=500`)                                                              |
+| 8    | `Ambiguous`   | A ref matched more than one document and the resolver couldn't pick one                    |
 
 For the per-error hint text, see
 [CLI behavior — Error messages](reference/cli-behavior.md#error-messages-include-next-step-hints).

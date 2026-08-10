@@ -1,9 +1,23 @@
 import type { Doc, Ref, Space, Class } from '@hcengineering/core'
-import pkg from '@hcengineering/api-client'
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, invalidateIndex } from '../transport/ref-resolver.js'
-import { shouldJson, json, table, kv, header, COLUMNS, C, isoDate, relTime, statusGlyph, colorizeStatus, success, updated, bulkRemoved } from "../output/format.js"
+import {
+  shouldJson,
+  json,
+  table,
+  kv,
+  header,
+  COLUMNS,
+  C,
+  isoDate,
+  relTime,
+  statusGlyph,
+  colorizeStatus,
+  success,
+  updated,
+  bulkRemoved,
+} from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { deleteDoc } from '../commands/dry-run.js'
 import { CliError, ExitCode } from '../output/errors.js'
@@ -19,28 +33,50 @@ type Milestone = Doc & {
 
 function parseDate(value: string, field: string): number {
   const t = new Date(value).getTime()
-  if (Number.isNaN(t)) throw new CliError(ExitCode.Validation, `invalid ${field}: ${value} (expected ISO date)`)
+  if (Number.isNaN(t))
+    throw new CliError(ExitCode.Validation, `invalid ${field}: ${value} (expected ISO date)`)
   return t
 }
 
-export async function listMilestones(opts: { project?: string; limit?: number; offset?: number; json?: boolean; ci?: boolean; workspace?: string; url?: string } = {}): Promise<void> {
+export async function listMilestones(
+  opts: {
+    project?: string
+    limit?: number
+    offset?: number
+    json?: boolean
+    ci?: boolean
+    workspace?: string
+    url?: string
+  } = {},
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const project = await resolveProjectForCommand(client, opts.project)
     const docs = (await withSpinner(
       `Loading milestones for ${project.identifier}…`,
       () => client.findAll(CLASS.Milestone as Ref<Class<Milestone>>, { space: project._id }),
-      opts
+      opts,
     )) as Milestone[]
     let r = docs
     if (opts.offset && opts.offset > 0) r = r.slice(opts.offset)
     if (opts.limit && opts.limit > 0) r = r.slice(0, opts.limit)
-    if (shouldJson({ json: opts.json, ci: opts.ci })) { json(r); return }
-    table(r as unknown as Record<string, unknown>[], COLUMNS.milestone(), { count: true, title: 'milestones' })
-  } finally { await client.close() }
+    if (shouldJson({ json: opts.json, ci: opts.ci })) {
+      json(r)
+      return
+    }
+    table(r as unknown as Record<string, unknown>[], COLUMNS.milestone(), {
+      count: true,
+      title: 'milestones',
+    })
+  } finally {
+    await client.close()
+  }
 }
 
-export async function getMilestone(ref: string, opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string } = {}): Promise<void> {
+export async function getMilestone(
+  ref: string,
+  opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string } = {},
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const id = await resolveRef(ref, {
@@ -49,18 +85,33 @@ export async function getMilestone(ref: string, opts: { json?: boolean; ci?: boo
     })
     const doc = await client.findOne(CLASS.Milestone as Ref<Class<Milestone>>, { _id: id as Ref<Milestone> })
     if (!doc) throw new CliError(ExitCode.NotFound, `milestone ${ref} not found`)
-    if (shouldJson({ json: opts.json, ci: opts.ci })) { json(doc); return }
+    if (shouldJson({ json: opts.json, ci: opts.ci })) {
+      json(doc)
+      return
+    }
 
     const status = String(doc.status ?? 'planned')
-    header(`Milestone — ${doc.label ?? '(unnamed)'}`, { subtitle: `target ${relTime(doc.targetDate as number | null)}` })
+    header(`Milestone — ${doc.label ?? '(unnamed)'}`, {
+      subtitle: `target ${relTime(doc.targetDate as number | null)}`,
+    })
     kv([
       ['ID', C.emphasis(String(doc._id))],
       ['Label', String(doc.label ?? '—')],
       ['Status', statusGlyph(status) + ' ' + colorizeStatus(status)],
       ['Project', String(doc.space ?? '—')],
-      ['Target date', doc.targetDate != null ? `${isoDate(doc.targetDate)} (${relTime(doc.targetDate as number | null)})` : C.muted('—')],
-      ['Created', doc.createdOn != null ? `${isoDate(doc.createdOn)} (${relTime(doc.createdOn as number | null)})` : C.muted('—')],
-      ['_class', C.id(String(doc._class))]
+      [
+        'Target date',
+        doc.targetDate != null
+          ? `${isoDate(doc.targetDate)} (${relTime(doc.targetDate as number | null)})`
+          : C.muted('—'),
+      ],
+      [
+        'Created',
+        doc.createdOn != null
+          ? `${isoDate(doc.createdOn)} (${relTime(doc.createdOn as number | null)})`
+          : C.muted('—'),
+      ],
+      ['_class', C.id(String(doc._class))],
     ])
     if (doc.description && doc.description !== '') {
       console.log()
@@ -68,7 +119,9 @@ export async function getMilestone(ref: string, opts: { json?: boolean; ci?: boo
       console.log(C.muted('─'.repeat(20)))
       console.log(String(doc.description))
     }
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
 export async function createMilestone(opts: {
@@ -86,14 +139,16 @@ export async function createMilestone(opts: {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const project = await resolveProjectForCommand(client, opts.project)
-    const targetDate = opts.targetDate ? parseDate(opts.targetDate, '--target-date') : Date.now() + 30 * 24 * 3600 * 1000
+    const targetDate = opts.targetDate
+      ? parseDate(opts.targetDate, '--target-date')
+      : Date.now() + 30 * 24 * 3600 * 1000
     const data: Record<string, unknown> = {
       label: opts.label,
       description: opts.description ? opts.description : '',
       status: 'planned',
       targetDate,
       space: project._id,
-      comments: 0
+      comments: 0,
     }
     if (opts.dryRun) {
       console.log('would create milestone:')
@@ -102,26 +157,37 @@ export async function createMilestone(opts: {
     }
     const id = await withSpinner(
       'Creating milestone…',
-      () => client.createDoc(CLASS.Milestone as Ref<Class<Milestone>>, project._id as unknown as Ref<Space>, data as any),
-      opts
+      () =>
+        client.createDoc(
+          CLASS.Milestone as Ref<Class<Milestone>>,
+          project._id as unknown as Ref<Space>,
+          data as any,
+        ),
+      opts,
     )
     invalidateIndex(client, CLASS.Milestone)
-    if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ _id: id, ...data }) }
-    else success(`created milestone`, opts.label, id)
-  } finally { await client.close() }
+    if (shouldJson({ json: opts.json, ci: opts.ci })) {
+      json({ _id: id, ...data })
+    } else success(`created milestone`, opts.label, id)
+  } finally {
+    await client.close()
+  }
 }
 
-export async function updateMilestone(ref: string, opts: {
-  label?: string
-  description?: string
-  targetDate?: string
-  status?: string
-  json?: boolean
-  ci?: boolean
-  dryRun?: boolean
-  workspace?: string
-  url?: string
-}): Promise<void> {
+export async function updateMilestone(
+  ref: string,
+  opts: {
+    label?: string
+    description?: string
+    targetDate?: string
+    status?: string
+    json?: boolean
+    ci?: boolean
+    dryRun?: boolean
+    workspace?: string
+    url?: string
+  },
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const id = await resolveRef(ref, {
@@ -135,7 +201,12 @@ export async function updateMilestone(ref: string, opts: {
     if (opts.description !== undefined) ops.description = opts.description ? opts.description : ''
     if (opts.targetDate) ops.targetDate = parseDate(opts.targetDate, '--target-date')
     if (opts.status) ops.status = opts.status
-    if (Object.keys(ops).length === 0) throw new CliError(ExitCode.Validation, 'nothing to update', 'pass --label/--description/--target-date/--status')
+    if (Object.keys(ops).length === 0)
+      throw new CliError(
+        ExitCode.Validation,
+        'nothing to update',
+        'pass --label/--description/--target-date/--status',
+      )
     if (opts.dryRun) {
       console.log(`would update milestone ${id}:`)
       console.log(JSON.stringify({ _class: CLASS.Milestone, objectId: id, space: doc.space, ops }, null, 2))
@@ -143,29 +214,62 @@ export async function updateMilestone(ref: string, opts: {
     }
     await withSpinner(
       'Updating…',
-      () => client.updateDoc(CLASS.Milestone as Ref<Class<Milestone>>, doc.space as unknown as Ref<Space>, id as Ref<Milestone>, ops as any),
-      opts
+      () =>
+        client.updateDoc(
+          CLASS.Milestone as Ref<Class<Milestone>>,
+          doc.space as unknown as Ref<Space>,
+          id as Ref<Milestone>,
+          ops as any,
+        ),
+      opts,
     )
     updated(`updated milestone`, id)
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
-export async function deleteMilestones(refs: string[], opts: { dryRun?: boolean; workspace?: string; url?: string; yes?: boolean } = {}): Promise<void> {
+export async function deleteMilestones(
+  refs: string[],
+  opts: { dryRun?: boolean; workspace?: string; url?: string; yes?: boolean } = {},
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const ids = await resolveRefs(refs, {
       client,
       classId: CLASS.Milestone as Ref<Class<Doc>>,
     })
-    if (!opts.yes && ids.length > 1) throw new CliError(ExitCode.Validation, `destructive: deleting ${ids.length} milestones requires --yes`, 're-run with --yes to confirm')
-    let deleted = 0, skipped = 0
+    if (!opts.yes && ids.length > 1)
+      throw new CliError(
+        ExitCode.Validation,
+        `destructive: deleting ${ids.length} milestones requires --yes`,
+        're-run with --yes to confirm',
+      )
+    let deleted = 0,
+      skipped = 0
     for (const id of ids) {
-      const doc = await client.findOne(CLASS.Milestone as Ref<Class<Milestone>>, { _id: id as Ref<Milestone> })
-      if (!doc) { skipped++; continue }
-      const r = await deleteDoc(client, CLASS.Milestone as Ref<Class<Milestone>>, doc.space as unknown as Ref<Space>, id as Ref<Milestone>, opts)
+      const doc = await client.findOne(CLASS.Milestone as Ref<Class<Milestone>>, {
+        _id: id as Ref<Milestone>,
+      })
+      if (!doc) {
+        skipped++
+        continue
+      }
+      const r = await deleteDoc(
+        client,
+        CLASS.Milestone as Ref<Class<Milestone>>,
+        doc.space as unknown as Ref<Space>,
+        id as Ref<Milestone>,
+        opts,
+      )
       if (r.skipped) skipped++
-      else { deleted++; await new Promise((res) => setTimeout(res, 100)) }
+      else {
+        deleted++
+        await new Promise((res) => setTimeout(res, 100))
+      }
     }
     bulkRemoved(deleted, skipped)
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }

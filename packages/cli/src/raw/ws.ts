@@ -1,4 +1,4 @@
-import WebSocket from 'ws'
+import Ws from 'ws'
 import { readEnv, insecureTLS, requireUrl } from '../auth/env.js'
 import { accountClient, resolveToken } from '../auth/client.js'
 import { readActiveWorkspace } from '../auth/cache.js'
@@ -30,7 +30,11 @@ function parseParams(raw: string | undefined): unknown[] {
     throw new CliError(ExitCode.Validation, `invalid --params JSON: ${(e as Error).message}`)
   }
   if (!Array.isArray(parsed)) {
-    throw new CliError(ExitCode.Validation, 'params must be a JSON array', 'Huly RPC methods take positional arrays')
+    throw new CliError(
+      ExitCode.Validation,
+      'params must be a JSON array',
+      'Huly RPC methods take positional arrays',
+    )
   }
   return parsed
 }
@@ -61,7 +65,11 @@ export function isHelloFailure(message: WsMessage, helloDone: boolean): boolean 
 const PING = 'ping'
 const PONG = 'pong!'
 
-export async function wsCommand(method: string, paramsRaw: string | undefined, opts: WsOpts = {}): Promise<void> {
+export async function wsCommand(
+  method: string,
+  paramsRaw: string | undefined,
+  opts: WsOpts = {},
+): Promise<void> {
   const env = readEnv()
   const url = requireUrl(opts.url ?? env.url).replace(/\/$/, '')
   const workspace = opts.workspace ?? env.workspace ?? (await readActiveWorkspace())
@@ -74,21 +82,21 @@ export async function wsCommand(method: string, paramsRaw: string | undefined, o
   let insecure = insecureTLS() || url.startsWith('http://')
 
   if (workspace !== undefined && workspace !== '') {
-    const accountToken = opts.token ?? env.token ?? await resolveToken({ url })
+    const accountToken = opts.token ?? env.token ?? (await resolveToken({ url }))
     const ac = await accountClient(url, accountToken)
     const wsLogin = await ac.selectWorkspace(workspace)
     wsLoginEndpoint = wsLogin.endpoint.replace(/\/$/, '')
     wsToken = wsLogin.token
   } else {
-    wsToken = opts.token ?? env.token ?? await resolveToken({ url })
+    wsToken = opts.token ?? env.token ?? (await resolveToken({ url }))
   }
 
   if (wsLoginEndpoint.startsWith('http://')) insecure = true
 
   const sessionId = Math.random().toString(36).slice(2, 12)
   const wsUrl = buildWsUrl(wsLoginEndpoint, wsToken, sessionId)
-  const wsOpts: WebSocket.ClientOptions = insecure ? { rejectUnauthorized: false } : {}
-  const ws = new WebSocket(wsUrl, wsOpts)
+  const wsOpts: Ws.ClientOptions = insecure ? { rejectUnauthorized: false } : {}
+  const ws = new Ws(wsUrl, wsOpts)
 
   let id = 0
   let helloDone = false
@@ -102,7 +110,11 @@ export async function wsCommand(method: string, paramsRaw: string | undefined, o
     const cleanup = (): void => {
       if (pingTimer) clearInterval(pingTimer)
       if (timeout) clearTimeout(timeout)
-      try { ws.close() } catch { /* already closed */ }
+      try {
+        ws.close()
+      } catch {
+        /* already closed */
+      }
     }
 
     const settle = (fn: () => void, err?: Error): void => {
@@ -115,35 +127,56 @@ export async function wsCommand(method: string, paramsRaw: string | undefined, o
 
     ws.on('open', () => {
       ws.send(
-        JSON.stringify({ method: 'hello', params: [], id: -1, binary: !!opts.binary, compression: false })
+        JSON.stringify({ method: 'hello', params: [], id: -1, binary: !!opts.binary, compression: false }),
       )
       if (!opts.noPing) {
         pingTimer = setInterval(() => {
-          if (ws.readyState === WebSocket.OPEN) ws.send(PING)
+          if (ws.readyState === Ws.OPEN) ws.send(PING)
         }, 5000)
       }
     })
 
-    ws.on('error', (e) => settle(() => { /* no-op */ }, new Error(`ws error: ${e.message}`)))
+    ws.on('error', (e) =>
+      settle(
+        () => {
+          /* no-op */
+        },
+        new Error(`ws error: ${e.message}`),
+      ),
+    )
 
     ws.on('close', (code, reasonBuf) => {
       if (settled) return
       const reason = reasonBuf?.toString?.() ?? ''
       const msg = reason !== '' ? reason : `socket closed (code=${code}) before response`
-      settle(() => { /* no-op */ }, new Error(`ws closed unexpectedly: ${msg}`))
+      settle(
+        () => {
+          /* no-op */
+        },
+        new Error(`ws closed unexpectedly: ${msg}`),
+      )
     })
 
     const done = (err?: Error): void => {
-      settle(() => { /* no-op */ }, err)
+      settle(() => {
+        /* no-op */
+      }, err)
     }
 
     ws.on('message', (data) => {
       const text = data.toString()
-      if (text === PING) { ws.send(PONG); return }
+      if (text === PING) {
+        ws.send(PONG)
+        return
+      }
       if (text === PONG) return
 
       let raw: unknown
-      try { raw = JSON.parse(text) } catch { return }
+      try {
+        raw = JSON.parse(text)
+      } catch {
+        return
+      }
       if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return
       const m = raw as WsMessage
 
@@ -160,8 +193,13 @@ export async function wsCommand(method: string, paramsRaw: string | undefined, o
         const reqId = ++id
         ws.send(
           JSON.stringify({
-            method, params: initialParams, meta: {}, id: reqId, time: Date.now(), binary: !!opts.binary
-          })
+            method,
+            params: initialParams,
+            meta: {},
+            id: reqId,
+            time: Date.now(),
+            binary: !!opts.binary,
+          }),
         )
         return
       }

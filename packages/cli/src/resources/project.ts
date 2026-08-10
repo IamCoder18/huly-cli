@@ -1,15 +1,25 @@
-import type { Doc, Ref, Space, Class, Account } from '@hcengineering/core'
+import type { Doc, Ref, Space, Class } from '@hcengineering/core'
 import type { PlatformClient } from '@hcengineering/api-client'
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, buildIndex, invalidateIndex } from '../transport/ref-resolver.js'
-import { shouldJson, json, table, kv, header, COLUMNS, C, success, relTime, bulkRemoved } from "../output/format.js"
+import {
+  shouldJson,
+  json,
+  table,
+  kv,
+  header,
+  COLUMNS,
+  C,
+  success,
+  relTime,
+  bulkRemoved,
+} from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { deleteDoc } from '../commands/dry-run.js'
 import { CliError, ExitCode } from '../output/errors.js'
 import { pickProject } from '../auth/prompts.js'
 import { readEnv, isOpinionated } from '../auth/env.js'
-import type { GlobalOpts } from '../cli.js'
 import { parseSet } from './project.parse.js'
 import { resolveProjectForCommand } from './_project-resolve.js'
 
@@ -40,24 +50,43 @@ type IssueStatus = Doc & {
 
 type ProjectTargetPreference = Doc & {
   attachedTo: Ref<Project>
-  props?: { key: string, value: unknown }[]
+  props?: { key: string; value: unknown }[]
 }
 
-export async function listProjects(opts: { json?: boolean; ci?: boolean; limit?: number; offset?: number; workspace?: string; url?: string } = {}): Promise<void> {
+export async function listProjects(
+  opts: {
+    json?: boolean
+    ci?: boolean
+    limit?: number
+    offset?: number
+    workspace?: string
+    url?: string
+  } = {},
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const result = (await withSpinner('Loading…', () => client.findAll(CLASS.Project as Ref<Class<Project>>, {}), opts)) as unknown as Project[]
+    const result = (await withSpinner(
+      'Loading…',
+      () => client.findAll(CLASS.Project as Ref<Class<Project>>, {}),
+      opts,
+    )) as unknown as Project[]
     let docs = result
     if (opts.offset && opts.offset > 0) docs = docs.slice(opts.offset)
     if (opts.limit && opts.limit > 0) docs = docs.slice(0, opts.limit)
-    if (shouldJson({ json: opts.json, ci: opts.ci })) { json(docs); return }
+    if (shouldJson({ json: opts.json, ci: opts.ci })) {
+      json(docs)
+      return
+    }
     table(docs as unknown as Record<string, unknown>[], COLUMNS.project(), { count: true, title: 'projects' })
   } finally {
     await client.close()
   }
 }
 
-export async function getProject(ref: string, opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string } = {}): Promise<void> {
+export async function getProject(
+  ref: string,
+  opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string } = {},
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const id = await resolveRef(ref, {
@@ -66,8 +95,13 @@ export async function getProject(ref: string, opts: { json?: boolean; ci?: boole
     })
     const doc = await client.findOne(CLASS.Project as Ref<Class<Project>>, { _id: id as Ref<Project> })
     if (!doc) throw new CliError(ExitCode.NotFound, `project ${ref} not found`)
-    if (shouldJson({ json: opts.json, ci: opts.ci })) { json(doc); return }
-    header(`Project — ${doc.name ?? '(unnamed)'}`, { subtitle: `created ${relTime(doc.createdOn as number | null)}` })
+    if (shouldJson({ json: opts.json, ci: opts.ci })) {
+      json(doc)
+      return
+    }
+    header(`Project — ${doc.name ?? '(unnamed)'}`, {
+      subtitle: `created ${relTime(doc.createdOn as number | null)}`,
+    })
     kv([
       ['ID', C.emphasis(doc.identifier ?? '—')],
       ['Name', String(doc.name ?? '—')],
@@ -76,7 +110,7 @@ export async function getProject(ref: string, opts: { json?: boolean; ci?: boole
       ['Private', doc.private ? C.warn('yes') : C.muted('no')],
       ['Members', doc.members != null ? C.muted(`${(doc.members as unknown[]).length}`) : C.muted('—')],
       ['_id', C.id(String(doc._id))],
-      ['Space', C.id(String(doc._id))]
+      ['Space', C.id(String(doc._id))],
     ])
   } finally {
     await client.close()
@@ -126,7 +160,7 @@ export async function createProject(opts: {
     // the tracker plugin's `OnProjectCreate` trigger (or its model
     // defaults) picks a real IssueStatus on first use.
     defaultTimeReportDay: 0, // 0 = TimeReportDayType.PreviousWorkDay
-    defaultAssignee: null
+    defaultAssignee: null,
   }
   // Opinionated default: pin the project type to the classic tracker
   // ProjectType. Without this, projects may be created without a `type`
@@ -155,10 +189,9 @@ export async function createProject(opts: {
     // Idempotency: if a project with this identifier already exists, return it
     // without creating a duplicate. The Huly selfhost does not enforce
     // identifier uniqueness at the DB level.
-    const existing = (await client.findAll(
-      CLASS.Project as Ref<Class<Project>>,
-      { identifier: opts.identifier }
-    )) as Project[]
+    const existing = (await client.findAll(CLASS.Project as Ref<Class<Project>>, {
+      identifier: opts.identifier,
+    })) as Project[]
     if (existing.length > 0) {
       const found = existing[0]
       if (shouldJson({ json: opts.json, ci: opts.ci })) {
@@ -174,14 +207,14 @@ export async function createProject(opts: {
       id = await withSpinner(
         'Creating project…',
         () => client.createDoc(CLASS.Project as Ref<Class<Project>>, domain, data as any),
-        opts
+        opts,
       )
     } catch (err: unknown) {
       // Idempotency: if project with this identifier already exists, return it.
       const msg = err instanceof Error ? err.message : String(err)
       if (/already exists|duplicate|exists/i.test(msg)) {
         const existing = (await client.findAll(CLASS.Project as Ref<Class<Project>>, {
-          identifier: opts.identifier!
+          identifier: opts.identifier!,
         })) as Project[]
         if (existing.length > 0) {
           const existingDoc = existing[0]
@@ -208,7 +241,15 @@ export async function createProject(opts: {
 
 export async function updateProject(
   ref: string,
-  opts: { set?: string[]; unset?: string[]; json?: boolean; ci?: boolean; dryRun?: boolean; workspace?: string; url?: string }
+  opts: {
+    set?: string[]
+    unset?: string[]
+    json?: boolean
+    ci?: boolean
+    dryRun?: boolean
+    workspace?: string
+    url?: string
+  },
 ): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
@@ -226,14 +267,16 @@ export async function updateProject(
       console.log(`would update ${id}: set=${JSON.stringify(setOps)} unset=${JSON.stringify(unsetOps)}`)
       return
     }
-    await withSpinner('Updating…', () =>
-      client.updateDoc(
-        CLASS.Project as Ref<Class<Project>>,
-        id as unknown as Ref<Space>,
-        id as Ref<Project>,
-        { ...setOps, ...Object.fromEntries(unsetOps.map((k) => [k, null])) }
-      ),
-      opts
+    await withSpinner(
+      'Updating…',
+      () =>
+        client.updateDoc(
+          CLASS.Project as Ref<Class<Project>>,
+          id as unknown as Ref<Space>,
+          id as Ref<Project>,
+          { ...setOps, ...Object.fromEntries(unsetOps.map((k) => [k, null])) },
+        ),
+      opts,
     )
     invalidateIndex(client, CLASS.Project)
     console.log(`updated project: ${id}`)
@@ -242,7 +285,10 @@ export async function updateProject(
   }
 }
 
-export async function deleteProjects(refs: string[], opts: { dryRun?: boolean; workspace?: string; url?: string; yes?: boolean } = {}): Promise<void> {
+export async function deleteProjects(
+  refs: string[],
+  opts: { dryRun?: boolean; workspace?: string; url?: string; yes?: boolean } = {},
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const ids = await resolveRefs(refs, {
@@ -250,14 +296,27 @@ export async function deleteProjects(refs: string[], opts: { dryRun?: boolean; w
       classId: CLASS.Project as Ref<Class<Doc>>,
     })
     if (!opts.yes && ids.length > 1) {
-      throw new CliError(ExitCode.Validation, `destructive: deleting ${ids.length} projects requires --yes`, 're-run with --yes to confirm')
+      throw new CliError(
+        ExitCode.Validation,
+        `destructive: deleting ${ids.length} projects requires --yes`,
+        're-run with --yes to confirm',
+      )
     }
     let deleted = 0
     let skipped = 0
     for (const id of ids) {
-      const r = await deleteDoc(client, CLASS.Project as Ref<Class<Project>>, id as unknown as Ref<Space>, id as Ref<Project>, opts)
+      const r = await deleteDoc(
+        client,
+        CLASS.Project as Ref<Class<Project>>,
+        id as unknown as Ref<Space>,
+        id as Ref<Project>,
+        opts,
+      )
       if (r.skipped) skipped++
-      else { deleted++; await new Promise((res) => setTimeout(res, 100)) }
+      else {
+        deleted++
+        await new Promise((res) => setTimeout(res, 100))
+      }
     }
     invalidateIndex(client, CLASS.Project)
     bulkRemoved(deleted, skipped)
@@ -282,36 +341,70 @@ export async function pickProjectInteractive(client: PlatformClient): Promise<Pr
 
 // ---- Phase 2 additions: statuses + target preferences ----
 
-export async function listStatuses(opts: { project?: string; json?: boolean; ci?: boolean; workspace?: string; url?: string } = {}): Promise<void> {
+export async function listStatuses(
+  opts: { project?: string; json?: boolean; ci?: boolean; workspace?: string; url?: string } = {},
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const project = await resolveProjectForCommand(client, opts.project)
     const statuses = (await withSpinner(
       `Loading statuses for ${project.identifier}…`,
-      () => client.findAll(CLASS.IssueStatus as Ref<Class<IssueStatus>>, { ofAttribute: 'tracker:attribute:IssueStatus' as Ref<Doc> }),
-      opts
+      () =>
+        client.findAll(CLASS.IssueStatus as Ref<Class<IssueStatus>>, {
+          ofAttribute: 'tracker:attribute:IssueStatus' as Ref<Doc>,
+        }),
+      opts,
     )) as IssueStatus[]
-    const sorted = statuses.slice().sort((a, b) => ((a as { rank?: number }).rank ?? 0) - ((b as { rank?: number }).rank ?? 0))
-    if (shouldJson({ json: opts.json, ci: opts.ci })) { json(sorted); return }
-    table(sorted as unknown as Record<string, unknown>[], [
-      { key: 'name', header: 'NAME' },
-      { key: 'category', header: 'CATEGORY', format: (r) => String((r as { category?: string }).category ?? '').replace(/^task:statusCategory:/, '') },
-      { key: 'rank', header: 'RANK' },
-      { key: '_id', header: '_ID', format: (r) => String((r as { _id: string })._id).split(':').pop() ?? String((r as { _id: string })._id) }
-    ], { count: true, title: 'statuses' })
+    const sorted = statuses.toSorted(
+      (a, b) => ((a as { rank?: number }).rank ?? 0) - ((b as { rank?: number }).rank ?? 0),
+    )
+    if (shouldJson({ json: opts.json, ci: opts.ci })) {
+      json(sorted)
+      return
+    }
+    table(
+      sorted as unknown as Record<string, unknown>[],
+      [
+        { key: 'name', header: 'NAME' },
+        {
+          key: 'category',
+          header: 'CATEGORY',
+          format: (r) =>
+            String((r as { category?: string }).category ?? '').replace(/^task:statusCategory:/, ''),
+        },
+        { key: 'rank', header: 'RANK' },
+        {
+          key: '_id',
+          header: '_ID',
+          format: (r) =>
+            String((r as { _id: string })._id)
+              .split(':')
+              .pop() ?? String((r as { _id: string })._id),
+        },
+      ],
+      { count: true, title: 'statuses' },
+    )
   } finally {
     await client.close()
   }
 }
 
-export async function listTargetPreferences(opts: { project?: string; json?: boolean; ci?: boolean; workspace?: string; url?: string } = {}): Promise<void> {
+export async function listTargetPreferences(
+  opts: { project?: string; json?: boolean; ci?: boolean; workspace?: string; url?: string } = {},
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const project = await resolveProjectForCommand(client, opts.project)
-    const prefs = (await client.findAll(CLASS.ProjectTargetPreference as Ref<Class<ProjectTargetPreference>>, {
-      attachedTo: project._id
-    })) as ProjectTargetPreference[]
-    if (shouldJson({ json: opts.json, ci: opts.ci })) { json(prefs); return }
+    const prefs = (await client.findAll(
+      CLASS.ProjectTargetPreference as Ref<Class<ProjectTargetPreference>>,
+      {
+        attachedTo: project._id,
+      },
+    )) as ProjectTargetPreference[]
+    if (shouldJson({ json: opts.json, ci: opts.ci })) {
+      json(prefs)
+      return
+    }
     if (prefs.length === 0) {
       console.log('(no target preferences)')
       return
@@ -321,7 +414,7 @@ export async function listTargetPreferences(opts: { project?: string; json?: boo
         ['_id', p._id],
         ['attachedTo', p.attachedTo],
         ['usedOn', p.usedOn ? new Date(p.usedOn).toISOString() : '—'],
-        ['props', String(p.props?.length ?? 0)]
+        ['props', String(p.props?.length ?? 0)],
       ])
     }
   } finally {
@@ -356,32 +449,43 @@ export async function upsertTargetPreference(opts: {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const project = await resolveProjectForCommand(client, opts.project)
-    const existing = (await client.findAll(CLASS.ProjectTargetPreference as Ref<Class<ProjectTargetPreference>>, {
-      attachedTo: project._id
-    })) as ProjectTargetPreference[]
+    const existing = (await client.findAll(
+      CLASS.ProjectTargetPreference as Ref<Class<ProjectTargetPreference>>,
+      {
+        attachedTo: project._id,
+      },
+    )) as ProjectTargetPreference[]
 
     if (existing.length === 0) {
       if (opts.dryRun) {
         console.log('would create target preference:')
-        console.log(JSON.stringify({
-          _class: CLASS.ProjectTargetPreference,
-          attachedTo: project._id,
-          usedOn: Date.now(),
-          props
-        }, null, 2))
+        console.log(
+          JSON.stringify(
+            {
+              _class: CLASS.ProjectTargetPreference,
+              attachedTo: project._id,
+              usedOn: Date.now(),
+              props,
+            },
+            null,
+            2,
+          ),
+        )
         return
       }
       const id = await withSpinner(
         'Creating target preference…',
-        () => client.createDoc(
-          CLASS.ProjectTargetPreference as Ref<Class<ProjectTargetPreference>>,
-          project._id as unknown as Ref<Space>,
-          { attachedTo: project._id, usedOn: Date.now(), props } as any,
-        ),
-        opts
+        () =>
+          client.createDoc(
+            CLASS.ProjectTargetPreference as Ref<Class<ProjectTargetPreference>>,
+            project._id as unknown as Ref<Space>,
+            { attachedTo: project._id, usedOn: Date.now(), props } as any,
+          ),
+        opts,
       )
-      if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ _id: id, attachedTo: project._id, props }) }
-      else success('created target preference', id)
+      if (shouldJson({ json: opts.json, ci: opts.ci })) {
+        json({ _id: id, attachedTo: project._id, props })
+      } else success('created target preference', id)
       return
     }
 
@@ -389,22 +493,29 @@ export async function upsertTargetPreference(opts: {
     const first = existing[0]
     const merged: { key: string; value: unknown }[] = [
       ...(first.props ?? []).filter((p) => !props.some((np) => np.key === p.key)),
-      ...props
+      ...props,
     ]
     if (opts.dryRun) {
       console.log(`would update target preference ${first._id}:`)
-      console.log(JSON.stringify({ _class: CLASS.ProjectTargetPreference, ops: { props: merged, usedOn: Date.now() } }, null, 2))
+      console.log(
+        JSON.stringify(
+          { _class: CLASS.ProjectTargetPreference, ops: { props: merged, usedOn: Date.now() } },
+          null,
+          2,
+        ),
+      )
       return
     }
     await withSpinner(
       'Updating target preference…',
-      () => client.updateDoc(
-        CLASS.ProjectTargetPreference as Ref<Class<ProjectTargetPreference>>,
-        first.space as unknown as Ref<Space>,
-        first._id as Ref<ProjectTargetPreference>,
-        { props: merged, usedOn: Date.now() } as any,
-      ),
-      opts
+      () =>
+        client.updateDoc(
+          CLASS.ProjectTargetPreference as Ref<Class<ProjectTargetPreference>>,
+          first.space as unknown as Ref<Space>,
+          first._id as Ref<ProjectTargetPreference>,
+          { props: merged, usedOn: Date.now() } as any,
+        ),
+      opts,
     )
     console.log(`updated target preference: ${first._id}`)
   } finally {

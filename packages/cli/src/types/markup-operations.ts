@@ -27,7 +27,7 @@ export interface MarkupClient {
     objectId: Ref<Doc>,
     objectAttr: string,
     markup: string,
-    format: 'markup' | 'markdown' | 'html'
+    format: 'markup' | 'markdown' | 'html',
   ) => Promise<string>
   collaborator: CollaboratorClient
 }

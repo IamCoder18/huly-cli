@@ -56,8 +56,8 @@ Anything else is left unchanged. See
   Use `huly project get <ref> --json` first to inspect the project.
 - The CLI does not expose **project-type** creation. (`status` and
   `task-type` creation are exposed — see
-[Platform — issue-status](platform.md#project-type-task-type-issue-status)
-and [task-type](platform.md#project-type-task-type-issue-status).)
+  [Platform — issue-status](platform.md#project-type-task-type-issue-status)
+  and [task-type](platform.md#project-type-task-type-issue-status).)
   Custom space types and custom task types can only be applied to
   **new** projects — you cannot migrate an existing project to a
   different type.

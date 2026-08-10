@@ -10,7 +10,16 @@
     "start": "pnpm --filter @iamcoder18/huly-cli start",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm --filter @iamcoder18/huly-cli test",
-    "smoke": "bash scripts/smoke.sh all"
+    "smoke": "bash scripts/smoke.sh all",
+    "format": "oxfmt",
+    "format:check": "oxfmt --check",
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix",
+    "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build"
+  },
+  "devDependencies": {
+    "oxfmt": "^0.62.0",
+    "oxlint": "^1.77.0"
   },
   "engines": {
     "node": ">=22.13"

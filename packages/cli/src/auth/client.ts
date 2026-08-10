@@ -4,7 +4,13 @@ import type { PlatformClient, ConnectOptions } from '@hcengineering/api-client'
 import type { AccountClient } from '@hcengineering/account-client'
 import { createRequire } from 'node:module'
 import { readEnv, insecureTLS, requireUrl } from './env.js'
-import { getCachedCreds, setCachedCreds, setCachedWorkspaceToken, findAnyCachedToken, findAnyCachedCreds, readActiveAccount, writeActiveAccount } from './cache.js'
+import {
+  getCachedCreds,
+  setCachedCreds,
+  setCachedWorkspaceToken,
+  findAnyCachedToken,
+  writeActiveAccount,
+} from './cache.js'
 
 const require = createRequire(import.meta.url)
 const wsModule = require('ws') as typeof import('ws')
@@ -18,19 +24,21 @@ const NodeWebSocketFactory = (url: string): AnyClientSocket => {
   const wsOpts = insecureTLS() ? { rejectUnauthorized: false } : {}
   const ws = new wsModule.WebSocket(url, wsOpts)
   const client: AnyClientSocket = {
-    get readyState (): number {
+    get readyState(): number {
       return ws.readyState
     },
     send: (data: string | ArrayBufferLike | Blob | ArrayBufferView): void => {
       if (data instanceof Blob) {
-        void data.arrayBuffer().then((buffer) => { ws.send(buffer) })
+        void data.arrayBuffer().then((buffer) => {
+          ws.send(buffer)
+        })
       } else {
         ws.send(data as any)
       }
     },
     close: (code?: number): void => {
       ws.close(code)
-    }
+    },
   }
   ws.on('message', (data: any) => {
     if (client.onmessage != null) {
@@ -101,7 +109,7 @@ export async function accountClient(url: string, token?: string): Promise<Accoun
 export async function login(
   url: string,
   email: string,
-  password: string
+  password: string,
 ): Promise<{ token: string; account: string }> {
   const c = await accountClient(url)
   const info = await c.login(email, password)
@@ -112,14 +120,14 @@ export async function login(
 export async function loginAndCache(
   url: string,
   email: string,
-  password: string
+  password: string,
 ): Promise<{ token: string; account: string }> {
   const result = await login(url, email, password)
   // Preserve any cached workspace tokens — only refresh the account token.
   const existing = await getCachedCreds(url, email)
   await setCachedCreds(url, email, {
     accountToken: result.token,
-    workspaces: existing?.workspaces ?? {}
+    workspaces: existing?.workspaces ?? {},
   })
   await writeActiveAccount(url, email)
   return result
@@ -130,7 +138,7 @@ export async function signUpAndCache(
   email: string,
   password: string,
   firstName: string,
-  lastName: string
+  lastName: string,
 ): Promise<{ token: string; account: string }> {
   const c = await accountClient(url)
   // signUp returns a usable session token in the same call (selfhost), so
@@ -153,10 +161,11 @@ export async function signUpAndCache(
       }
     }
   }
-  if (token === undefined || token === '') throw new Error('signUp succeeded but no session token was returned')
+  if (token === undefined || token === '')
+    throw new Error('signUp succeeded but no session token was returned')
   await setCachedCreds(url, email, {
     accountToken: token,
-    workspaces: {}
+    workspaces: {},
   })
   await writeActiveAccount(url, email)
   return { token, account: email }
@@ -174,7 +183,7 @@ export async function createWorkspace(
   url: string,
   token: string,
   email: string,
-  workspaceName: string
+  workspaceName: string,
 ): Promise<CreateWorkspaceResult> {
   const c = await accountClient(url, token)
   const result = await c.createWorkspace(workspaceName)
@@ -183,14 +192,14 @@ export async function createWorkspace(
     token: result.token,
     workspaceId: result.workspace ?? '',
     role: String(result.role ?? 'OWNER'),
-    endpoint: result.endpoint
+    endpoint: result.endpoint,
   })
   return {
     workspaceUrl: workspaceName,
     workspaceId: result.workspace ?? '',
     role: String(result.role ?? 'OWNER'),
     endpoint: result.endpoint,
-    token: result.token
+    token: result.token,
   }
 }
 
@@ -222,7 +231,9 @@ export async function connectPlatform(opts: ConnectArgs): Promise<PlatformClient
   let resolvedEmail = email
 
   if (!workspace) {
-    throw new Error('workspace required: pass --workspace, set HULY_WORKSPACE, or run `huly workspace use <name>`')
+    throw new Error(
+      'workspace required: pass --workspace, set HULY_WORKSPACE, or run `huly workspace use <name>`',
+    )
   }
 
   if (!token && email && password) {
@@ -263,7 +274,7 @@ export async function connectPlatform(opts: ConnectArgs): Promise<PlatformClient
         token: wsLogin.token,
         role: wsLogin.role,
         endpoint: wsLogin.endpoint,
-        workspaceId: wsLogin.workspace
+        workspaceId: wsLogin.workspace,
       })
     } catch {
       // best-effort caching
@@ -273,7 +284,12 @@ export async function connectPlatform(opts: ConnectArgs): Promise<PlatformClient
   return client
 }
 
-export async function resolveToken(opts: { url?: string; token?: string; email?: string; password?: string }): Promise<string> {
+export async function resolveToken(opts: {
+  url?: string
+  token?: string
+  email?: string
+  password?: string
+}): Promise<string> {
   const env = readEnv()
   const token = opts.token ?? env.token
   if (token) return token

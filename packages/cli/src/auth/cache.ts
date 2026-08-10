@@ -6,7 +6,8 @@ import { activeAccountPath, activeWorkspacePath, configDir, credentialsPath } fr
 export function normalizeHost(s: string): string {
   try {
     const u = new URL(s)
-    const isDefault = (u.protocol === 'https:' && u.port === '443') || (u.protocol === 'http:' && u.port === '80')
+    const isDefault =
+      (u.protocol === 'https:' && u.port === '443') || (u.protocol === 'http:' && u.port === '80')
     const port = isDefault || u.port === '' ? '' : `:${u.port}`
     return `${u.protocol}//${u.hostname.toLowerCase()}${port}${u.pathname.replace(/\/$/, '')}`
   } catch {
@@ -46,22 +47,17 @@ export async function saveCredentials(creds: CredentialsFile): Promise<void> {
   await fs.mkdir(configDir(), { recursive: true })
   await fs.writeFile(credentialsPath(), JSON.stringify(creds, null, 2), { mode: 0o600 })
   // mode is only applied on file creation; harden existing files too.
-  await fs.chmod(credentialsPath(), 0o600).catch(() => { /* not all platforms support chmod */ })
+  await fs.chmod(credentialsPath(), 0o600).catch(() => {
+    /* not all platforms support chmod */
+  })
 }
 
-export async function getCachedCreds(
-  host: string,
-  email: string
-): Promise<HostCreds[string] | undefined> {
+export async function getCachedCreds(host: string, email: string): Promise<HostCreds[string] | undefined> {
   const all = await loadCredentials()
   return all[normalizeHost(host)]?.[email]
 }
 
-export async function setCachedCreds(
-  host: string,
-  email: string,
-  data: HostCreds[string]
-): Promise<void> {
+export async function setCachedCreds(host: string, email: string, data: HostCreds[string]): Promise<void> {
   const all = await loadCredentials()
   const key = normalizeHost(host)
   all[key] = all[key] ?? {}
@@ -73,7 +69,7 @@ export async function setCachedWorkspaceToken(
   host: string,
   email: string,
   workspaceKey: string,
-  data: WorkspaceCreds
+  data: WorkspaceCreds,
 ): Promise<void> {
   const all = await loadCredentials()
   const key = normalizeHost(host)
@@ -85,7 +81,7 @@ export async function setCachedWorkspaceToken(
 export async function getCachedWorkspaceToken(
   host: string,
   email: string,
-  workspaceKey: string
+  workspaceKey: string,
 ): Promise<WorkspaceCreds | undefined> {
   const all = await loadCredentials()
   return all[normalizeHost(host)]?.[email]?.workspaces[workspaceKey]
@@ -105,13 +101,18 @@ export async function readActiveWorkspace(): Promise<string | undefined> {
 export async function writeActiveWorkspace(name: string): Promise<void> {
   await fs.mkdir(dirname(activeWorkspacePath()), { recursive: true })
   await fs.writeFile(activeWorkspacePath(), name + '\n', { mode: 0o600 })
-  await fs.chmod(activeWorkspacePath(), 0o600).catch(() => { /* */ })
+  await fs.chmod(activeWorkspacePath(), 0o600).catch(() => {
+    /* */
+  })
 }
 
 export async function readActiveAccount(host: string): Promise<string | undefined> {
   try {
     const raw = await fs.readFile(activeAccountPath(), 'utf8')
-    const lines = raw.split('\n').map((l) => l.trim()).filter(Boolean)
+    const lines = raw
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean)
     const key = normalizeHost(host)
     const entry = lines.find((l) => l.startsWith(key + '|') || l.startsWith(host + '|'))
     if (!entry) return undefined
@@ -129,7 +130,10 @@ export async function writeActiveAccount(host: string, email: string): Promise<v
   let lines: string[] = []
   try {
     const raw = await fs.readFile(activeAccountPath(), 'utf8')
-    lines = raw.split('\n').map((l) => l.trim()).filter(Boolean)
+    lines = raw
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean)
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
   }
@@ -140,10 +144,14 @@ export async function writeActiveAccount(host: string, email: string): Promise<v
   })
   filtered.push(entry)
   await fs.writeFile(activeAccountPath(), filtered.join('\n') + '\n', { mode: 0o600 })
-  await fs.chmod(activeAccountPath(), 0o600).catch(() => { /* */ })
+  await fs.chmod(activeAccountPath(), 0o600).catch(() => {
+    /* */
+  })
 }
 
-export async function findAnyCachedCreds(host: string): Promise<{ email: string; data: HostCreds[string] } | undefined> {
+export async function findAnyCachedCreds(
+  host: string,
+): Promise<{ email: string; data: HostCreds[string] } | undefined> {
   const all = await loadCredentials()
   const key = normalizeHost(host)
   const hostCreds = all[key]
@@ -155,7 +163,9 @@ export async function findAnyCachedCreds(host: string): Promise<{ email: string;
   return { email: emails[0], data: hostCreds[emails[0]] }
 }
 
-export async function findAnyCachedToken(host: string): Promise<{ email: string; token: string } | undefined> {
+export async function findAnyCachedToken(
+  host: string,
+): Promise<{ email: string; token: string } | undefined> {
   const found = await findAnyCachedCreds(host)
   return found ? { email: found.email, token: found.data.accountToken } : undefined
 }

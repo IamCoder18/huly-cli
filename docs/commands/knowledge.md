@@ -55,7 +55,6 @@ huly card-space create --name "Engineering" [--description]
 huly card-space delete <ref...> [--yes]
 ```
 
-
 See [CLI behavior — Smart defaults](../reference/cli-behavior.md#smart-defaults-values-the-cli-fills-for-you)
 for the auto-pick of the oldest non-archived CardSpace on
 `huly card create --card-space` and what `--minimal` does to that

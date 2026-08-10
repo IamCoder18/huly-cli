@@ -1,0 +1,22 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "semi": false,
+  "singleQuote": true,
+  "trailingComma": "all",
+  "printWidth": 110,
+  "tabWidth": 2,
+  "useTabs": false,
+  "arrowParens": "always",
+  "endOfLine": "lf",
+  "ignorePatterns": [
+    "node_modules",
+    "dist",
+    "packages/*/dist",
+    "packages/*/node_modules",
+    "pnpm-lock.yaml",
+    "package-lock.json",
+    "CHANGELOG.md",
+    "LICENSE",
+    "packages/cli/README.md"
+  ]
+}

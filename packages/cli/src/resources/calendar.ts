@@ -3,14 +3,26 @@ import type { PlatformClient } from '@hcengineering/api-client'
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, invalidateIndex } from '../transport/ref-resolver.js'
-import { shouldJson, json, table, kv, header, COLUMNS, C, isoDate, relTime, withTimeout, success, updated, removed, bulkRemoved } from "../output/format.js"
+import {
+  shouldJson,
+  json,
+  table,
+  kv,
+  header,
+  COLUMNS,
+  C,
+  isoDate,
+  relTime,
+  withTimeout,
+  success,
+  updated,
+  removed,
+  bulkRemoved,
+} from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { deleteDoc } from '../commands/dry-run.js'
 import { CliError, ExitCode } from '../output/errors.js'
 import { looksLikeRawMarkup, warnMarkdownFallback } from './_helpers.js'
-import { readEnv } from '../auth/env.js'
-import { connectAccountCli } from '../transport/sdk.js'
-import { getCachedWorkspaceToken } from '../auth/cache.js'
 
 type CalendarDoc = Doc & {
   name: string
@@ -50,35 +62,70 @@ type Schedule = Doc & {
 
 function parseDate(value: string, field: string): number {
   const t = new Date(value).getTime()
-  if (Number.isNaN(t)) throw new CliError(ExitCode.Validation, `invalid ${field}: ${value} (expected ISO date)`)
+  if (Number.isNaN(t))
+    throw new CliError(ExitCode.Validation, `invalid ${field}: ${value} (expected ISO date)`)
   return t
 }
 
 // ---- calendars ----
 
-export async function listCalendars(g: { json?: boolean; ci?: boolean; workspace?: string; url?: string } = {}): Promise<void> {
+export async function listCalendars(
+  g: { json?: boolean; ci?: boolean; workspace?: string; url?: string } = {},
+): Promise<void> {
   const client = await connectCli({ url: g.url, workspace: g.workspace })
   try {
     const docs = (await withSpinner(
       'Loading calendars…',
       () => client.findAll(CLASS.Calendar as Ref<Class<CalendarDoc>>, {}),
-      g
+      g,
     )) as CalendarDoc[]
-    if (shouldJson({ json: g.json, ci: g.ci })) { json(docs); return }
-    table(docs as unknown as Record<string, unknown>[], [
-      { key: 'name', header: 'NAME', format: (r) => C.emphasis(String((r as CalendarDoc).name ?? '')) },
-      { key: 'visibility', header: 'VISIBILITY', format: (r) => {
-        const v = String((r as CalendarDoc).visibility ?? '')
-        return v === 'public' ? C.green('public') : v === 'private' ? C.red('private') : C.muted(v)
-      } },
-      { key: 'access', header: 'ACCESS', format: (r) => {
-        const a = String((r as CalendarDoc).access ?? '')
-        return a === 'owner' ? C.cyan('owner') : a
-      } },
-      { key: 'hidden', header: 'HIDDEN', width: 8, align: 'center', format: (r) => (r as CalendarDoc).hidden ? C.yellow('yes') : C.muted('no') },
-      { key: '_id', header: '_ID', format: (r) => C.id(String((r as { _id: string })._id).split(':').slice(-1)[0] ?? String((r as { _id: string })._id)) }
-    ], { count: true, title: 'calendars' })
-  } finally { await client.close() }
+    if (shouldJson({ json: g.json, ci: g.ci })) {
+      json(docs)
+      return
+    }
+    table(
+      docs as unknown as Record<string, unknown>[],
+      [
+        { key: 'name', header: 'NAME', format: (r) => C.emphasis(String((r as CalendarDoc).name ?? '')) },
+        {
+          key: 'visibility',
+          header: 'VISIBILITY',
+          format: (r) => {
+            const v = String((r as CalendarDoc).visibility ?? '')
+            return v === 'public' ? C.green('public') : v === 'private' ? C.red('private') : C.muted(v)
+          },
+        },
+        {
+          key: 'access',
+          header: 'ACCESS',
+          format: (r) => {
+            const a = String((r as CalendarDoc).access ?? '')
+            return a === 'owner' ? C.cyan('owner') : a
+          },
+        },
+        {
+          key: 'hidden',
+          header: 'HIDDEN',
+          width: 8,
+          align: 'center',
+          format: (r) => ((r as CalendarDoc).hidden ? C.yellow('yes') : C.muted('no')),
+        },
+        {
+          key: '_id',
+          header: '_ID',
+          format: (r) =>
+            C.id(
+              String((r as { _id: string })._id)
+                .split(':')
+                .slice(-1)[0] ?? String((r as { _id: string })._id),
+            ),
+        },
+      ],
+      { count: true, title: 'calendars' },
+    )
+  } finally {
+    await client.close()
+  }
 }
 
 // ---- schedules ----
@@ -103,7 +150,7 @@ export async function createCalendar(opts: {
     visibility: opts.visibility ?? 'public',
     access: opts.access ?? 'owner',
     private: opts.private ?? false,
-    hidden: opts.hidden ?? false
+    hidden: opts.hidden ?? false,
   }
   if (opts.dryRun) {
     console.log('would create calendar:')
@@ -114,15 +161,28 @@ export async function createCalendar(opts: {
   try {
     const id = await withSpinner(
       'Creating calendar…',
-      () => client.createDoc(CLASS.Calendar as Ref<Class<Doc>>, 'core:space:Workspace' as Ref<Space>, data as any),
-      opts
+      () =>
+        client.createDoc(
+          CLASS.Calendar as Ref<Class<Doc>>,
+          'core:space:Workspace' as Ref<Space>,
+          data as any,
+        ),
+      opts,
     )
-    if (shouldJson({ json: opts.json, ci: opts.ci })) { json({ _id: id, ...data }); return }
+    if (shouldJson({ json: opts.json, ci: opts.ci })) {
+      json({ _id: id, ...data })
+      return
+    }
     success(`created calendar`, opts.name, id)
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
-export async function deleteCalendar(ref: string, opts: { workspace?: string; url?: string; yes?: boolean } = {}): Promise<void> {
+export async function deleteCalendar(
+  ref: string,
+  opts: { workspace?: string; url?: string; yes?: boolean } = {},
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const id = await resolveRef(ref, {
@@ -137,29 +197,45 @@ export async function deleteCalendar(ref: string, opts: { workspace?: string; ur
     } catch (e) {
       throw new CliError(ExitCode.Server, `delete failed: ${(e as Error).message}`)
     }
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
-export async function listSchedules(g: { json?: boolean; ci?: boolean; workspace?: string; url?: string } = {}): Promise<void> {
+export async function listSchedules(
+  g: { json?: boolean; ci?: boolean; workspace?: string; url?: string } = {},
+): Promise<void> {
   const client = await connectCli({ url: g.url, workspace: g.workspace })
   try {
     const docs = (await withSpinner(
       'Loading schedules…',
       () => client.findAll(CLASS.Schedule as Ref<Class<Schedule>>, {}),
-      g
+      g,
     )) as Schedule[]
-    if (shouldJson({ json: g.json, ci: g.ci })) { json(docs); return }
-    table(docs as unknown as Record<string, unknown>[], [
-      { key: 'title', header: 'TITLE', format: (r) => C.emphasis(String((r as Schedule).title ?? '')) },
-      { key: 'timeZone', header: 'TIMEZONE' },
-      { key: 'meetingDuration', header: 'DURATION' },
-      { key: 'meetingInterval', header: 'INTERVAL' },
-      { key: '_id', header: '_ID', format: (r) => C.id(String((r as { _id: string })._id).slice(-12)) }
-    ], { count: true, title: 'schedules' })
-  } finally { await client.close() }
+    if (shouldJson({ json: g.json, ci: g.ci })) {
+      json(docs)
+      return
+    }
+    table(
+      docs as unknown as Record<string, unknown>[],
+      [
+        { key: 'title', header: 'TITLE', format: (r) => C.emphasis(String((r as Schedule).title ?? '')) },
+        { key: 'timeZone', header: 'TIMEZONE' },
+        { key: 'meetingDuration', header: 'DURATION' },
+        { key: 'meetingInterval', header: 'INTERVAL' },
+        { key: '_id', header: '_ID', format: (r) => C.id(String((r as { _id: string })._id).slice(-12)) },
+      ],
+      { count: true, title: 'schedules' },
+    )
+  } finally {
+    await client.close()
+  }
 }
 
-export async function getSchedule(ref: string, opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string } = {}): Promise<void> {
+export async function getSchedule(
+  ref: string,
+  opts: { json?: boolean; ci?: boolean; workspace?: string; url?: string } = {},
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const id = await resolveRef(ref, {
@@ -168,9 +244,14 @@ export async function getSchedule(ref: string, opts: { json?: boolean; ci?: bool
     })
     const doc = await client.findOne(CLASS.Schedule as Ref<Class<Schedule>>, { _id: id as Ref<Schedule> })
     if (!doc) throw new CliError(ExitCode.NotFound, `schedule ${ref} not found`)
-    if (shouldJson({ json: opts.json, ci: opts.ci })) { json(doc); return }
+    if (shouldJson({ json: opts.json, ci: opts.ci })) {
+      json(doc)
+      return
+    }
 
-    header(`Schedule — ${doc.title ?? doc.name ?? '(unnamed)'}`, { subtitle: `created ${relTime(doc.createdOn as number | null)}` })
+    header(`Schedule — ${doc.title ?? doc.name ?? '(unnamed)'}`, {
+      subtitle: `created ${relTime(doc.createdOn as number | null)}`,
+    })
     kv([
       ['ID', C.emphasis(String(doc._id))],
       ['Title', String(doc.title ?? '—')],
@@ -179,9 +260,19 @@ export async function getSchedule(ref: string, opts: { json?: boolean; ci?: bool
       ['Meeting duration', doc.meetingDuration != null ? `${doc.meetingDuration} min` : C.muted('—')],
       ['Meeting interval', doc.meetingInterval != null ? `${doc.meetingInterval} min` : C.muted('—')],
       ['Owner', String(doc.owner ?? '—')],
-      ['Created', doc.createdOn != null ? `${isoDate(doc.createdOn)} (${relTime(doc.createdOn as number | null)})` : C.muted('—')],
-      ['Modified', doc.modifiedOn != null ? `${isoDate(doc.modifiedOn)} (${relTime(doc.modifiedOn as number | null)})` : C.muted('—')],
-      ['_class', C.id(String(doc._class))]
+      [
+        'Created',
+        doc.createdOn != null
+          ? `${isoDate(doc.createdOn)} (${relTime(doc.createdOn as number | null)})`
+          : C.muted('—'),
+      ],
+      [
+        'Modified',
+        doc.modifiedOn != null
+          ? `${isoDate(doc.modifiedOn)} (${relTime(doc.modifiedOn as number | null)})`
+          : C.muted('—'),
+      ],
+      ['_class', C.id(String(doc._class))],
     ])
     if (doc.description && doc.description !== '') {
       console.log()
@@ -189,7 +280,9 @@ export async function getSchedule(ref: string, opts: { json?: boolean; ci?: bool
       console.log(C.muted('─'.repeat(20)))
       console.log(String(doc.description))
     }
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
 export async function createSchedule(opts: {
@@ -216,7 +309,7 @@ export async function createSchedule(opts: {
     meetingDuration: opts.duration ?? 30,
     meetingInterval: opts.interval ?? 15,
     availability: {},
-    timeZone: opts.timeZone
+    timeZone: opts.timeZone,
   }
   if (opts.dryRun) {
     console.log('would create schedule:')
@@ -227,12 +320,13 @@ export async function createSchedule(opts: {
   try {
     const id = await withSpinner(
       'Creating schedule…',
-      () => client.createDoc(
-        CLASS.Schedule as Ref<Class<Schedule>>,
-        client.getHierarchy().getDomain(CLASS.Schedule as Ref<Class<Doc>>) as unknown as Ref<Space>,
-        data as any
-      ),
-      opts
+      () =>
+        client.createDoc(
+          CLASS.Schedule as Ref<Class<Schedule>>,
+          client.getHierarchy().getDomain(CLASS.Schedule as Ref<Class<Doc>>) as unknown as Ref<Space>,
+          data as any,
+        ),
+      opts,
     )
     invalidateIndex(client, CLASS.Schedule)
     if (shouldJson({ json: opts.json, ci: opts.ci })) {
@@ -240,21 +334,26 @@ export async function createSchedule(opts: {
     } else {
       success(`created schedule`, opts.title, id)
     }
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
-export async function updateSchedule(ref: string, opts: {
-  title?: string
-  description?: string
-  timeZone?: string
-  duration?: number
-  interval?: number
-  json?: boolean
-  ci?: boolean
-  dryRun?: boolean
-  workspace?: string
-  url?: string
-}): Promise<void> {
+export async function updateSchedule(
+  ref: string,
+  opts: {
+    title?: string
+    description?: string
+    timeZone?: string
+    duration?: number
+    interval?: number
+    json?: boolean
+    ci?: boolean
+    dryRun?: boolean
+    workspace?: string
+    url?: string
+  },
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const id = await resolveRef(ref, {
@@ -269,7 +368,12 @@ export async function updateSchedule(ref: string, opts: {
     if (opts.timeZone) ops.timeZone = opts.timeZone
     if (opts.duration !== undefined) ops.meetingDuration = opts.duration
     if (opts.interval !== undefined) ops.meetingInterval = opts.interval
-    if (Object.keys(ops).length === 0) throw new CliError(ExitCode.Validation, 'nothing to update', 'pass --title, --time-zone, --duration, --interval, or --description')
+    if (Object.keys(ops).length === 0)
+      throw new CliError(
+        ExitCode.Validation,
+        'nothing to update',
+        'pass --title, --time-zone, --duration, --interval, or --description',
+      )
     if (opts.dryRun) {
       console.log(`would update schedule ${id}:`)
       console.log(JSON.stringify({ _class: CLASS.Schedule, objectId: id, ops }, null, 2))
@@ -277,31 +381,62 @@ export async function updateSchedule(ref: string, opts: {
     }
     await withSpinner(
       'Updating…',
-      () => client.updateDoc(CLASS.Schedule as Ref<Class<Schedule>>, doc.space as unknown as Ref<Space>, id as Ref<Schedule>, ops as any),
-      opts
+      () =>
+        client.updateDoc(
+          CLASS.Schedule as Ref<Class<Schedule>>,
+          doc.space as unknown as Ref<Space>,
+          id as Ref<Schedule>,
+          ops as any,
+        ),
+      opts,
     )
     updated(`updated schedule`, id)
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
-export async function deleteSchedules(refs: string[], opts: { dryRun?: boolean; workspace?: string; url?: string; yes?: boolean } = {}): Promise<void> {
+export async function deleteSchedules(
+  refs: string[],
+  opts: { dryRun?: boolean; workspace?: string; url?: string; yes?: boolean } = {},
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const ids = await resolveRefs(refs, {
       client,
       classId: CLASS.Schedule as Ref<Class<Doc>>,
     })
-    if (!opts.yes && ids.length > 1) throw new CliError(ExitCode.Validation, `destructive: deleting ${ids.length} schedules requires --yes`, 're-run with --yes to confirm')
-    let deleted = 0, skipped = 0
+    if (!opts.yes && ids.length > 1)
+      throw new CliError(
+        ExitCode.Validation,
+        `destructive: deleting ${ids.length} schedules requires --yes`,
+        're-run with --yes to confirm',
+      )
+    let deleted = 0,
+      skipped = 0
     for (const id of ids) {
       const doc = await client.findOne(CLASS.Schedule as Ref<Class<Schedule>>, { _id: id as Ref<Schedule> })
-      if (!doc) { skipped++; continue }
-      const r = await deleteDoc(client, CLASS.Schedule as Ref<Class<Schedule>>, doc.space as unknown as Ref<Space>, id as Ref<Schedule>, opts)
+      if (!doc) {
+        skipped++
+        continue
+      }
+      const r = await deleteDoc(
+        client,
+        CLASS.Schedule as Ref<Class<Schedule>>,
+        doc.space as unknown as Ref<Space>,
+        id as Ref<Schedule>,
+        opts,
+      )
       if (r.skipped) skipped++
-      else { deleted++; await new Promise((res) => setTimeout(res, 100)) }
+      else {
+        deleted++
+        await new Promise((res) => setTimeout(res, 100))
+      }
     }
     bulkRemoved(deleted, skipped)
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
 // ---- events (existing surface, now expanded with --calendar-id, --rrule) ----
@@ -328,17 +463,32 @@ export async function listEvents(opts: {
     const docs = (await withSpinner(
       'Loading events…',
       () => client.findAll(CLASS.Event as Ref<Class<Event>>, query as any),
-      opts
+      opts,
     )) as Event[]
     let r = docs
     if (opts.offset && opts.offset > 0) r = r.slice(opts.offset)
     if (opts.limit && opts.limit > 0) r = r.slice(0, opts.limit)
-    if (shouldJson({ json: opts.json, ci: opts.ci })) { json(r); return }
+    if (shouldJson({ json: opts.json, ci: opts.ci })) {
+      json(r)
+      return
+    }
     table(r as unknown as Record<string, unknown>[], COLUMNS.event(), { count: true, title: 'events' })
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
-export async function getEvent(ref: string, opts: { json?: boolean; ci?: boolean; markdown?: boolean; rawMarkup?: boolean; workspace?: string; url?: string } = {}): Promise<void> {
+export async function getEvent(
+  ref: string,
+  opts: {
+    json?: boolean
+    ci?: boolean
+    markdown?: boolean
+    rawMarkup?: boolean
+    workspace?: string
+    url?: string
+  } = {},
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const id = await resolveRef(ref, {
@@ -353,9 +503,15 @@ export async function getEvent(ref: string, opts: { json?: boolean; ci?: boolean
     if ((opts.markdown || opts.rawMarkup) && doc.description) {
       try {
         const body = await withTimeout(
-          client.fetchMarkup(CLASS.Event as Ref<Class<Doc>>, doc._id, 'description', doc.description as any, opts.rawMarkup ? 'markup' : 'markdown'),
+          client.fetchMarkup(
+            CLASS.Event as Ref<Class<Doc>>,
+            doc._id,
+            'description',
+            doc.description as any,
+            opts.rawMarkup ? 'markup' : 'markdown',
+          ),
           5000,
-          '(body fetch timed out)'
+          '(body fetch timed out)',
         )
         const bodyStr = String(body ?? '')
         if (opts.markdown && looksLikeRawMarkup(bodyStr)) {
@@ -363,14 +519,21 @@ export async function getEvent(ref: string, opts: { json?: boolean; ci?: boolean
         }
         console.log(bodyStr)
         return
-      } catch { console.log(String(doc.description)); return }
+      } catch {
+        console.log(String(doc.description))
+        return
+      }
     }
-    if (shouldJson({ json: opts.json, ci: opts.ci })) { json(doc); return }
+    if (shouldJson({ json: opts.json, ci: opts.ci })) {
+      json(doc)
+      return
+    }
 
-    const start = typeof doc.date === 'number' ? isoDate(doc.date) : (doc.date ? String(doc.date) : '—')
-    const dur = (doc.dueDate as number | undefined) != null && (doc.date as number | undefined) != null
-      ? `${Math.round(((doc.dueDate as number) - (doc.date as number)) / 60000)} min`
-      : '—'
+    const start = typeof doc.date === 'number' ? isoDate(doc.date) : doc.date ? String(doc.date) : '—'
+    const dur =
+      (doc.dueDate as number | undefined) != null && (doc.date as number | undefined) != null
+        ? `${Math.round(((doc.dueDate as number) - (doc.date as number)) / 60000)} min`
+        : '—'
     header(`Event — ${doc.title ?? '(untitled)'}`, { subtitle: `${start}${dur !== '—' ? ' · ' + dur : ''}` })
     kv([
       ['ID', C.emphasis(String(doc._id))],
@@ -383,9 +546,24 @@ export async function getEvent(ref: string, opts: { json?: boolean; ci?: boolean
       ['Visibility', doc.visibility ?? C.muted('default')],
       ['Status', String(doc.status ?? '—')],
       ['Location', String(doc.location ?? '—')],
-      ['Participants', Array.isArray(doc.participants) && (doc.participants as unknown[]).length > 0 ? C.muted(`${(doc.participants as unknown[]).length} people`) : C.muted('none')],
-      ['External', Array.isArray(doc.externalParticipants) && (doc.externalParticipants as unknown[]).length > 0 ? C.muted(`${(doc.externalParticipants as unknown[]).length} external`) : C.muted('none')],
-      ['Created', doc.createdOn != null ? `${isoDate(doc.createdOn)} (${relTime(doc.createdOn as number | null)})` : C.muted('—')]
+      [
+        'Participants',
+        Array.isArray(doc.participants) && (doc.participants as unknown[]).length > 0
+          ? C.muted(`${(doc.participants as unknown[]).length} people`)
+          : C.muted('none'),
+      ],
+      [
+        'External',
+        Array.isArray(doc.externalParticipants) && (doc.externalParticipants as unknown[]).length > 0
+          ? C.muted(`${(doc.externalParticipants as unknown[]).length} external`)
+          : C.muted('none'),
+      ],
+      [
+        'Created',
+        doc.createdOn != null
+          ? `${isoDate(doc.createdOn)} (${relTime(doc.createdOn as number | null)})`
+          : C.muted('—'),
+      ],
     ])
     if (doc.description && doc.description !== '' && !opts.markdown) {
       console.log()
@@ -394,7 +572,9 @@ export async function getEvent(ref: string, opts: { json?: boolean; ci?: boolean
       const desc = String(doc.description)
       console.log(desc.length > 500 ? desc.slice(0, 500) + '…' : desc)
     }
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
 export async function createEvent(opts: {
@@ -458,7 +638,7 @@ export async function createEvent(opts: {
       access: 'owner',
       visibility: 'public',
       blockTime: false,
-      user: account.primarySocialId
+      user: account.primarySocialId,
     }
 
     if (isRecurring) {
@@ -473,20 +653,34 @@ export async function createEvent(opts: {
 
     if (opts.dryRun) {
       console.log(`would create ${isRecurring ? 'recurring event' : 'event'}:`)
-      console.log(JSON.stringify({ _class: classId, space: 'calendar:space:Calendar', attachedTo, attachedToClass, collection: 'events', data }, null, 2))
+      console.log(
+        JSON.stringify(
+          {
+            _class: classId,
+            space: 'calendar:space:Calendar',
+            attachedTo,
+            attachedToClass,
+            collection: 'events',
+            data,
+          },
+          null,
+          2,
+        ),
+      )
       return
     }
     const id = await withSpinner(
       `Creating ${isRecurring ? 'recurring event' : 'event'}…`,
-      () => client.addCollection(
-        classId as Ref<Class<Event>>,
-        'calendar:space:Calendar' as Ref<Space>,
-        attachedTo,
-        attachedToClass,
-        'events',
-        data as any
-      ),
-      opts
+      () =>
+        client.addCollection(
+          classId as Ref<Class<Event>>,
+          'calendar:space:Calendar' as Ref<Space>,
+          attachedTo,
+          attachedToClass,
+          'events',
+          data as any,
+        ),
+      opts,
     )
     invalidateIndex(client, CLASS.Event)
     if (shouldJson({ json: opts.json, ci: opts.ci })) {
@@ -494,23 +688,28 @@ export async function createEvent(opts: {
     } else {
       success(`created ${isRecurring ? `recurring event` : `event`}`, opts.title, id)
     }
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
-export async function updateEvent(ref: string, opts: {
-  title?: string
-  description?: string
-  start?: string
-  end?: string
-  allDay?: boolean
-  location?: string
-  attendee?: string
-  json?: boolean
-  ci?: boolean
-  dryRun?: boolean
-  workspace?: string
-  url?: string
-}): Promise<void> {
+export async function updateEvent(
+  ref: string,
+  opts: {
+    title?: string
+    description?: string
+    start?: string
+    end?: string
+    allDay?: boolean
+    location?: string
+    attendee?: string
+    json?: boolean
+    ci?: boolean
+    dryRun?: boolean
+    workspace?: string
+    url?: string
+  },
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const id = await resolveRef(ref, {
@@ -534,7 +733,12 @@ export async function updateEvent(ref: string, opts: {
     if (opts.allDay !== undefined) ops.allDay = opts.allDay
     if (opts.location !== undefined) ops.location = opts.location
     if (opts.attendee) ops.participants = [opts.attendee]
-    if (Object.keys(ops).length === 0) throw new CliError(ExitCode.Validation, 'nothing to update', 'pass --title/--description/--start/--end/--all-day/--location/--attendee')
+    if (Object.keys(ops).length === 0)
+      throw new CliError(
+        ExitCode.Validation,
+        'nothing to update',
+        'pass --title/--description/--start/--end/--all-day/--location/--attendee',
+      )
     if (opts.dryRun) {
       console.log(`would update event ${id}:`)
       console.log(JSON.stringify({ _class: CLASS.Event, objectId: id, space: doc.space, ops }, null, 2))
@@ -542,20 +746,36 @@ export async function updateEvent(ref: string, opts: {
     }
     await withSpinner(
       'Updating…',
-      () => client.updateDoc(CLASS.Event as Ref<Class<Event>>, doc.space as unknown as Ref<Space>, id as Ref<Event>, ops as any),
-      opts
+      () =>
+        client.updateDoc(
+          CLASS.Event as Ref<Class<Event>>,
+          doc.space as unknown as Ref<Space>,
+          id as Ref<Event>,
+          ops as any,
+        ),
+      opts,
     )
     updated(`updated event`, id)
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
-export async function deleteEvents(refs: string[], opts: { dryRun?: boolean; workspace?: string; url?: string; yes?: boolean } = {}): Promise<void> {
+export async function deleteEvents(
+  refs: string[],
+  opts: { dryRun?: boolean; workspace?: string; url?: string; yes?: boolean } = {},
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     if (!opts.yes && refs.length > 1) {
-      throw new CliError(ExitCode.Validation, `destructive: deleting ${refs.length} events requires --yes`, 're-run with --yes to confirm')
+      throw new CliError(
+        ExitCode.Validation,
+        `destructive: deleting ${refs.length} events requires --yes`,
+        're-run with --yes to confirm',
+      )
     }
-    let deleted = 0, skipped = 0
+    let deleted = 0,
+      skipped = 0
     for (const ref of refs) {
       // CLI-15: a CLI-created recurring event lives in CLASS.ReccuringEvent,
       // not CLASS.Event. Try Event first, then fall back to ReccuringEvent.
@@ -569,51 +789,106 @@ export async function deleteEvents(refs: string[], opts: { dryRun?: boolean; wor
         doc = await client.findOne(CLASS.ReccuringEvent as Ref<Class<Event>>, { _id: id as Ref<Event> })
         classId = CLASS.ReccuringEvent as Ref<Class<Event>>
       }
-      if (!doc) { skipped++; continue }
+      if (!doc) {
+        skipped++
+        continue
+      }
       const r = await deleteDoc(client, classId, doc.space as unknown as Ref<Space>, id as Ref<Event>, opts)
       if (r.skipped) skipped++
-      else { deleted++; await new Promise((res) => setTimeout(res, 100)) }
+      else {
+        deleted++
+        await new Promise((res) => setTimeout(res, 100))
+      }
     }
     bulkRemoved(deleted, skipped)
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }
 
 // ---- recurring events ----
 
-export async function listRecurringEvents(opts: { limit?: number; offset?: number; json?: boolean; ci?: boolean; workspace?: string; url?: string } = {}): Promise<void> {
+export async function listRecurringEvents(
+  opts: {
+    limit?: number
+    offset?: number
+    json?: boolean
+    ci?: boolean
+    workspace?: string
+    url?: string
+  } = {},
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const docs = (await withSpinner(
       'Loading recurring events…',
       () => client.findAll(CLASS.ReccuringEvent as Ref<Class<Event>>, {}),
-      opts
+      opts,
     )) as Event[]
     let r = docs
     if (opts.offset && opts.offset > 0) r = r.slice(opts.offset)
     if (opts.limit && opts.limit > 0) r = r.slice(0, opts.limit)
-    if (shouldJson({ json: opts.json, ci: opts.ci })) { json(r); return }
-    table(r as unknown as Record<string, unknown>[], [
-      { key: 'title', header: 'TITLE', format: (r) => C.emphasis(String((r as Event).title ?? '').slice(0, 60)) },
-      { key: 'date', header: 'START', width: 17, format: (r) => {
-        const d = (r as Event).date ?? (r as Event).startDate
-        return d != null ? isoDate(d) : C.muted('—')
-      } },
-      { key: 'dueDate', header: 'END', width: 17, format: (r) => {
-        const d = (r as Event).dueDate
-        return d != null ? isoDate(d) : C.muted('—')
-      } },
-      { key: 'rules', header: 'RULES', format: (r) => {
-        const r2 = (r as Event).rules as unknown
-        if (r2 == null) return C.muted('—')
-        if (typeof r2 === 'string') return C.muted(r2.slice(0, 50))
-        return C.muted(JSON.stringify(r2).slice(0, 50))
-      } },
-      { key: '_id', header: '_ID', format: (r) => C.id(String((r as Event)._id).slice(-12)) }
-    ], { count: true, title: 'reminders' })
-  } finally { await client.close() }
+    if (shouldJson({ json: opts.json, ci: opts.ci })) {
+      json(r)
+      return
+    }
+    table(
+      r as unknown as Record<string, unknown>[],
+      [
+        {
+          key: 'title',
+          header: 'TITLE',
+          format: (r) => C.emphasis(String((r as Event).title ?? '').slice(0, 60)),
+        },
+        {
+          key: 'date',
+          header: 'START',
+          width: 17,
+          format: (r) => {
+            const d = (r as Event).date ?? (r as Event).startDate
+            return d != null ? isoDate(d) : C.muted('—')
+          },
+        },
+        {
+          key: 'dueDate',
+          header: 'END',
+          width: 17,
+          format: (r) => {
+            const d = (r as Event).dueDate
+            return d != null ? isoDate(d) : C.muted('—')
+          },
+        },
+        {
+          key: 'rules',
+          header: 'RULES',
+          format: (r) => {
+            const r2 = (r as Event).rules as unknown
+            if (r2 == null) return C.muted('—')
+            if (typeof r2 === 'string') return C.muted(r2.slice(0, 50))
+            return C.muted(JSON.stringify(r2).slice(0, 50))
+          },
+        },
+        { key: '_id', header: '_ID', format: (r) => C.id(String((r as Event)._id).slice(-12)) },
+      ],
+      { count: true, title: 'reminders' },
+    )
+  } finally {
+    await client.close()
+  }
 }
 
-export async function listRecurringInstances(ref: string, opts: { start?: string; end?: string; limit?: number; json?: boolean; ci?: boolean; workspace?: string; url?: string }): Promise<void> {
+export async function listRecurringInstances(
+  ref: string,
+  opts: {
+    start?: string
+    end?: string
+    limit?: number
+    json?: boolean
+    ci?: boolean
+    workspace?: string
+    url?: string
+  },
+): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const id = await resolveRef(ref, {
@@ -627,24 +902,58 @@ export async function listRecurringInstances(ref: string, opts: { start?: string
       if (opts.end) range.$lte = parseDate(opts.end, '--end')
       query.date = range
     }
-    const instances = (await client.findAll(CLASS.ReccuringInstance as Ref<Class<Event>>, query as any)) as Event[]
+    const instances = (await client.findAll(
+      CLASS.ReccuringInstance as Ref<Class<Event>>,
+      query as any,
+    )) as Event[]
     let r = instances
     if (opts.limit) r = r.slice(0, opts.limit)
-    if (shouldJson({ json: opts.json, ci: opts.ci })) { json(r); return }
-    table(r as unknown as Record<string, unknown>[], [
-      { key: 'date', header: 'DATE', width: 17, format: (r) => {
-        const d = (r as Event).date
-        return d != null ? isoDate(d) : C.muted('—')
-      } },
-      { key: 'originalStartTime', header: 'ORIGINAL', width: 17, format: (r) => {
-        const d = (r as Event).originalStartTime
-        return d != null ? isoDate(d) : C.muted('—')
-      } },
-      { key: 'virtual', header: 'VIRTUAL', width: 10, align: 'center', format: (r) => (r as Event).virtual ? C.cyan('yes') : C.muted('no') },
-      { key: 'isCancelled', header: 'STATE', width: 11, align: 'center', format: (r) => (r as Event).isCancelled ? C.red('cancelled') : C.green('scheduled') },
-      { key: '_id', header: '_ID', format: (r) => C.id(String((r as Event)._id).slice(-12)) }
-    ], { count: true, title: 'instances' })
-  } finally { await client.close() }
+    if (shouldJson({ json: opts.json, ci: opts.ci })) {
+      json(r)
+      return
+    }
+    table(
+      r as unknown as Record<string, unknown>[],
+      [
+        {
+          key: 'date',
+          header: 'DATE',
+          width: 17,
+          format: (r) => {
+            const d = (r as Event).date
+            return d != null ? isoDate(d) : C.muted('—')
+          },
+        },
+        {
+          key: 'originalStartTime',
+          header: 'ORIGINAL',
+          width: 17,
+          format: (r) => {
+            const d = (r as Event).originalStartTime
+            return d != null ? isoDate(d) : C.muted('—')
+          },
+        },
+        {
+          key: 'virtual',
+          header: 'VIRTUAL',
+          width: 10,
+          align: 'center',
+          format: (r) => ((r as Event).virtual ? C.cyan('yes') : C.muted('no')),
+        },
+        {
+          key: 'isCancelled',
+          header: 'STATE',
+          width: 11,
+          align: 'center',
+          format: (r) => ((r as Event).isCancelled ? C.red('cancelled') : C.green('scheduled')),
+        },
+        { key: '_id', header: '_ID', format: (r) => C.id(String((r as Event)._id).slice(-12)) },
+      ],
+      { count: true, title: 'instances' },
+    )
+  } finally {
+    await client.close()
+  }
 }
 
 // ---- helpers ----
@@ -667,9 +976,15 @@ async function resolveCalendarId(client: PlatformClient, arg?: string): Promise<
     if (!hit) throw new CliError(ExitCode.NotFound, `calendar ${arg} not found`)
     return hit._id as Ref<Doc>
   }
-  const primary = (await client.findAll('calendar:class:PrimaryCalendar' as Ref<Class<Doc>>, {}, { limit: 1 }))[0] as Doc | undefined
+  const primary = (
+    await client.findAll('calendar:class:PrimaryCalendar' as Ref<Class<Doc>>, {}, { limit: 1 })
+  )[0] as Doc | undefined
   if (primary) return (primary as unknown as { attachedTo: Ref<Doc> }).attachedTo
-  const all = (await client.findAll(CLASS.Calendar as Ref<Class<CalendarDoc>>, { hidden: false }, { limit: 1 })) as CalendarDoc[]
+  const all = (await client.findAll(
+    CLASS.Calendar as Ref<Class<CalendarDoc>>,
+    { hidden: false },
+    { limit: 1 },
+  )) as CalendarDoc[]
   if (all.length === 0) throw new CliError(ExitCode.NotFound, 'no calendars available — pass --calendar-id')
   return all[0]._id as Ref<Doc>
 }
@@ -686,9 +1001,18 @@ function parseRRule(rule: string): Record<string, unknown> {
     if (eq < 0) continue
     const key = part.slice(0, eq).trim()
     const val = part.slice(eq + 1).trim()
-    if (key === 'BYDAY' || key === 'BYMONTH' || key === 'BYHOUR' || key === 'BYMINUTE' || key === 'BYSECOND' ||
-        key === 'BYMONTHDAY' || key === 'BYYEARDAY' || key === 'BYWEEKNO' || key === 'BYSETPOS') {
-      out[key] = val.split(',').map((s) => isNaN(Number(s)) ? s : Number(s))
+    if (
+      key === 'BYDAY' ||
+      key === 'BYMONTH' ||
+      key === 'BYHOUR' ||
+      key === 'BYMINUTE' ||
+      key === 'BYSECOND' ||
+      key === 'BYMONTHDAY' ||
+      key === 'BYYEARDAY' ||
+      key === 'BYWEEKNO' ||
+      key === 'BYSETPOS'
+    ) {
+      out[key] = val.split(',').map((s) => (isNaN(Number(s)) ? s : Number(s)))
     } else if (key === 'COUNT' || key === 'INTERVAL') {
       out[key] = Number(val)
     } else if (key === 'UNTIL') {

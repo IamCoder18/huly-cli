@@ -1,9 +1,8 @@
 import type { Doc, Ref, Space, Class } from '@hcengineering/core'
-import type { PlatformClient } from '@hcengineering/api-client'
 import { CLASS } from '../transport/identifiers.js'
 import { connectCli, connectAccountCli } from '../transport/sdk.js'
 import { resolveRef } from '../transport/ref-resolver.js'
-import { shouldJson, json, table, kv } from '../output/format.js'
+import { shouldJson, json, kv } from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
 import { accountClient, resolveToken } from '../auth/client.js'
@@ -37,7 +36,7 @@ export async function getUser(opts: GlobalOpts & { ref?: string } = {}): Promise
   kv([
     ['Name', [p.firstName, p.lastName].filter(Boolean).join(' ') || (p.name as string | undefined) || '—'],
     ['Email', primary?.value ?? '—'],
-    ['UUID', (p.uuid as string | undefined) ?? '—']
+    ['UUID', (p.uuid as string | undefined) ?? '—'],
   ])
 }
 
@@ -58,7 +57,7 @@ async function getUserByRef(ref: string, opts: GlobalOpts): Promise<void> {
       ['Name', person.name],
       ['UUID', person._id],
       ['City', person.city ?? '—'],
-      ['Country', person.country ?? '—']
+      ['Country', person.country ?? '—'],
     ])
   } finally {
     await client.close()
@@ -80,21 +79,22 @@ export async function updateUser(opts: {
     throw new CliError(ExitCode.Validation, 'nothing to update', 'pass --name, --bio, --city, or --country')
   }
   const ac = await connectAccountCli({ url: opts.url })
-  const person = (await withSpinner('Fetching person…', () => ac.getPerson(), opts)) as { uuid?: string; _id?: string } | undefined
+  const person = (await withSpinner('Fetching person…', () => ac.getPerson(), opts)) as
+    | { uuid?: string; _id?: string }
+    | undefined
   const personUuid = person?.uuid ?? person?._id
   if (!personUuid) throw new CliError(ExitCode.NotFound, 'current person not found')
 
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
-    const existing = await client.findOne(
-      CLASS.Person as Ref<Class<Person>>,
-      { _id: personUuid as Ref<Person> }
-    )
+    const existing = await client.findOne(CLASS.Person as Ref<Class<Person>>, {
+      _id: personUuid as Ref<Person>,
+    })
     if (!existing) {
       throw new CliError(
         ExitCode.NotFound,
         `person doc ${personUuid} not present in workspace`,
-        'hint: this command updates the contact:class:Person record; some workspaces use a separate profile'
+        'hint: this command updates the contact:class:Person record; some workspaces use a separate profile',
       )
     }
     const ops: Record<string, unknown> = {}
@@ -110,13 +110,14 @@ export async function updateUser(opts: {
     }
     await withSpinner(
       'Updating profile…',
-      () => client.updateDoc(
-        CLASS.Person as Ref<Class<Person>>,
-        existing.space as unknown as Ref<Space>,
-        existing._id as Ref<Person>,
-        ops as any
-      ),
-      opts
+      () =>
+        client.updateDoc(
+          CLASS.Person as Ref<Class<Person>>,
+          existing.space as unknown as Ref<Space>,
+          existing._id as Ref<Person>,
+          ops as any,
+        ),
+      opts,
     )
     console.log('updated profile')
   } finally {
@@ -139,10 +140,10 @@ export async function findUser(email: string, opts: GlobalOpts = {}): Promise<vo
     const token = await resolveToken({ email: env.email, url })
     const acc = await accountClient(url!, token)
     const personUuid = await withSpinner(
-        `Looking up ${email} (account)…`,
-        () => acc.findPersonBySocialKey(normalizeSocialKey(email), false),
-        opts
-      )
+      `Looking up ${email} (account)…`,
+      () => acc.findPersonBySocialKey(normalizeSocialKey(email), false),
+      opts,
+    )
     if (personUuid !== undefined && personUuid !== null) {
       if (shouldJson({ json: opts.json, ci: opts.ci })) {
         json({ email, personUuid, source: 'account' })
@@ -159,15 +160,19 @@ export async function findUser(email: string, opts: GlobalOpts = {}): Promise<vo
     const persons = (await withSpinner(
       `Looking up ${email} (workspace)…`,
       () => client.findAll('contact:class:Person' as Ref<Class<Doc>>, {}, { limit: 200 }),
-      opts
+      opts,
     )) as Array<Doc & { name?: string }>
     const lower = email.toLowerCase()
-    const hit = persons.find((p) => p.name?.toLowerCase() === lower || (p.name ?? '').toLowerCase().includes(lower))
+    const hit = persons.find(
+      (p) => p.name?.toLowerCase() === lower || (p.name ?? '').toLowerCase().includes(lower),
+    )
     if (!hit) throw new CliError(ExitCode.NotFound, `no person matching ${email} in this workspace`)
     if (shouldJson({ json: opts.json, ci: opts.ci })) {
       json({ email, personId: hit._id, name: hit.name, source: 'workspace' })
       return
     }
     console.log(`${email}\t${hit._id}`)
-  } finally { await client.close() }
+  } finally {
+    await client.close()
+  }
 }

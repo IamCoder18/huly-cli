@@ -12,12 +12,12 @@ const { htmlToJSON, htmlToMarkup: textHtmlToMarkup } = textPkg
 const { jsonToMarkup } = textCorePkg
 const { markdownToMarkup } = textMarkdownPkg
 
-const platformGenerateId: () => Ref<Doc> =
-  (corePkg as unknown as { generateId: (join?: string) => string }).generateId
+const platformGenerateId: () => Ref<Doc> = (corePkg as unknown as { generateId: (join?: string) => string })
+  .generateId
 
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, buildIndex } from '../transport/ref-resolver.js'
-import { shouldJson, json, table, type TableColumn, success, bulkRemoved } from "../output/format.js"
+import { shouldJson, json, table, type TableColumn, success, bulkRemoved } from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
 import { deleteDoc } from '../commands/dry-run.js'
@@ -29,15 +29,17 @@ import { deleteDoc } from '../commands/dry-run.js'
  * Newlines *inside* a text node (e.g. inside `<p>hello\nworld</p>`) are
  * preserved so the round-trip keeps the word boundary.
  */
-export function normalizeMarkupInput (html: string): string {
-  return html
-    .replace(/\r\n?/g, '\n')
-    // Match whitespace that includes a newline only when it sits between
-    // a `>` (end of one tag) and a `<` (start of the next). Removing the
-    // whitespace entirely (not collapsing to a single space) prevents the
-    // prosemirror parser from creating a text node of `" "` between the
-    // two block elements, which would otherwise render as a phantom gap.
-    .replace(/>\s*\n\s*</g, '><')
+export function normalizeMarkupInput(html: string): string {
+  return (
+    html
+      .replace(/\r\n?/g, '\n')
+      // Match whitespace that includes a newline only when it sits between
+      // a `>` (end of one tag) and a `<` (start of the next). Removing the
+      // whitespace entirely (not collapsing to a single space) prevents the
+      // prosemirror parser from creating a text node of `" "` between the
+      // two block elements, which would otherwise render as a phantom gap.
+      .replace(/>\s*\n\s*</g, '><')
+  )
 }
 
 /**
@@ -47,7 +49,7 @@ export function normalizeMarkupInput (html: string): string {
  * single text node inside one paragraph — every `<h1>`, `<strong>`, etc.
  * shows up as visible text, not a rendered element.
  */
-export function htmlToMarkup (html: string): string {
+export function htmlToMarkup(html: string): string {
   const json = htmlToJSON(normalizeMarkupInput(html))
   return jsonToMarkup(json)
 }
@@ -55,7 +57,7 @@ export function htmlToMarkup (html: string): string {
 /**
  * Convert markdown text to the prosemirror-JSON markup format.
  */
-export function mdToMarkup (md: string): string {
+export function mdToMarkup(md: string): string {
   return markdownToMarkup(md)
 }
 
@@ -63,11 +65,11 @@ export function mdToMarkup (md: string): string {
  * Convert HTML to markup using the `@hcengineering/text` package's
  * `htmlToMarkup` (single-call alternative to htmlToJSON + jsonToMarkup).
  */
-export function rawHtmlToMarkup (html: string): string {
+export function rawHtmlToMarkup(html: string): string {
   return textHtmlToMarkup(normalizeMarkupInput(html))
 }
 
-export function generateId (): Ref<Doc> {
+export function generateId(): Ref<Doc> {
   return platformGenerateId() as Ref<Doc>
 }
 
@@ -84,7 +86,7 @@ export function generateId (): Ref<Doc> {
  * wastes MinIO storage and the prosemirror conversion would otherwise
  * produce an empty doc that the server round-trips as a phantom paragraph.
  */
-function convertMarkup (body: string | undefined, kind: 'markup' | 'markdown' | 'html'): string {
+function convertMarkup(body: string | undefined, kind: 'markup' | 'markdown' | 'html'): string {
   if (body === undefined || body.length === 0) return ''
   if (kind === 'markdown') return mdToMarkup(body)
   if (kind === 'html') return rawHtmlToMarkup(body)
@@ -105,13 +107,13 @@ const EMPTY_PROSEMIRROR_DOC = '{"type":"doc","content":[]}'
  * return the resulting MarkupBlobRef. The body is converted to
  * prosemirror-JSON before being sent.
  */
-export async function uploadMarkup (
+export async function uploadMarkup(
   client: PlatformClient,
   objectClass: Ref<Class<Doc>>,
   objectId: Ref<Doc>,
   objectAttr: string,
   body: string | undefined,
-  kind: 'markup' | 'markdown' | 'html' = 'markup'
+  kind: 'markup' | 'markdown' | 'html' = 'markup',
 ): Promise<string> {
   const converted = convertMarkup(body, kind)
   // Skip the round-trip entirely when there's no body. The ydoc gets
@@ -124,7 +126,11 @@ export async function uploadMarkup (
   // rather than a TypeError.
   const ops = (client as unknown as PlatformClientWithMarkup).markup
   if (ops?.uploadMarkup === undefined) {
-    throw new CliError(ExitCode.Server, 'client.markup.uploadMarkup is not available on this PlatformClient', 'ensure you are connected to a recent Huly platform that exposes MarkupOperations')
+    throw new CliError(
+      ExitCode.Server,
+      'client.markup.uploadMarkup is not available on this PlatformClient',
+      'ensure you are connected to a recent Huly platform that exposes MarkupOperations',
+    )
   }
   return await ops.uploadMarkup(objectClass, objectId, objectAttr, converted, 'markup')
 }
@@ -142,24 +148,26 @@ export async function uploadMarkup (
  * "no-op" so callers that pass through optional flag values don't
  * accidentally clear.
  */
-export async function updateMarkup (
+export async function updateMarkup(
   client: PlatformClient,
   objectClass: Ref<Class<Doc>>,
   objectId: Ref<Doc>,
   objectAttr: string,
   body: string | undefined,
-  kind: 'markup' | 'markdown' | 'html' = 'markup'
+  kind: 'markup' | 'markdown' | 'html' = 'markup',
 ): Promise<void> {
   if (body === undefined) return
   // Empty body must be sent as a valid prosemirror doc, not the raw '' —
   // the collaborator's `updateContent` RPC rejects anything that does
   // not parse as prosemirror-JSON.
-  const converted = body.length === 0
-    ? EMPTY_PROSEMIRROR_DOC
-    : convertMarkup(body, kind)
+  const converted = body.length === 0 ? EMPTY_PROSEMIRROR_DOC : convertMarkup(body, kind)
   const ops = (client as unknown as PlatformClientWithMarkup).markup
   if (ops?.collaborator?.updateMarkup === undefined) {
-    throw new CliError(ExitCode.Server, 'client.markup.collaborator.updateMarkup is not available on this PlatformClient', 'ensure you are connected to a recent Huly platform that exposes MarkupOperations')
+    throw new CliError(
+      ExitCode.Server,
+      'client.markup.collaborator.updateMarkup is not available on this PlatformClient',
+      'ensure you are connected to a recent Huly platform that exposes MarkupOperations',
+    )
   }
   await ops.collaborator.updateMarkup({ objectClass, objectId, objectAttr }, converted)
 }
@@ -179,7 +187,7 @@ const DELETE_GAP_MS = 100
  */
 const RAW_MARKUP_PREFIX = /^\{\s*"type"\s*:\s*"doc"/
 
-export function looksLikeRawMarkup (s: string | null | undefined): boolean {
+export function looksLikeRawMarkup(s: string | null | undefined): boolean {
   if (s === null || s === undefined || s.length === 0) return false
   return RAW_MARKUP_PREFIX.test(s.trimStart())
 }
@@ -190,7 +198,7 @@ export function looksLikeRawMarkup (s: string | null | undefined): boolean {
  * Centralized here so the wording stays consistent across every
  * `* get --markdown` path.
  */
-export function warnMarkdownFallback (): void {
+export function warnMarkdownFallback(): void {
   console.error('warning: markdown conversion unavailable — server returned raw prosemirror markup')
   console.error('hint: pass --raw-markup to see the stored markup, or retry once the converter is restored')
   if (process.env.HULY_MARKDOWN_FALLBACK_FAIL === '1') process.exit(ExitCode.Server)
@@ -228,7 +236,7 @@ export function makeList<T extends Doc>(opts: ListOpts<T>) {
       const docs = (await withSpinner(
         `Loading ${opts.label ?? 'records'}…`,
         () => client.findAll(opts.classId, query as any),
-        listOpts
+        listOpts,
       )) as unknown as T[]
       let r = docs
       if (listOpts.offset && listOpts.offset > 0) r = r.slice(listOpts.offset)
@@ -254,14 +262,17 @@ export interface GetOpts<T extends Doc> {
 }
 
 export function makeGet<T extends Doc>(opts: GetOpts<T>) {
-  return async function runGet(ref: string, runOpts: GlobalRunOpts & { defaultProjectIdentifier?: string } = {}): Promise<void> {
+  return async function runGet(
+    ref: string,
+    runOpts: GlobalRunOpts & { defaultProjectIdentifier?: string } = {},
+  ): Promise<void> {
     const client = await connectCli({ url: runOpts.url, workspace: runOpts.workspace })
     try {
       const id = await resolveRef(ref, {
         client,
         classId: opts.classId as Ref<Class<Doc>>,
         identifierField: opts.identifierField as string | undefined,
-        defaultProjectIdentifier: runOpts.defaultProjectIdentifier
+        defaultProjectIdentifier: runOpts.defaultProjectIdentifier,
       })
       const doc = (await client.findOne(opts.classId, { _id: id as Ref<T> })) as T | undefined
       if (!doc) throw new CliError(ExitCode.NotFound, `${opts.label ?? 'record'} ${ref} not found`)
@@ -275,7 +286,7 @@ export function makeGet<T extends Doc>(opts: GetOpts<T>) {
               doc._id,
               opts.markdownAttr as string,
               raw as any,
-              runOpts.rawMarkup ? 'markup' : 'markdown'
+              runOpts.rawMarkup ? 'markup' : 'markdown',
             )
             const bodyStr = String(body ?? '')
             if (runOpts.markdown && looksLikeRawMarkup(bodyStr)) {
@@ -314,17 +325,19 @@ export interface CreateOpts<T extends Doc> {
 
 export function makeCreate<T extends Doc>(opts: CreateOpts<T>) {
   return async function runCreate(
-    createOpts: GlobalRunOpts & Record<string, unknown> & { title?: string }
+    createOpts: GlobalRunOpts & Record<string, unknown> & { title?: string },
   ): Promise<Ref<T>> {
     const client = await connectCli({ url: createOpts.url, workspace: createOpts.workspace })
     try {
       const space = await (opts.resolveSpace
         ? opts.resolveSpace(client, createOpts)
-        : (createOpts.space as Ref<Space> | undefined) ?? Promise.reject(new CliError(ExitCode.Validation, 'missing --space')))
+        : ((createOpts.space as Ref<Space> | undefined) ??
+          Promise.reject(new CliError(ExitCode.Validation, 'missing --space'))))
       const data: Record<string, unknown> = {}
       if (opts.defaults) Object.assign(data, await opts.defaults(client, createOpts))
       for (const [k, v] of Object.entries(createOpts)) {
-        if (['json', 'ci', 'markdown', 'dryRun', 'minimal', 'yes', 'workspace', 'url', 'space'].includes(k)) continue
+        if (['json', 'ci', 'markdown', 'dryRun', 'minimal', 'yes', 'workspace', 'url', 'space'].includes(k))
+          continue
         if (v === undefined) continue
         data[k] = v
       }
@@ -337,7 +350,7 @@ export function makeCreate<T extends Doc>(opts: CreateOpts<T>) {
       const id = await withSpinner(
         `Creating ${opts.label ?? 'record'}…`,
         () => client.createDoc(opts.classId, space as Ref<Space>, finalData as any),
-        createOpts
+        createOpts,
       )
       if (shouldJson({ json: createOpts.json, ci: createOpts.ci })) {
         json({ _id: id, ...finalData })
@@ -367,7 +380,7 @@ export function makeUpdate<T extends Doc>(opts: UpdateOpts<T>) {
       unset?: string[]
       defaultProjectIdentifier?: string
       [k: string]: unknown
-    }
+    },
   ): Promise<void> {
     const client = await connectCli({ url: updateOpts.url, workspace: updateOpts.workspace })
     try {
@@ -375,7 +388,7 @@ export function makeUpdate<T extends Doc>(opts: UpdateOpts<T>) {
         client,
         classId: opts.classId as Ref<Class<Doc>>,
         identifierField: opts.identifierField as string | undefined,
-        defaultProjectIdentifier: updateOpts.defaultProjectIdentifier
+        defaultProjectIdentifier: updateOpts.defaultProjectIdentifier,
       })
       const doc = (await client.findOne(opts.classId, { _id: id as Ref<T> })) as T | undefined
       if (!doc) throw new CliError(ExitCode.NotFound, `${opts.label ?? 'record'} ${ref} not found`)
@@ -383,7 +396,8 @@ export function makeUpdate<T extends Doc>(opts: UpdateOpts<T>) {
       const ops: Record<string, unknown> = {}
       for (const item of updateOpts.set ?? []) {
         const eq = item.indexOf('=')
-        if (eq < 0) throw new CliError(ExitCode.Validation, `invalid --set entry (expected key=value): ${item}`)
+        if (eq < 0)
+          throw new CliError(ExitCode.Validation, `invalid --set entry (expected key=value): ${item}`)
         const k = item.slice(0, eq).trim()
         let v: unknown = item.slice(eq + 1).trim()
         if (v === 'true') v = true
@@ -393,18 +407,38 @@ export function makeUpdate<T extends Doc>(opts: UpdateOpts<T>) {
       }
       for (const k of updateOpts.unset ?? []) ops[k] = null
       for (const [k, v] of Object.entries(updateOpts)) {
-        if (['set', 'unset', 'json', 'ci', 'markdown', 'rawMarkup', 'dryRun', 'minimal', 'yes', 'workspace', 'url', 'defaultProjectIdentifier'].includes(k)) continue
+        if (
+          [
+            'set',
+            'unset',
+            'json',
+            'ci',
+            'markdown',
+            'rawMarkup',
+            'dryRun',
+            'minimal',
+            'yes',
+            'workspace',
+            'url',
+            'defaultProjectIdentifier',
+          ].includes(k)
+        )
+          continue
         if (v === undefined) continue
         ops[k] = v
       }
 
       if (Object.keys(ops).length === 0) {
-        throw new CliError(ExitCode.Validation, 'no update fields provided', 'pass --set key=value, --unset key, or a typed flag')
+        throw new CliError(
+          ExitCode.Validation,
+          'no update fields provided',
+          'pass --set key=value, --unset key, or a typed flag',
+        )
       }
 
       const space = opts.resolveSpace
         ? await opts.resolveSpace(client, doc, updateOpts)
-        : ((doc as unknown as { space: Ref<Space> }).space)
+        : (doc as unknown as { space: Ref<Space> }).space
 
       if (updateOpts.dryRun) {
         console.log(`would update ${opts.label ?? 'record'} ${id}:`)
@@ -414,7 +448,7 @@ export function makeUpdate<T extends Doc>(opts: UpdateOpts<T>) {
       await withSpinner(
         'Updating…',
         () => client.updateDoc(opts.classId, space as Ref<Space>, id as Ref<T>, ops as any),
-        updateOpts
+        updateOpts,
       )
       console.log(`updated ${opts.label ?? 'record'}: ${id}`)
     } finally {
@@ -431,31 +465,40 @@ export interface DeleteOpts<T extends Doc> {
 }
 
 export function makeDelete<T extends Doc>(opts: DeleteOpts<T>) {
-  return async function runDelete(refs: string[], deleteOpts: GlobalRunOpts & { defaultProjectIdentifier?: string } = {}): Promise<void> {
+  return async function runDelete(
+    refs: string[],
+    deleteOpts: GlobalRunOpts & { defaultProjectIdentifier?: string } = {},
+  ): Promise<void> {
     const client = await connectCli({ url: deleteOpts.url, workspace: deleteOpts.workspace })
     try {
       const ids = await resolveRefs(refs, {
         client,
         classId: opts.classId as Ref<Class<Doc>>,
         identifierField: opts.identifierField as string | undefined,
-        defaultProjectIdentifier: deleteOpts.defaultProjectIdentifier
+        defaultProjectIdentifier: deleteOpts.defaultProjectIdentifier,
       })
       if (!deleteOpts.yes && ids.length > 1) {
         throw new CliError(
           ExitCode.Validation,
           `destructive: deleting ${ids.length} ${opts.label ?? 'records'} requires --yes`,
-          're-run with --yes to confirm'
+          're-run with --yes to confirm',
         )
       }
       let deleted = 0
       let skipped = 0
       for (const id of ids) {
         const doc = (await client.findOne(opts.classId, { _id: id as Ref<T> })) as T | undefined
-        if (!doc) { skipped++; continue }
+        if (!doc) {
+          skipped++
+          continue
+        }
         const space = (doc as unknown as { space: Ref<Space> }).space
         const r = await deleteDoc(client, opts.classId, space, id as Ref<T>, deleteOpts)
         if (r.skipped) skipped++
-        else { deleted++; await new Promise((res) => setTimeout(res, DELETE_GAP_MS)) }
+        else {
+          deleted++
+          await new Promise((res) => setTimeout(res, DELETE_GAP_MS))
+        }
       }
       bulkRemoved(deleted, skipped)
     } finally {
@@ -514,20 +557,17 @@ export async function resolveEmailToLocalId(
   client: PlatformClient,
   email: string,
   classIds: string[] = ['contact:class:Person'],
-  resolveOpts: ResolveOpts = {}
+  resolveOpts: ResolveOpts = {},
 ): Promise<Ref<Doc> | undefined> {
   if (!email.includes('@')) return undefined
   const lower = email.toLowerCase()
 
-  const candidatesByClass = new Map<
-    string,
-    Array<Doc & { personUuid?: string; email?: string }>
-  >()
+  const candidatesByClass = new Map<string, Array<Doc & { personUuid?: string; email?: string }>>()
   for (const classId of classIds) {
     try {
-      const candidates = (await client.findAll(
-        classId as Ref<Class<Doc>>, {}, { limit: 500 }
-      )) as Array<Doc & { personUuid?: string; email?: string }>
+      const candidates = (await client.findAll(classId as Ref<Class<Doc>>, {}, { limit: 500 })) as Array<
+        Doc & { personUuid?: string; email?: string }
+      >
       candidatesByClass.set(classId, candidates)
       const hit = candidates.find((p) => (p.email ?? '').toLowerCase() === lower)
       if (hit) return hit._id
@@ -577,7 +617,7 @@ export async function resolveEmailToLocalId(
 export async function resolveAssignee(
   client: PlatformClient,
   ref: string,
-  resolveOpts: ResolveOpts = {}
+  resolveOpts: ResolveOpts = {},
 ): Promise<Ref<Doc>> {
   const trimmed = ref.trim()
   if (trimmed === '' || trimmed === 'me') {
@@ -594,15 +634,17 @@ export async function resolveAssignee(
   }
   const lower = trimmed.toLowerCase()
   const persons = (await client.findAll(
-    'contact:class:Person' as Ref<Class<Doc>>, {}, { limit: 500 }
+    'contact:class:Person' as Ref<Class<Doc>>,
+    {},
+    { limit: 500 },
   )) as Array<Doc & { name?: string; email?: string }>
   const hit = persons.find(
-    (p) => (p.email ?? '').toLowerCase() === lower || (p.name ?? '').toLowerCase() === lower
+    (p) => (p.email ?? '').toLowerCase() === lower || (p.name ?? '').toLowerCase() === lower,
   )
   if (hit) return hit._id
   // Loose contains match
   const fuzzy = persons.find(
-    (p) => (p.name ?? '').toLowerCase().includes(lower) || (p.email ?? '').toLowerCase().includes(lower)
+    (p) => (p.name ?? '').toLowerCase().includes(lower) || (p.email ?? '').toLowerCase().includes(lower),
   )
   if (fuzzy) return fuzzy._id
   throw new CliError(ExitCode.NotFound, `assignee ${ref} not found in workspace`)
