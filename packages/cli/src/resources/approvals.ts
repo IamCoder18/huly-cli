@@ -18,7 +18,6 @@ import {
 } from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
-import { uploadMarkup, generateId } from './_helpers.js'
 
 const REQUEST_STATUSES = ['Active', 'Completed', 'Rejected', 'Cancelled'] as const
 type RequestStatus = (typeof REQUEST_STATUSES)[number]
@@ -298,19 +297,7 @@ export async function commentOnApproval(opts: CommentOpts): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const { id, doc } = await fetchRequest(client, opts.ref!)
-    // HULY-20: upload markup so `message` stores a MarkupBlobRef, not raw
-    // HTML. Generate id up-front so the markup blob's collabId matches
-    // the ChatMessage doc's id. No --dry-run flag on this surface today.
-    const newCommentId = generateId()
-    const messageRef = await uploadMarkup(
-      client,
-      'chunter:class:ChatMessage' as Ref<Class<Doc>>,
-      newCommentId,
-      'message',
-      opts.body,
-      'markup',
-    )
-    const data: Record<string, unknown> = { message: messageRef }
+    const data: Record<string, unknown> = { message: opts.body }
     if (opts.decision) data.decision = opts.decision
     const cid = await withSpinner(
       'Commenting…',
@@ -322,7 +309,6 @@ export async function commentOnApproval(opts: CommentOpts): Promise<void> {
           REQUEST_CLASS,
           'comments',
           data as any,
-          newCommentId,
         ),
       opts,
     )
