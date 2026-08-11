@@ -18,6 +18,7 @@ import {
 } from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
+import { htmlToMarkup } from './_helpers.js'
 
 const REQUEST_STATUSES = ['Active', 'Completed', 'Rejected', 'Cancelled'] as const
 type RequestStatus = (typeof REQUEST_STATUSES)[number]
@@ -297,7 +298,10 @@ export async function commentOnApproval(opts: CommentOpts): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const { id, doc } = await fetchRequest(client, opts.ref!)
-    const data: Record<string, unknown> = { message: opts.body }
+    // HULY-20: approval comments are ChatMessage instances — message is
+    // TypeMarkup (inline prosemirror JSON). Inline storage, same as
+    // chat comments.
+    const data: Record<string, unknown> = { message: htmlToMarkup(opts.body) }
     if (opts.decision) data.decision = opts.decision
     const cid = await withSpinner(
       'Commenting…',
