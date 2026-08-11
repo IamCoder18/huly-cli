@@ -18,7 +18,6 @@ import {
 } from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
-import { uploadMarkup, generateId } from './_helpers.js'
 
 type ActivityMessage = Doc & {
   message?: string
@@ -372,12 +371,7 @@ export async function addReply(opts: ReplyOpts): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const { id, doc } = await fetchActivity(client, opts.target)
-    // HULY-20: upload the markup first so `message` stores a MarkupBlobRef
-    // (prosemirror-JSON-backed), not raw HTML. The id is generated up-front
-    // so the markup blob's collabId and the reply doc share the same id.
-    const newReplyId = generateId()
-    const messageRef = await uploadMarkup(client, ACTIVITY_CLASS, newReplyId, 'message', opts.body, 'markup')
-    const data: Record<string, unknown> = { message: messageRef }
+    const data: Record<string, unknown> = { message: opts.body }
     const rid = await withSpinner(
       'Replying…',
       () =>
@@ -388,7 +382,6 @@ export async function addReply(opts: ReplyOpts): Promise<void> {
           ACTIVITY_CLASS,
           'replies',
           data as any,
-          newReplyId,
         ),
       opts,
     )
@@ -415,13 +408,11 @@ export async function updateReply(
     // attachedTo pointing at the parent). `message` lives on the reply
     // doc itself — updateDoc, NOT updateCollection against the parent's
     // 'replies' tuple (which doesn't exist).
-    // HULY-20: upload markup first so the update lands a MarkupBlobRef.
-    const messageRef = await uploadMarkup(client, ACTIVITY_CLASS, id, 'message', opts.body, 'markup')
     await client.updateDoc(
       ACTIVITY_CLASS,
       doc.space as unknown as Ref<Space>,
       id as Ref<Doc>,
-      { message: messageRef, modifiedOn: Date.now() } as any,
+      { message: opts.body, modifiedOn: Date.now() } as any,
     )
     updated('updated reply', refString(id))
   } finally {
