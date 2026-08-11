@@ -6,6 +6,7 @@ import { shouldJson, json, table, COLUMNS, success, updated, bulkRemoved } from 
 import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
 import { readEnv } from '../auth/env.js'
+import { uploadMarkup, generateId } from './_helpers.js'
 
 type ChatMessage = Doc & {
   message: string
@@ -85,6 +86,19 @@ export async function addComment(opts: {
     })
     const issue = await client.findOne(CLASS.Issue as Ref<Class<Doc>>, { _id: issueId })
     if (!issue) throw new CliError(ExitCode.NotFound, `issue ${opts.issue} not found`)
+    // HULY-20: pre-upload the markup so the `message` field stores a
+    // MarkupBlobRef (pointing to a prosemirror-JSON blob in MinIO) instead of
+    // a raw HTML string. Generating the id up-front lets us use the same
+    // id for both the markup blob's collabId and the ChatMessage doc.
+    const newMessageId = generateId()
+    const messageRef = await uploadMarkup(
+      client,
+      CLASS.ChatMessage as Ref<Class<Doc>>,
+      newMessageId,
+      'message',
+      body,
+      'markup',
+    )
     const id = await withSpinner(
       'Adding comment…',
       () =>
@@ -94,13 +108,14 @@ export async function addComment(opts: {
           issueId,
           CLASS.Issue,
           'comments',
-          { message: body } as any,
+          { message: messageRef } as any,
+          newMessageId,
         ),
       opts,
     )
     invalidateIndex(client, CLASS.ChatMessage)
     if (shouldJson({ json: opts.json, ci: opts.ci })) {
-      json({ _id: id, attachedTo: issueId, message: body })
+      json({ _id: id, attachedTo: issueId, message: messageRef })
     } else {
       success('added comment', `on ${opts.issue}`, id)
     }
@@ -130,6 +145,16 @@ export async function updateComment(
     })
     const comment = await client.findOne(CLASS.ChatMessage as Ref<Class<ChatMessage>>, { _id: commentId })
     if (!comment) throw new CliError(ExitCode.NotFound, `comment ${ref} not found`)
+    // HULY-20: same fix as addComment — upload the markup first so the
+    // update lands a MarkupBlobRef in `message`, not raw HTML.
+    const messageRef = await uploadMarkup(
+      client,
+      CLASS.ChatMessage as Ref<Class<Doc>>,
+      commentId,
+      'message',
+      body,
+      'markup',
+    )
     await withSpinner(
       'Updating comment…',
       () =>
@@ -137,7 +162,7 @@ export async function updateComment(
           CLASS.ChatMessage as Ref<Class<ChatMessage>>,
           (comment as Doc).space as Ref<Doc>,
           commentId as Ref<Doc>,
-          { message: body, editedOn: Date.now() } as any,
+          { message: messageRef, editedOn: Date.now() } as any,
         ),
       opts,
     )
