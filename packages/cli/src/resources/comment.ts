@@ -6,6 +6,7 @@ import { shouldJson, json, table, COLUMNS, success, updated, bulkRemoved } from 
 import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
 import { readEnv } from '../auth/env.js'
+import { htmlToMarkup } from './_helpers.js'
 
 type ChatMessage = Doc & {
   message: string
@@ -85,6 +86,15 @@ export async function addComment(opts: {
     })
     const issue = await client.findOne(CLASS.Issue as Ref<Class<Doc>>, { _id: issueId })
     if (!issue) throw new CliError(ExitCode.NotFound, `issue ${opts.issue} not found`)
+    // HULY-20: ChatMessage.message is typed `TypeMarkup()` (inline
+    // prosemirror-JSON string). The web UI renders it via MessageViewer,
+    // which calls `markupToJSON(message)` directly with NO collaborator
+    // resolution — so storing a MarkupBlobRef string in `message` would
+    // render as literal text. Convert HTML → prosemirror JSON locally and
+    // store the JSON string inline. (Document.content uses
+    // TypeCollaborativeDoc and stores a MarkupBlobRef, but that's a
+    // different attribute type and a different UI renderer.)
+    const messageMarkup = htmlToMarkup(body)
     const id = await withSpinner(
       'Adding comment…',
       () =>
@@ -94,13 +104,13 @@ export async function addComment(opts: {
           issueId,
           CLASS.Issue,
           'comments',
-          { message: body } as any,
+          { message: messageMarkup } as any,
         ),
       opts,
     )
     invalidateIndex(client, CLASS.ChatMessage)
     if (shouldJson({ json: opts.json, ci: opts.ci })) {
-      json({ _id: id, attachedTo: issueId, message: body })
+      json({ _id: id, attachedTo: issueId, message: messageMarkup })
     } else {
       success('added comment', `on ${opts.issue}`, id)
     }
@@ -130,6 +140,9 @@ export async function updateComment(
     })
     const comment = await client.findOne(CLASS.ChatMessage as Ref<Class<ChatMessage>>, { _id: commentId })
     if (!comment) throw new CliError(ExitCode.NotFound, `comment ${ref} not found`)
+    // HULY-20: same inline-prosemirror conversion as addComment. Storing a
+    // MarkupBlobRef string here would render as literal text in the web UI.
+    const messageMarkup = htmlToMarkup(body)
     await withSpinner(
       'Updating comment…',
       () =>
@@ -137,7 +150,7 @@ export async function updateComment(
           CLASS.ChatMessage as Ref<Class<ChatMessage>>,
           (comment as Doc).space as Ref<Doc>,
           commentId as Ref<Doc>,
-          { message: body, editedOn: Date.now() } as any,
+          { message: messageMarkup, editedOn: Date.now() } as any,
         ),
       opts,
     )

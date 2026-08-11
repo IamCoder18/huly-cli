@@ -6,6 +6,7 @@ import { normalizeSocialKey } from '../auth/social.js'
 import { shouldJson, json, table, COLUMNS, C, success, updated, bulkRemoved } from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
+import { htmlToMarkup } from './_helpers.js'
 
 type Channel = Doc & {
   name: string
@@ -546,8 +547,12 @@ export async function sendChannelMessage(
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const channel = await resolveChannel(client, ref)
+    // HULY-20: ChatMessage.message is TypeMarkup (inline prosemirror JSON
+    // string), rendered via MessageViewer with no collaborator lookup. Store
+    // the converted prosemirror-JSON string inline — NOT a MarkupBlobRef.
+    const messageMarkup = htmlToMarkup(body)
     const data: Record<string, unknown> = {
-      message: body,
+      message: messageMarkup,
     }
     if (opts.dryRun) {
       console.log('would send channel message:')
@@ -610,8 +615,10 @@ export async function updateChannelMessage(
     if (msg.attachedTo !== channel._id) {
       throw new CliError(ExitCode.NotFound, 'message does not belong to this channel')
     }
+    // HULY-20: inline prosemirror, same as sendChannelMessage.
+    const messageMarkup = htmlToMarkup(body)
     const data: Record<string, unknown> = {
-      message: body,
+      message: messageMarkup,
       editedOn: Date.now(),
     }
     if (opts.dryRun) {
@@ -737,8 +744,11 @@ export async function addThreadReply(
   try {
     const parent = await client.findOne(CHAT_MESSAGE_CLASS, { _id: targetId as Ref<ChatMessage> })
     if (!parent) throw new CliError(ExitCode.NotFound, `target message ${targetId} not found`)
+    // HULY-20: ThreadMessage.message is TypeMarkup (inline prosemirror
+    // JSON string). Inline storage, same as channel/dm messages.
+    const messageMarkup = htmlToMarkup(body)
     const data: Record<string, unknown> = {
-      message: body,
+      message: messageMarkup,
     }
     if (opts.dryRun) {
       console.log('would add thread reply:')
@@ -791,7 +801,9 @@ export async function updateThreadReply(
       _id: replyId as Ref<ChatMessage>,
     })
     if (!reply) throw new CliError(ExitCode.NotFound, `thread reply ${replyId} not found`)
-    const data: Record<string, unknown> = { message: body, editedOn: Date.now() }
+    // HULY-20: inline prosemirror, same as addThreadReply.
+    const messageMarkup = htmlToMarkup(body)
+    const data: Record<string, unknown> = { message: messageMarkup, editedOn: Date.now() }
     if (opts.dryRun) {
       console.log(`would update thread reply ${replyId}:`)
       console.log(
@@ -1004,6 +1016,11 @@ export async function sendDmMessage(
   },
 ): Promise<void> {
   const body = await readMessageBody(opts)
+  // HULY-20: ChatMessage.message is TypeMarkup (inline prosemirror JSON).
+  // Compute the converted markup up-front so both dry-run previews (the
+  // --person one below and the resolved-DM one in the try-block) reflect
+  // the value that would actually be stored, not the raw HTML input.
+  const messageMarkup = htmlToMarkup(body)
   // --person <email>: resolve or auto-create DM, then send.
   if (opts.person !== undefined && opts.person !== '') {
     // CLI-04: forward --dry-run so createDm doesn't actually mutate state
@@ -1021,7 +1038,7 @@ export async function sendDmMessage(
           {
             wouldCreateDm: { person: opts.person },
             wouldSendTo: dmRef,
-            message: body,
+            message: messageMarkup,
           },
           null,
           2,
@@ -1039,7 +1056,9 @@ export async function sendDmMessage(
     })
     const dm = await client.findOne(DM_CLASS, { _id: dmId as Ref<DirectMessage> })
     if (!dm) throw new CliError(ExitCode.NotFound, `DM ${dmRef} not found`)
-    const data: Record<string, unknown> = { message: body }
+    // HULY-20: messageMarkup was computed above (before the --person branch)
+    // so both dry-run previews show the same value that would be stored.
+    const data: Record<string, unknown> = { message: messageMarkup }
     if (opts.dryRun) {
       console.log('would send DM:')
       console.log(

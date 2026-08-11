@@ -18,6 +18,7 @@ import {
 } from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
+import { htmlToMarkup } from './_helpers.js'
 
 type ActivityMessage = Doc & {
   message?: string
@@ -371,7 +372,11 @@ export async function addReply(opts: ReplyOpts): Promise<void> {
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const { id, doc } = await fetchActivity(client, opts.target)
-    const data: Record<string, unknown> = { message: opts.body }
+    // HULY-20: ActivityMessage.message is TypeMarkup (inline prosemirror
+    // JSON string). Convert HTML → prosemirror locally and store inline,
+    // NOT a MarkupBlobRef — the web UI renders via MessageViewer which
+    // calls markupToJSON(message) directly with no collaborator lookup.
+    const data: Record<string, unknown> = { message: htmlToMarkup(opts.body) }
     const rid = await withSpinner(
       'Replying…',
       () =>
@@ -408,11 +413,12 @@ export async function updateReply(
     // attachedTo pointing at the parent). `message` lives on the reply
     // doc itself — updateDoc, NOT updateCollection against the parent's
     // 'replies' tuple (which doesn't exist).
+    // HULY-20: inline prosemirror JSON, same as addReply.
     await client.updateDoc(
       ACTIVITY_CLASS,
       doc.space as unknown as Ref<Space>,
       id as Ref<Doc>,
-      { message: opts.body, modifiedOn: Date.now() } as any,
+      { message: htmlToMarkup(opts.body), modifiedOn: Date.now() } as any,
     )
     updated('updated reply', refString(id))
   } finally {
