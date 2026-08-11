@@ -6,6 +6,7 @@ import { normalizeSocialKey } from '../auth/social.js'
 import { shouldJson, json, table, COLUMNS, C, success, updated, bulkRemoved } from '../output/format.js'
 import { withSpinner } from '../output/progress.js'
 import { CliError, ExitCode } from '../output/errors.js'
+import { uploadMarkup, generateId } from './_helpers.js'
 
 type Channel = Doc & {
   name: string
@@ -546,8 +547,21 @@ export async function sendChannelMessage(
   const client = await connectCli({ url: opts.url, workspace: opts.workspace })
   try {
     const channel = await resolveChannel(client, ref)
+    // HULY-20: pre-upload the markup so `message` stores a MarkupBlobRef,
+    // not raw HTML. Generate the id up-front so the markup blob's collabId
+    // matches the ChatMessage doc's id (the platform keys the blob by
+    // `${class}:${id}:${attribute}`).
+    const newMessageId = generateId()
+    // Defer the actual upload until after the dry-run guard below — same
+    // pattern as the HULY-8 updateIssue fix. Dry-run must not write to
+    // MinIO. The dry-run preview shows `message: ''` (the placeholder) +
+    // a `wouldUploadMarkup` note so users see what would happen.
+    let messageRef = ''
+    if (!opts.dryRun) {
+      messageRef = await uploadMarkup(client, CHAT_MESSAGE_CLASS, newMessageId, 'message', body, 'markup')
+    }
     const data: Record<string, unknown> = {
-      message: body,
+      message: messageRef,
     }
     if (opts.dryRun) {
       console.log('would send channel message:')
@@ -560,6 +574,12 @@ export async function sendChannelMessage(
             attachedToClass: CHANNEL_CLASS,
             collection: 'messages',
             data,
+            wouldUploadMarkup: {
+              objectClass: CHAT_MESSAGE_CLASS,
+              objectId: newMessageId,
+              objectAttr: 'message',
+              bodyBytes: body.length,
+            },
           },
           null,
           2,
@@ -575,6 +595,7 @@ export async function sendChannelMessage(
         CHANNEL_CLASS,
         'messages',
         data as any,
+        newMessageId,
       ),
     )
     if (shouldJson({ json: opts.json, ci: opts.ci })) {
@@ -610,8 +631,23 @@ export async function updateChannelMessage(
     if (msg.attachedTo !== channel._id) {
       throw new CliError(ExitCode.NotFound, 'message does not belong to this channel')
     }
+    // HULY-20: upload the markup so the update lands a MarkupBlobRef in
+    // `message`, not raw HTML. The existing messageId is reused so the
+    // markup blob's collabId stays consistent across updates. Deferred
+    // until after the dry-run guard below (same pattern as HULY-8).
+    let messageRef = ''
+    if (!opts.dryRun) {
+      messageRef = await uploadMarkup(
+        client,
+        CHAT_MESSAGE_CLASS,
+        messageId as Ref<Doc>,
+        'message',
+        body,
+        'markup',
+      )
+    }
     const data: Record<string, unknown> = {
-      message: body,
+      message: messageRef,
       editedOn: Date.now(),
     }
     if (opts.dryRun) {
@@ -737,8 +773,24 @@ export async function addThreadReply(
   try {
     const parent = await client.findOne(CHAT_MESSAGE_CLASS, { _id: targetId as Ref<ChatMessage> })
     if (!parent) throw new CliError(ExitCode.NotFound, `target message ${targetId} not found`)
+    // HULY-20: upload markup first so `message` stores a MarkupBlobRef.
+    // The reply lives in chunter:class:ThreadMessage (subclass of
+    // ChatMessage), and the markup blob is keyed by that subclass id.
+    // Deferred until after the dry-run guard (same pattern as HULY-8).
+    const newReplyId = generateId()
+    let messageRef = ''
+    if (!opts.dryRun) {
+      messageRef = await uploadMarkup(
+        client,
+        'chunter:class:ThreadMessage' as Ref<Class<Doc>>,
+        newReplyId,
+        'message',
+        body,
+        'markup',
+      )
+    }
     const data: Record<string, unknown> = {
-      message: body,
+      message: messageRef,
     }
     if (opts.dryRun) {
       console.log('would add thread reply:')
@@ -759,6 +811,7 @@ export async function addThreadReply(
         CHAT_MESSAGE_CLASS,
         'replies',
         data as any,
+        newReplyId,
       ),
     )
     if (shouldJson({ json: opts.json, ci: opts.ci })) {
@@ -791,7 +844,20 @@ export async function updateThreadReply(
       _id: replyId as Ref<ChatMessage>,
     })
     if (!reply) throw new CliError(ExitCode.NotFound, `thread reply ${replyId} not found`)
-    const data: Record<string, unknown> = { message: body, editedOn: Date.now() }
+    // HULY-20: upload markup so the update lands a MarkupBlobRef. Deferred
+    // until after the dry-run guard (same pattern as HULY-8).
+    let messageRef = ''
+    if (!opts.dryRun) {
+      messageRef = await uploadMarkup(
+        client,
+        'chunter:class:ThreadMessage' as Ref<Class<Doc>>,
+        replyId as Ref<Doc>,
+        'message',
+        body,
+        'markup',
+      )
+    }
+    const data: Record<string, unknown> = { message: messageRef, editedOn: Date.now() }
     if (opts.dryRun) {
       console.log(`would update thread reply ${replyId}:`)
       console.log(
@@ -1039,7 +1105,14 @@ export async function sendDmMessage(
     })
     const dm = await client.findOne(DM_CLASS, { _id: dmId as Ref<DirectMessage> })
     if (!dm) throw new CliError(ExitCode.NotFound, `DM ${dmRef} not found`)
-    const data: Record<string, unknown> = { message: body }
+    // HULY-20: upload markup so `message` stores a MarkupBlobRef, not raw
+    // HTML. Deferred until after the dry-run guard (same pattern as HULY-8).
+    const newMessageId = generateId()
+    let messageRef = ''
+    if (!opts.dryRun) {
+      messageRef = await uploadMarkup(client, CHAT_MESSAGE_CLASS, newMessageId, 'message', body, 'markup')
+    }
+    const data: Record<string, unknown> = { message: messageRef }
     if (opts.dryRun) {
       console.log('would send DM:')
       console.log(
@@ -1051,6 +1124,12 @@ export async function sendDmMessage(
             attachedToClass: DM_CLASS,
             collection: 'messages',
             data,
+            wouldUploadMarkup: {
+              objectClass: CHAT_MESSAGE_CLASS,
+              objectId: newMessageId,
+              objectAttr: 'message',
+              bodyBytes: body.length,
+            },
           },
           null,
           2,
@@ -1066,6 +1145,7 @@ export async function sendDmMessage(
         DM_CLASS,
         'messages',
         data as any,
+        newMessageId,
       ),
     )
     if (shouldJson({ json: opts.json, ci: opts.ci })) {
