@@ -163,4 +163,4 @@ huly action    schedule <ref> --start "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --duratio
 
 ## License
 
-GNU Affero General Public License v3.0 or later — see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).
