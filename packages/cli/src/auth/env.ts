@@ -17,7 +17,7 @@ export interface HulyEnv {
 }
 
 let dotenvLoaded = false
-function loadDotenvFile(): void {
+export function loadDotenvFile(): void {
   if (dotenvLoaded) return
   dotenvLoaded = true
   const file = process.env.HULY_ENV_FILE ?? path.join(os.homedir(), '.config', 'huly', '.env')

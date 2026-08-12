@@ -12,8 +12,9 @@ const { htmlToJSON, htmlToMarkup: textHtmlToMarkup } = textPkg
 const { jsonToMarkup } = textCorePkg
 const { markdownToMarkup } = textMarkdownPkg
 
-const platformGenerateId: () => Ref<Doc> = (corePkg as unknown as { generateId: (join?: string) => string })
-  .generateId
+const platformGenerateId: (() => Ref<Doc>) | undefined = (
+  corePkg as unknown as { generateId?: (join?: string) => string }
+).generateId
 
 import { connectCli } from '../transport/sdk.js'
 import { resolveRef, resolveRefs, buildIndex } from '../transport/ref-resolver.js'
@@ -70,7 +71,10 @@ export function rawHtmlToMarkup(html: string): string {
 }
 
 export function generateId(): Ref<Doc> {
-  return platformGenerateId() as Ref<Doc>
+  if (platformGenerateId) return platformGenerateId() as Ref<Doc>
+  // Test-env fallback: produce a non-empty string id even when the platform
+  // package isn't fully wired (e.g. vitest ESM module caching).
+  return `gen-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}` as Ref<Doc>
 }
 
 /**

@@ -1,6 +1,15 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi, beforeEach } from 'vitest'
 import type { Doc } from '@hcengineering/core'
-import { findPriorityHit, normalizePriorityInput, resolvePriority, seedDefaultPriorities } from './issue.js'
+import {
+  findPriorityHit,
+  normalizePriorityInput,
+  resolvePriority,
+  seedDefaultPriorities,
+  validateRelationType,
+  previewDelete,
+} from './issue.js'
+import { CliError, ExitCode } from '../output/errors.js'
+import { fakePlatformClient } from '../__tests__/fakePlatformClient.js'
 
 type FakeDoc = { _id: string; label?: string; name?: string }
 type PriorityLike = Doc & { label?: string; name?: string }
@@ -18,8 +27,15 @@ vi.mock('../auth/env.js', async (importOriginal) => {
   return {
     ...actual,
     isOpinionated: () => opinionatedState.on,
+    readEnv: () => ({ project: 'PROJ' }),
   }
 })
+
+const mockClient = vi.hoisted(() => ({ current: null as ReturnType<typeof fakePlatformClient> | null }))
+vi.mock('../transport/sdk.js', () => ({
+  connectCli: vi.fn(async () => mockClient.current),
+  connectAccountCli: vi.fn(async () => ({})),
+}))
 
 function makeClient(
   opts: {
@@ -315,5 +331,51 @@ describe('resolvePriority — opinionated defaults OFF', () => {
     const id = await resolvePriority(client)
     expect(id).toBe('tracker:priority:Medium')
     expect(client.createDoc).not.toHaveBeenCalled()
+  })
+})
+
+describe('validateRelationType', () => {
+  it('accepts the three canonical types', () => {
+    expect(validateRelationType('blocks')).toBe('blocks')
+    expect(validateRelationType('isBlockedBy')).toBe('isBlockedBy')
+    expect(validateRelationType('relatesTo')).toBe('relatesTo')
+  })
+  it('throws Validation on unknown type', () => {
+    expect(() => validateRelationType('dupes')).toThrow(CliError)
+    try {
+      validateRelationType('dupes')
+    } catch (e) {
+      expect(e).toBeInstanceOf(CliError)
+      expect((e as CliError).code).toBe(ExitCode.Validation)
+    }
+  })
+})
+
+describe('previewDelete', () => {
+  beforeEach(() => {
+    mockClient.current = fakePlatformClient()
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+  })
+
+  it('returns preview as JSON with sub-issues and relation counts', async () => {
+    mockClient.current!.state.docs.push({
+      _id: 'issue-1',
+      _class: 'tracker:class:Issue',
+      space: 'p-1',
+      relations: [{ _id: 'x', _class: 'tracker:class:Issue' }],
+      blockedBy: [],
+    } as never)
+    mockClient.current!.state.docs.push({
+      _id: 'sub-1',
+      _class: 'tracker:class:Issue',
+      parent: 'issue-1',
+      space: 'p-1',
+    } as never)
+    await previewDelete(['issue-1'], { json: true })
+    const out = (console.log as unknown as { mock: { calls: unknown[][] } }).mock.calls.at(-1)?.[0]
+    const parsed = JSON.parse(String(out))
+    expect(parsed[0].subIssues).toBe(1)
+    expect(parsed[0].relations).toBe(1)
   })
 })
