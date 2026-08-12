@@ -34,7 +34,22 @@
         "@typescript-eslint/no-explicit-any": "off",
         "vitest/no-hooks": "off",
         "vitest/require-mock-type-parameters": "off",
+        "vitest/no-conditional-expect": "off",
+        "vitest/expect-expect": "off",
+        "vitest/require-to-throw-message": "off",
         "unicorn/prefer-add-event-listener": "off"
+      }
+    },
+    {
+      "files": ["packages/cli/src/__tests__/**/*.ts"],
+      "rules": {
+        "@typescript-eslint/no-explicit-any": "off",
+        "vitest/no-hooks": "off",
+        "vitest/require-mock-type-parameters": "off",
+        "vitest/no-conditional-expect": "off",
+        "vitest/expect-expect": "off",
+        "vitest/require-to-throw-message": "off",
+        "unicorn/consistent-function-scoping": "off"
       }
     }
   ]
