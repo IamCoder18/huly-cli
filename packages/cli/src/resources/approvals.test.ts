@@ -32,10 +32,14 @@ beforeEach(() => {
   mockClient.current = fakePlatformClient({
     account: { uuid: 'me-uuid', primarySocialId: 'social-1', email: 'me@example.com' },
   })
+  vi.stubEnv('CI', '')
   vi.spyOn(console, 'log').mockImplementation(() => {})
   vi.spyOn(console, 'error').mockImplementation(() => {})
 })
-afterEach(() => vi.restoreAllMocks())
+afterEach(() => {
+  vi.restoreAllMocks()
+  vi.unstubAllEnvs()
+})
 
 const seedIssue = () => {
   mockClient.current!.state.docs.push({ _id: 'issue-1', space: 'p-1', title: 'X' } as never)

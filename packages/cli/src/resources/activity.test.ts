@@ -33,10 +33,14 @@ vi.mock('../auth/env.js', async (importOriginal) => {
 
 beforeEach(() => {
   mockClient.current = fakePlatformClient()
+  vi.stubEnv('CI', '')
   vi.spyOn(console, 'log').mockImplementation(() => {})
   vi.spyOn(console, 'error').mockImplementation(() => {})
 })
-afterEach(() => vi.restoreAllMocks())
+afterEach(() => {
+  vi.restoreAllMocks()
+  vi.unstubAllEnvs()
+})
 
 const seedActivity = () => {
   mockClient.current!.state.docs.push({

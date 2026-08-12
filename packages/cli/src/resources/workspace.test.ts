@@ -31,6 +31,7 @@ beforeEach(() => {
   tmpHome = join(tmpdir(), `huly-cli-test-${Date.now()}-${Math.random().toString(36).slice(2)}`)
   mkdirSync(tmpHome, { recursive: true })
   process.env.XDG_CONFIG_HOME = tmpHome
+  vi.stubEnv('CI', '')
   vi.spyOn(console, 'log').mockImplementation(() => {})
   vi.spyOn(console, 'error').mockImplementation(() => {})
   mockAc.current = {
@@ -53,6 +54,7 @@ beforeEach(() => {
 afterEach(() => {
   rmSync(tmpHome, { recursive: true, force: true })
   vi.restoreAllMocks()
+  vi.unstubAllEnvs()
 })
 
 describe('listWorkspaces / currentWorkspace / useWorkspace', () => {

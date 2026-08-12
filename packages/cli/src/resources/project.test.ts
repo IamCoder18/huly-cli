@@ -29,12 +29,14 @@ vi.mock('../auth/env.js', async (importOriginal) => {
 beforeEach(() => {
   mockClient.current = fakePlatformClient()
   mockClient.current.state.docs.push({ _id: 'p-1', name: 'Project', identifier: 'PROJ' } as never)
+  vi.stubEnv('CI', '')
   vi.spyOn(console, 'log').mockImplementation(() => {})
   vi.spyOn(console, 'error').mockImplementation(() => {})
 })
 
 afterEach(() => {
   vi.restoreAllMocks()
+  vi.unstubAllEnvs()
 })
 
 describe('listProjects', () => {

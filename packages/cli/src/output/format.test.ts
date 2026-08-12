@@ -35,10 +35,24 @@ describe('format output', () => {
     expect(log.mock.calls.flat().join('\n')).toContain('(no results)')
   })
 
-  it('evaluates JSON mode from explicit flags and CI', () => {
-    expect(shouldJson({ json: true })).toBe(true)
-    expect(shouldJson({ ci: true })).toBe(true)
-    expect(shouldJson({})).toBe(false)
+  it('evaluates JSON mode from explicit flags with CI neutralized', () => {
+    vi.stubEnv('CI', '')
+    try {
+      expect(shouldJson({ json: true })).toBe(true)
+      expect(shouldJson({ ci: true })).toBe(true)
+      expect(shouldJson({})).toBe(false)
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it('treats process.env.CI as JSON mode when set', () => {
+    vi.stubEnv('CI', 'true')
+    try {
+      expect(shouldJson({})).toBe(true)
+    } finally {
+      vi.unstubAllEnvs()
+    }
   })
 
   it('resolves before timeout and rejects after it', async () => {
