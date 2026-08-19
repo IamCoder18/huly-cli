@@ -472,4 +472,40 @@ describe('removeIssueLabel', () => {
       message: /issue HULY-999 not found/,
     })
   })
+
+  it('only removes references from the labels collection, not other collections sharing the same title', async () => {
+    mockClient.current!.state.docs.push({
+      _id: 'HULY-7',
+      _class: 'tracker:class:Issue',
+      space: 'p-1',
+    } as never)
+    mockClient.current!.state.docs.push({
+      _id: 'tag-ref-labels',
+      _class: 'tags:class:TagReference',
+      space: 'p-1',
+      attachedTo: 'HULY-7',
+      attachedToClass: 'tracker:class:Issue',
+      collection: 'labels',
+      tag: 'tag-1',
+      title: 'shared-title',
+      color: 0,
+    } as never)
+    mockClient.current!.state.docs.push({
+      _id: 'tag-ref-components',
+      _class: 'tags:class:TagReference',
+      space: 'p-1',
+      attachedTo: 'HULY-7',
+      attachedToClass: 'tracker:class:Issue',
+      collection: 'components',
+      tag: 'tag-2',
+      title: 'shared-title',
+      color: 0,
+    } as never)
+    await removeIssueLabel('HULY-7', 'shared-title', { json: true })
+    expect(mockClient.current!.state.collectionRemoves).toEqual([
+      expect.objectContaining({ id: 'tag-ref-labels', collection: 'labels' }),
+    ])
+    const componentsRef = mockClient.current!.state.docs.find((d) => d._id === 'tag-ref-components')
+    expect(componentsRef).toBeDefined()
+  })
 })

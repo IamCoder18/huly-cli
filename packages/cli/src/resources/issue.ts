@@ -1376,6 +1376,7 @@ export async function removeIssueLabel(
     const tagRefClass = 'tags:class:TagReference' as Ref<Class<Doc>>
     const refs = (await client.findAll(tagRefClass, {
       attachedTo: issue._id,
+      collection: 'labels',
       title: labelName,
     })) as Array<Doc & { _id: Ref<Doc> }>
     if (refs.length === 0) throw new CliError(ExitCode.NotFound, `label ${labelName} not on issue ${ref}`)
