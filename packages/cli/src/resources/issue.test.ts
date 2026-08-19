@@ -7,6 +7,7 @@ import {
   seedDefaultPriorities,
   validateRelationType,
   previewDelete,
+  removeIssueLabel,
 } from './issue.js'
 import { CliError, ExitCode } from '../output/errors.js'
 import { fakePlatformClient } from '../__tests__/fakePlatformClient.js'
@@ -377,5 +378,134 @@ describe('previewDelete', () => {
     const parsed = JSON.parse(String(out))
     expect(parsed[0].subIssues).toBe(1)
     expect(parsed[0].relations).toBe(1)
+  })
+})
+
+describe('removeIssueLabel', () => {
+  beforeEach(() => {
+    mockClient.current = fakePlatformClient()
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+  })
+
+  it('removes a label that is attached to the issue, even if the workspace TagElement catalog is empty (issue #48)', async () => {
+    mockClient.current!.state.docs.push({
+      _id: 'HULY-4',
+      _class: 'tracker:class:Issue',
+      space: 'p-1',
+      title: 'demo',
+    } as never)
+    mockClient.current!.state.docs.push({
+      _id: 'tag-ref-1',
+      _class: 'tags:class:TagReference',
+      space: 'p-1',
+      attachedTo: 'HULY-4',
+      attachedToClass: 'tracker:class:Issue',
+      collection: 'labels',
+      tag: 'tag-el-1',
+      title: 'publication',
+      color: 0,
+    } as never)
+    mockClient.current!.state.docs.push({
+      _id: 'tag-ref-2',
+      _class: 'tags:class:TagReference',
+      space: 'p-1',
+      attachedTo: 'HULY-4',
+      attachedToClass: 'tracker:class:Issue',
+      collection: 'labels',
+      tag: 'tag-el-2',
+      title: 'security',
+      color: 0,
+    } as never)
+    await removeIssueLabel('HULY-4', 'publication', { json: true })
+    expect(mockClient.current!.state.collectionRemoves).toEqual([
+      expect.objectContaining({
+        id: 'tag-ref-1',
+        collection: 'labels',
+        parent: 'HULY-4',
+      }),
+    ])
+    const remaining = mockClient.current!.state.docs.filter(
+      (d) => d._class === 'tags:class:TagReference' && (d as Record<string, unknown>).attachedTo === 'HULY-4',
+    )
+    expect(remaining.map((d) => (d as Record<string, unknown>).title)).toEqual(['security'])
+  })
+
+  it('still removes the label even when no matching TagElement exists in the workspace catalog', async () => {
+    mockClient.current!.state.docs.push({
+      _id: 'HULY-5',
+      _class: 'tracker:class:Issue',
+      space: 'p-1',
+    } as never)
+    mockClient.current!.state.docs.push({
+      _id: 'tag-ref-9',
+      _class: 'tags:class:TagReference',
+      space: 'p-1',
+      attachedTo: 'HULY-5',
+      attachedToClass: 'tracker:class:Issue',
+      collection: 'labels',
+      tag: 'ghost-tag-id',
+      title: 'orphan-label',
+      color: 0,
+    } as never)
+    await removeIssueLabel('HULY-5', 'orphan-label', { json: true })
+    expect(mockClient.current!.state.collectionRemoves).toHaveLength(1)
+    expect(mockClient.current!.state.collectionRemoves[0].id).toBe('tag-ref-9')
+  })
+
+  it('throws NotFound with a clear message when the label is not attached to the issue', async () => {
+    mockClient.current!.state.docs.push({
+      _id: 'HULY-6',
+      _class: 'tracker:class:Issue',
+      space: 'p-1',
+    } as never)
+    await expect(removeIssueLabel('HULY-6', 'ghost', { json: true })).rejects.toMatchObject({
+      code: ExitCode.NotFound,
+      message: /label ghost not on issue HULY-6/,
+    })
+    expect(mockClient.current!.state.collectionRemoves).toHaveLength(0)
+  })
+
+  it('throws NotFound when the issue itself does not exist', async () => {
+    await expect(removeIssueLabel('HULY-999', 'whatever', { json: true })).rejects.toMatchObject({
+      code: ExitCode.NotFound,
+      message: /issue HULY-999 not found/,
+    })
+  })
+
+  it('only removes references from the labels collection, not other collections sharing the same title', async () => {
+    mockClient.current!.state.docs.push({
+      _id: 'HULY-7',
+      _class: 'tracker:class:Issue',
+      space: 'p-1',
+    } as never)
+    mockClient.current!.state.docs.push({
+      _id: 'tag-ref-labels',
+      _class: 'tags:class:TagReference',
+      space: 'p-1',
+      attachedTo: 'HULY-7',
+      attachedToClass: 'tracker:class:Issue',
+      collection: 'labels',
+      tag: 'tag-1',
+      title: 'shared-title',
+      color: 0,
+    } as never)
+    mockClient.current!.state.docs.push({
+      _id: 'tag-ref-components',
+      _class: 'tags:class:TagReference',
+      space: 'p-1',
+      attachedTo: 'HULY-7',
+      attachedToClass: 'tracker:class:Issue',
+      collection: 'components',
+      tag: 'tag-2',
+      title: 'shared-title',
+      color: 0,
+    } as never)
+    await removeIssueLabel('HULY-7', 'shared-title', { json: true })
+    expect(mockClient.current!.state.collectionRemoves).toEqual([
+      expect.objectContaining({ id: 'tag-ref-labels', collection: 'labels' }),
+    ])
+    const componentsRef = mockClient.current!.state.docs.find((d) => d._id === 'tag-ref-components')
+    expect(componentsRef).toBeDefined()
   })
 })

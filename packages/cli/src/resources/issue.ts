@@ -1373,19 +1373,16 @@ export async function removeIssueLabel(
     })
     const issue = await client.findOne(CLASS.Issue as Ref<Class<Issue>>, { _id: issueId as Ref<Issue> })
     if (!issue) throw new CliError(ExitCode.NotFound, `issue ${ref} not found`)
-    const tagClass = 'tags:class:TagElement' as Ref<Class<Doc>>
-    const tag = (await client.findAll(tagClass, { title: labelName }))[0] as
-      | (Doc & { _id: Ref<Doc> })
-      | undefined
-    if (!tag) throw new CliError(ExitCode.NotFound, `label ${labelName} not found`)
-    const refs = (await client.findAll('tags:class:TagReference' as Ref<Class<Doc>>, {
+    const tagRefClass = 'tags:class:TagReference' as Ref<Class<Doc>>
+    const refs = (await client.findAll(tagRefClass, {
       attachedTo: issue._id,
-      tag: tag._id,
-    })) as Doc[]
+      collection: 'labels',
+      title: labelName,
+    })) as Array<Doc & { _id: Ref<Doc> }>
     if (refs.length === 0) throw new CliError(ExitCode.NotFound, `label ${labelName} not on issue ${ref}`)
     for (const r of refs) {
       await client.removeCollection(
-        'tags:class:TagReference' as Ref<Class<Doc>>,
+        tagRefClass,
         issue.space as Ref<Space>,
         r._id,
         issue._id,

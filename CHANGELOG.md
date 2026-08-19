@@ -91,6 +91,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **`huly issue create` human output printed the raw UUID** instead of
   `TSK-1`. Now re-fetches the issue to display the assigned identifier, and
   falls back to the UUID if the local server hasn't assigned one. (#1.10)
+- **`huly issue label remove` rejected labels that WERE attached to the
+  issue** with `label <name> not found`. The implementation first looked up
+  the label in the workspace-level `tags:class:TagElement` catalog and
+  bailed out if it could not be resolved there — but a label can be
+  attached to an issue even when no matching catalog entry exists. Now
+  looks up `tags:class:TagReference` directly by
+  `attachedTo = issue._id` + `title = <name>`, mirroring how the labels are
+  actually stored. (#48)
 
 ### Changed
 
