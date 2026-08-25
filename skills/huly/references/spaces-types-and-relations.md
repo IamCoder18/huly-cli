@@ -287,7 +287,7 @@ huly project get TSK --json | jq -r '._id' \
 - **`Issue.relations`** is a special-case field on Issue itself, NOT the same as `core:class:Relation`. Don't confuse them.
 - **`huly space permissions <ref>` is read-only.** No CLI command to add/remove permissions. The server manages this automatically on member changes.
 - **Per-space permission checks happen on EVERY TxCUD** — there is no global role override. Granting rights is per-space.
-- **Disabling RBAC**: Settings → General → disable RBAC for the whole workspace. The CLI doesn't expose this; it's a server-side setting. Useful for test scripting; do NOT leave enabled in production.
+- **Disabling RBAC** is a global, workspace-wide privilege escalation. The CLI does not expose the toggle (server-side only: Settings → General → disable RBAC for the whole workspace). Anyone with any account on the workspace gains full read/write access to every space, document, issue, and channel. **Never disable RBAC on a workspace that contains real customer data.** Re-enabling RBAC does not retroactively restore previous ACLs — access changes made while RBAC was off persist. There is no undo. Prefer per-space permission grants via the web UI instead. This is a one-way door.
 
 ---
 

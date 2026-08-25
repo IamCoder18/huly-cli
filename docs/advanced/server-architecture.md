@@ -151,7 +151,7 @@ For self-hosted single-pod deployments, use `WS_OPERATION=all+backup`.
 ## The WebSocket protocol
 
 The SDK connection speaks Huly's binary RPC protocol over WebSocket.
-The CLI's raw `huly ws` escape hatch is a separate **text-JSON**
+The CLI's raw `huly ws` direct SDK access is a separate **text-JSON**
 channel — the two are different transports to the transactor. Key
 methods on the binary SDK side:
 

@@ -112,7 +112,12 @@ Two sibling files:
 
 Intentionally. The CLI is designed for long automation runs. An accidental `logout` mid-automation would force every subsequent command to re-`selectWorkspace` for every workspace, breaking idempotency. The only way to "log out" is manual:
 
+> **Manual cleanup (advanced).** You are about to delete local credentials and unset authentication env vars. This is irreversible until you `huly login` again. Confirm with the user before running this in any context other than your own machine.
+
 ```bash
+# Advanced — manual credentials reset.
+# Deletes the on-disk token cache (mode 0600) and clears the active-workspace pointer.
+# Then unsets the auth env vars in the current shell.
 rm -f ~/.config/huly/credentials.json \
       ~/.config/huly/active-workspace \
       ~/.config/huly/active-account
@@ -120,6 +125,8 @@ unset HULY_TOKEN HULY_EMAIL HULY_PASSWORD HULY_WORKSPACE
 ```
 
 Then `huly login --headless` to re-auth.
+
+If you want a partial reset (only clear one host / email pair, keep the others), edit `credentials.json` by hand — the file is keyed by host then email — and keep the rest of the cache intact.
 
 ---
 

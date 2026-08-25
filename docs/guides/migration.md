@@ -136,7 +136,7 @@ error formatting. Prefer the CLI for one-off scripts; prefer the SDK
 for long-running services.
 
 If you need to call a method the CLI doesn't expose, see
-[Escape hatches](../advanced/escape-hatches.md) for `huly ws` (raw
+[Direct SDK and HTTP access](../advanced/direct-access.md) for `huly ws` (raw
 WebSocket RPC).
 
 ---
@@ -156,7 +156,7 @@ huly api GET /api/v1/version
 The CLI's `api` command passes through to the REST API but handles
 auth headers automatically. Use it for ad-hoc endpoints the CLI
 doesn't cover. See
-[Escape hatches — HTTP (`huly api`)](../advanced/escape-hatches.md#http-huly-api).
+[Direct SDK and HTTP access — HTTP (`huly api`)](../advanced/direct-access.md#http-huly-api).
 
 ---
 
