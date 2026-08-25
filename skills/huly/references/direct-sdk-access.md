@@ -2,7 +2,7 @@
 
 > **This file is for advanced use only.** The high-level CLI surface (`huly issue …`, `huly document …`, `huly calendar …`, …) handles authentication, ref resolution, cascade awareness, type checking, and error mapping. Two commands bypass all of that and talk to the server directly:
 >
-> - **`huly api <METHOD> <path>`** — raw HTTP passthrough. Any URL, any method, any header. No validation, no schema check, no ref resolution.
+> - **`huly api <METHOD> <path>`** — raw HTTP passthrough. Any path on the configured workspace API URL, any method, any header (except `Authorization`, which the CLI always overwrites with the resolved token — see below). No validation, no schema check, no ref resolution.
 > - **`huly ws <method> [params]`** — raw WebSocket RPC. Calls SDK methods directly with whatever payload you hand it. No validation, no schema check, no confirmation, no cascade awareness.
 >
 > Treat these like raw SQL: powerful, untyped, unguarded, and irreversible. Most workflows do not need them — prefer the high-level commands. If you find yourself reaching for these often for a pattern the CLI should expose, that's a missing-feature signal: file an issue.
@@ -42,6 +42,8 @@ huly api GET /api/v1/private --header "Authorization: Bearer …"
 ```
 
 Methods: `GET | POST | PUT | PATCH | DELETE`. Query params and headers accept repeated `k=v`.
+
+> **`Authorization` is not overridable.** The CLI sets `Authorization: Bearer <resolved-token>` after merging your custom headers (`packages/cli/src/raw/api.ts:43-49`), so passing `--header "Authorization: Bearer …"` has no effect — your custom value is silently replaced. All other custom headers pass through verbatim.
 
 Status codes map to exit codes:
 
@@ -365,10 +367,10 @@ huly ws queryAll '["tracker:class:Issue", {"$search":"deploy AND pipeline", "spa
   --json
 ```
 
-### Query the permission matrix of a space (read-only — generally safe)
+### Query the permission matrix of a space (high-level CLI — generally safe)
 
 ```bash
-huly ws space permissions <space-ref> --json
+huly space permissions <space-ref> --json
 ```
 
 ### Get the raw model (read-only — generally safe)

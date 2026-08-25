@@ -106,7 +106,7 @@ each edit. Storage grows by one snapshot per edit, but no longer two.
 
 ### Reparent and move
 
-> **Advanced — confirm with the user before invoking.** The CLI's `huly card update` does NOT accept `--parent`. There is no `card move` command. Reparenting between CardSpaces requires raw RPC; the recipe below is the only path, but it bypasses CLI safety checks. Run `huly card get <ref> --json` first to confirm the current parent and the target parent, then ask the user to confirm the reparenting before continuing.
+> **Advanced — confirm with the user before invoking.** The CLI's `huly card update` does NOT accept `--parent`. There is no `card move` command. The raw-RPC recipe below moves the card to the target CardSpace's root (it sets `parent: null` — it does NOT attach a target parent). For true reparenting (preserving a parent) use the web UI drag-and-drop, which is the safe path. Run `huly card get <ref> --json` first to confirm the current parent and target space, then ask the user to confirm before continuing.
 
 ```bash
 huly ws updateDoc '["card:class:Card", "<new-space>", "<id>", {"$set":{"space":"<new-space>","parent":null}}]'
@@ -123,7 +123,7 @@ huly card delete <ref>                            # single, no --yes; CONFIRM WI
 huly card delete <ref1> <ref2> <ref3> --yes       # bulk, REQUIRED --yes
 ```
 
-A 100ms sleep between deletes throttles the server.
+A 100 ms sleep between deletes throttles the server.
 
 **Cascade-on-delete:** deleting a `MasterTag` (only possible via raw `huly ws removeDoc`; there is no `master-tag delete` on the CLI) cascade-deletes every Card of that MasterTag. **There is no CLI confirmation prompt on raw RPC.** Confirm with the user out loud before invoking any raw-RPC MasterTag deletion.
 
@@ -227,13 +227,13 @@ huly card update <ref> --body "…full new body…"
 
 ### "Move this card to another space"
 
-> **Advanced — confirm with the user before invoking.** Reparenting a card between CardSpaces is not exposed in the CLI. The web UI drag-and-drop is the safe path; the raw-RPC fallback below bypasses CLI safety checks.
+> **Advanced — confirm with the user before invoking.** Reparenting a card between CardSpaces is not exposed in the CLI. The web UI drag-and-drop is the safe path. The raw-RPC fallback below moves the card to the new space's root (sets `parent: null`); it does not attach a target parent. To attach a specific parent, do it via the web UI.
 
 Tell the user:
 
 > "Reparenting a card between CardSpaces isn't exposed in the CLI. Open the card in the web UI and drag it to the new space."
 
-Or, with explicit user confirmation, use raw RPC:
+Or, with explicit user confirmation, use raw RPC for a root move:
 
 ```bash
 huly ws updateDoc '["card:class:Card", "<new-space>", "<id>", {"$set":{"space":"<new-space>","parent":null}}]'

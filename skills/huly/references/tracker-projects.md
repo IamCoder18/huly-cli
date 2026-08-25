@@ -209,7 +209,7 @@ huly ws findAll '["core:class:Tx",{"space":"<project-space-id>","modifiedOn":{"$
 
 ## Gotchas
 
-- **Identifier uniqueness:** the CLI pre-checks but the server doesn't (on selfhost). If you bypass the CLI and POST a duplicate identifier via `huly ws createDoc`, you'll get two projects with the same identifier — the resolver will pick the first one alphabetically, and ref resolution will silently disagree with the web UI. **Do not bypass the pre-check.**
+- **Identifier uniqueness:** the CLI pre-checks but the server doesn't (on selfhost). If you bypass the CLI and POST a duplicate identifier via `huly ws createDoc`, you'll get two projects with the same identifier. For exact `_id` references the resolver returns the literal ref directly; for any other ref, `buildIndex` overwrites duplicate keys during `findAll` processing, so non-`_id` references resolve to the **last** project returned (not the first alphabetically). Either way, the web UI and CLI silently disagree, and ref resolution becomes nondeterministic. **Do not bypass the pre-check.**
 - **`project delete` has NO preview**, unlike `issue preview-delete`. Inspect with `huly project get <ref> --json` first and confirm counts.
 - **`component delete`** is reversible-ish: orphans get `component: null` (detached, not deleted). You can manually reassign by listing and updating.
 - **`milestone --status`** stores raw strings. The CLI doesn't enforce a state machine; the platform may reject invalid statuses at update time. Verify with `huly milestone get --json` if unsure.
@@ -224,25 +224,44 @@ huly ws findAll '["core:class:Tx",{"space":"<project-space-id>","modifiedOn":{"$
 
 ## Migration: copying issues between projects (the SDK has no cross-project move)
 
-> **This is a destructive, multi-step migration. Confirm with the user out loud before each phase.** Run the audit step first, then the copy with `--dry-run`, then the copy for real, then verify counts, then (only after the user re-confirms) delete the originals. Always snapshot the source workspace's tx audit log first so the migration is reversible in forensics if not in data.
+> **This is a destructive, multi-step migration. Confirm with the user out loud before each phase.** Snapshot the source tx audit log first, then read-validate every source issue, then capture the pre-copy destination count, then run `--dry-run` on the first copy, then copy for real, then verify the destination delta equals the source count, then (only after the user re-confirms) delete the originals. Stop on any count mismatch.
 
 ```bash
 set -e
 SOURCE=Q3-2025
 DEST=Q3-2026
 
-# Phase 0 — record the source state so the migration is auditable later.
+# Phase 0 — snapshot the source tx audit log so the migration is
+# reversible in forensics if not in data.
+huly ws findAll '["core:class:Tx",{"space":"'"$SOURCE"'-space","modifiedOn":{"$gte":'"$(date -u -d '-1 hour' +%s)"'000}}]' \
+  --json > "/tmp/${SOURCE}-tx-snapshot-$(date -u +%Y%m%dT%H%M%SZ).json"
+
+# Phase 1 — capture source IDs and read-validate every issue (no writes yet).
 IDS=$(huly issue list --project "$SOURCE" --json | jq -r '.[]._id')
+if [ -z "$IDS" ]; then
+  echo "No issues in $SOURCE — nothing to migrate." >&2
+  exit 0
+fi
 SOURCE_COUNT=$(printf '%s\n' "$IDS" | wc -l | tr -d ' ')
 echo "About to copy $SOURCE_COUNT issues from $SOURCE to $DEST" >&2
-
-# Phase 1 — verify the copy will succeed by running it under --dry-run on a single issue.
-FIRST=$(printf '%s\n' "$IDS" | head -n1)
-issue=$(huly issue get "$FIRST" --json)
-# (Dry-run is not a per-issue flag today; spot-check by reading every issue.)
 for id in $IDS; do huly issue get "$id" --json >/dev/null; done
 
-# Phase 2 — copy. The CLI does not move across projects, so we create + (later) delete.
+# Phase 2 — capture the destination count BEFORE copying, so Phase 5 can
+# verify the delta (not the total).
+DEST_BEFORE=$(huly issue list --project "$DEST" --json | jq 'length')
+
+# Phase 3 — dry-run the first issue (--dry-run prints the would-be tx JSON,
+# makes no server writes). If the dry-run payload looks wrong, stop here.
+FIRST_ID=$(printf '%s\n' "$IDS" | head -n1)
+issue=$(huly issue get "$FIRST_ID" --json)
+title=$(jq -r .title <<<"$issue")
+prio=$(jq -r .priority <<<"$issue")
+asg=$(jq -r '.assignee // empty' <<<"$issue")
+huly issue create --project "$DEST" --title "$title" \
+                   --priority "$prio" \
+                   ${asg:+--assignee "$asg"} --yes --dry-run
+
+# Phase 4 — run the real copy.
 for id in $IDS; do
   issue=$(huly issue get "$id" --json)
   title=$(jq -r .title <<<"$issue")
@@ -253,14 +272,15 @@ for id in $IDS; do
                      ${asg:+--assignee "$asg"} --yes
 done
 
-# Phase 3 — verify counts match before deleting originals.
-DEST_COUNT=$(huly issue list --project "$DEST" --json | jq 'length')
-if [ "$DEST_COUNT" -ne "$SOURCE_COUNT" ]; then
-  echo "Count mismatch: source=$SOURCE_COUNT dest=$DEST_COUNT — DO NOT delete originals." >&2
+# Phase 5 — verify the DESTINATION DELTA equals SOURCE_COUNT, not the total.
+DEST_AFTER=$(huly issue list --project "$DEST" --json | jq 'length')
+DEST_DELTA=$((DEST_AFTER - DEST_BEFORE))
+if [ "$DEST_DELTA" -ne "$SOURCE_COUNT" ]; then
+  echo "Count mismatch: source=$SOURCE_COUNT dest-delta=$DEST_DELTA (before=$DEST_BEFORE after=$DEST_AFTER) — DO NOT delete originals." >&2
   exit 1
 fi
 
-# Phase 4 — only after the user has re-confirmed, delete originals.
+# Phase 6 — only after the user has re-confirmed, delete originals.
 # for id in $IDS; do huly issue delete "$id" --yes; done
 ```
 

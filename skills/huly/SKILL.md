@@ -69,7 +69,7 @@ Full env-var cheat sheet, the auth-state machine, and precedence rules live in `
 
 2. **Use `--json` for every programmatic read.** Tables are for humans. If you're piping, branching, or capturing an `_id`, use `--json` (or equivalently `--ci`). The CLI also auto-enables JSON when `CI=1`.
 
-3. **Prefer Cards over Documents for new knowledge content — but only after the user confirms a write is wanted.** Cards are the simpler primitive; offer them first for new knowledge content the user wants persisted. UNLESS the user explicitly asks for nested hierarchy, versioned snapshots, controlled-document/e-signature workflow, or training. See `references/cards.md` vs `references/documents.md`. When in doubt about _whether_ to persist, ASK.
+3. **Prefer Cards over Documents for new knowledge content — but only after the user confirms a write is wanted.** Cards are the simpler primitive; offer them first for new knowledge content the user wants to save. UNLESS the user explicitly asks for nested hierarchy, versioned snapshots, controlled-document/e-signature workflow, or training. See `references/cards.md` vs `references/documents.md`. When in doubt about _whether_ to persist, ASK.
 
 4. **The Issue ↔ Action state machine is one machine.** Changing an issue's status or assignee auto-creates/closes `ProjectToDo` records. Completing/scheduling/deleting an `action` (todo) can auto-advance or auto-rollback the parent issue's status. This is the most common silent cascade you will hit. See the diagram below.
 
@@ -130,7 +130,7 @@ huly --workspace production issue list
 huly --workspace production issue list --json
 ```
 
-There is **no `huly logout` command**. Clearing credentials means deleting the four cache files in `~/.config/huly/` (mode 0600) and unsetting `HULY_TOKEN` / `HULY_EMAIL` / `HULY_PASSWORD` / `HULY_WORKSPACE` in your shell. **This is irreversible** — re-auth requires `huly login` again. See `references/auth-and-setup.md#why-there-is-no-huly-logout-command` for the exact paths and the safety checklist.
+There is **no `huly logout` command**. Clearing credentials means removing the JWT cache (mode 0600, in `$XDG_CONFIG_HOME`-aware `~/.config/huly/`), the active-workspace / active-account pointers, the per-account bootstrap marker, the dotenv file the CLI loaded (`HULY_ENV_FILE` if set, otherwise `~/.config/huly/.env`), and unsetting `HULY_TOKEN` / `HULY_EMAIL` / `HULY_PASSWORD` / `HULY_WORKSPACE` in your shell. **This is irreversible** — re-auth requires `huly login` again. See `references/auth-and-setup.md#why-there-is-no-huly-logout-command` for the exact paths and the safety checklist.
 
 Full env var cheat sheet and the auth-state machine: `references/auth-and-setup.md`.
 
@@ -270,7 +270,7 @@ These are silently stripped. `defaultProjectIdentifier` is an internal helper op
 > **The agent should still confirm out loud with the user before invoking ANY of the following** — the CLI does not prompt for them, but they are irreversible:
 >
 > - Any single-ref `<resource> delete <ref>` (no `--yes` required by the CLI, but a misfire deletes the wrong record).
-> - `dm create --person <email>` and `dm send --person <email>` — always create a new DM doc; no `find-or-create`. A misfire spams a duplicate DM. Run `huly dm list --json` first if duplicates matter.
+> - `dm create --person <email>`, `dm send --person <email>`, and bare `dm send <dm-ref>` (with a positional DM ref instead of `--person`) — all three always create a new DM doc; no `find-or-create`. A misfire spams a duplicate DM. Run `huly dm list --json` first if duplicates matter.
 > - `action unschedule <ref> --slot-id <slot>` — removes that one WorkSlot from the calendar; the todo itself is unchanged but the calendar entry disappears.
 > - Any `huly ws removeDoc` / `huly ws tx` containing `TxRemoveDoc` — there is **no CLI confirmation prompt** on raw RPC.
 > - Card `MasterTag` delete via raw RPC — cascades to every Card of that MasterTag.
@@ -398,7 +398,7 @@ If the task is about a specific surface, load the matching reference file **befo
 - Issues, actions/todos, comments, time, the state machine → `references/issues-and-todos.md`
 - Projects, components, milestones, issue templates → `references/tracker-projects.md`
 - Channels, DMs, threads, activity (reactions/pins/saved) → `references/chat-and-collaboration.md`
-- Cards (offered for new content the user wants persisted) → `references/cards.md`
+- Cards (offered for new content the user wants to save) → `references/cards.md`
 - Documents (only when nested/snapshots/controlled needed) → `references/documents.md`
 - Calendar events, recurring events, schedules → `references/calendar-and-schedule.md`
 - Spaces, relations, project types, task types, statuses → `references/spaces-types-and-relations.md`

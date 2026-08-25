@@ -35,6 +35,8 @@ huly api GET /api/v1/things --header "Authorization: Bearer ..."
 Available methods: `GET | POST | PUT | PATCH | DELETE`. The path
 is appended to the workspace's API URL. The CLI does not validate the path, method, body, or any custom headers — anything you send goes straight to the server.
 
+> **`Authorization` is not overridable.** The CLI always sets `Authorization: Bearer <resolved-token>` after merging your custom headers (`packages/cli/src/raw/api.ts:43-49`), so passing `--header "Authorization: Bearer …"` has no effect. All other custom headers pass through verbatim.
+
 ---
 
 ## WebSocket (`huly ws`)
