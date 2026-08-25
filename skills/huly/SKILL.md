@@ -130,7 +130,7 @@ huly --workspace production issue list
 huly --workspace production issue list --json
 ```
 
-There is **no `huly logout` command**. Clearing credentials means removing the JWT cache (mode 0600, in `$XDG_CONFIG_HOME`-aware `~/.config/huly/`), the active-workspace / active-account pointers, the per-account bootstrap marker, the dotenv file the CLI loaded (`HULY_ENV_FILE` if set, otherwise `~/.config/huly/.env`), and unsetting `HULY_TOKEN` / `HULY_EMAIL` / `HULY_PASSWORD` / `HULY_WORKSPACE` in your shell. **This is irreversible** — re-auth requires `huly login` again. See `references/auth-and-setup.md#why-there-is-no-huly-logout-command` for the exact paths and the safety checklist.
+There is **no `huly logout` command**. Clearing credentials means removing the JWT cache (mode 0600, in `$XDG_CONFIG_HOME`-aware `~/.config/huly/`), the active-workspace / active-account pointers, the per-account bootstrap marker, the dotenv file the CLI loaded (`HULY_ENV_FILE` if set, otherwise `$HOME/.config/huly/.env` — the dotenv loader is **not** XDG-aware, so the dotenv path always derives from `$HOME`, even when `XDG_CONFIG_HOME` is set), and unsetting `HULY_TOKEN` / `HULY_EMAIL` / `HULY_PASSWORD` / `HULY_WORKSPACE` in your shell. **This is irreversible** — re-auth requires `huly login` again. See `references/auth-and-setup.md#why-there-is-no-huly-logout-command` for the exact paths and the safety checklist.
 
 Full env var cheat sheet and the auth-state machine: `references/auth-and-setup.md`.
 
@@ -270,7 +270,8 @@ These are silently stripped. `defaultProjectIdentifier` is an internal helper op
 > **The agent should still confirm out loud with the user before invoking ANY of the following** — the CLI does not prompt for them, but they are irreversible:
 >
 > - Any single-ref `<resource> delete <ref>` (no `--yes` required by the CLI, but a misfire deletes the wrong record).
-> - `dm create --person <email>`, `dm send --person <email>`, and bare `dm send <dm-ref>` (with a positional DM ref instead of `--person`) — all three always create a new DM doc; no `find-or-create`. A misfire spams a duplicate DM. Run `huly dm list --json` first if duplicates matter.
+> - `dm create --person <email>` and `dm send --person <email>` — auto-create a new DM doc; no `find-or-create`. A misfire spams a duplicate DM. Run `huly dm list --json` first if duplicates matter.
+> - Bare `dm send <dm-ref>` (positional DM ref instead of `--person`) — sends into the existing DM at `<dm-ref>`. A misfire delivers the message to the wrong DM (or fails with NotFound). Resolve with `huly dm list --json` or `huly dm get <dm-ref> --json` first.
 > - `action unschedule <ref> --slot-id <slot>` — removes that one WorkSlot from the calendar; the todo itself is unchanged but the calendar entry disappears.
 > - Any `huly ws removeDoc` / `huly ws tx` containing `TxRemoveDoc` — there is **no CLI confirmation prompt** on raw RPC.
 > - Card `MasterTag` delete via raw RPC — cascades to every Card of that MasterTag.

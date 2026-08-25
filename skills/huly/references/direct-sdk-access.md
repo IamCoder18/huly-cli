@@ -2,7 +2,7 @@
 
 > **This file is for advanced use only.** The high-level CLI surface (`huly issue …`, `huly document …`, `huly calendar …`, …) handles authentication, ref resolution, cascade awareness, type checking, and error mapping. Two commands bypass all of that and talk to the server directly:
 >
-> - **`huly api <METHOD> <path>`** — raw HTTP passthrough. Any path on the configured workspace API URL, any method, any header (except `Authorization`, which the CLI always overwrites with the resolved token — see below). No validation, no schema check, no ref resolution.
+> - **`huly api <METHOD> <path>`** — raw HTTP passthrough. Any path on the configured workspace API URL, any supported method (`GET | POST | PUT | PATCH | DELETE`), any header (except `Authorization`, which the CLI always overwrites with the resolved token — see below). No validation, no schema check, no ref resolution.
 > - **`huly ws <method> [params]`** — raw WebSocket RPC. Calls SDK methods directly with whatever payload you hand it. No validation, no schema check, no confirmation, no cascade awareness.
 >
 > Treat these like raw SQL: powerful, untyped, unguarded, and irreversible. Most workflows do not need them — prefer the high-level commands. If you find yourself reaching for these often for a pattern the CLI should expose, that's a missing-feature signal: file an issue.

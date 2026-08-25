@@ -224,34 +224,42 @@ huly ws findAll '["core:class:Tx",{"space":"<project-space-id>","modifiedOn":{"$
 
 ## Migration: copying issues between projects (the SDK has no cross-project move)
 
-> **This is a destructive, multi-step migration. Confirm with the user out loud before each phase.** Snapshot the source tx audit log first, then read-validate every source issue, then capture the pre-copy destination count, then run `--dry-run` on the first copy, then copy for real, then verify the destination delta equals the source count, then (only after the user re-confirms) delete the originals. Stop on any count mismatch.
+> **This is a destructive, multi-step migration. Confirm with the user out loud before each phase.** Resolve the source project's space `_id`, snapshot the source tx audit log, then read-validate every source issue, then capture the pre-copy destination count, then run `--dry-run` on the first copy and STOP for explicit user confirmation, then (only after the user re-confirms) copy for real, then verify the destination delta equals the source count, then (only after a final re-confirm) delete the originals. Stop on any count mismatch.
 
 ```bash
-set -e
-SOURCE=Q3-2025
+set -euo pipefail
+SOURCE=Q3-2025        # project identifier (e.g. Q3-2025), NOT the space _id
 DEST=Q3-2026
 
-# Phase 0 — snapshot the source tx audit log so the migration is
-# reversible in forensics if not in data.
-huly ws findAll '["core:class:Tx",{"space":"'"$SOURCE"'-space","modifiedOn":{"$gte":'"$(date -u -d '-1 hour' +%s)"'000}}]' \
+# Phase 0 — resolve the source project's actual space _id. The CLI's high-level
+# commands resolve identifier -> _id; raw `huly ws` does not, so we must
+# resolve FIRST and pass the literal space _id to the snapshot.
+SOURCE_SPACE=$(huly project get "$SOURCE" --json | jq -r '._id')
+if [ -z "$SOURCE_SPACE" ] || [ "$SOURCE_SPACE" = "null" ]; then
+  echo "Could not resolve space _id for $SOURCE" >&2
+  exit 1
+fi
+SINCE_MS=$(date -u -d '-1 hour' +%s)000
+# in forensics if not in data. Filter by the resolved space _id, not the identifier.
+huly ws findAll '["core:class:Tx",{"space":"'"$SOURCE_SPACE"'","modifiedOn":{"$gte":'"$SINCE_MS"'}}]' \
   --json > "/tmp/${SOURCE}-tx-snapshot-$(date -u +%Y%m%dT%H%M%SZ).json"
 
-# Phase 1 — capture source IDs and read-validate every issue (no writes yet).
+# Phase 2 — capture source IDs and read-validate every issue (no writes yet).
 IDS=$(huly issue list --project "$SOURCE" --json | jq -r '.[]._id')
 if [ -z "$IDS" ]; then
   echo "No issues in $SOURCE — nothing to migrate." >&2
   exit 0
 fi
 SOURCE_COUNT=$(printf '%s\n' "$IDS" | wc -l | tr -d ' ')
-echo "About to copy $SOURCE_COUNT issues from $SOURCE to $DEST" >&2
+echo "About to copy $SOURCE_COUNT issues from $SOURCE (space $SOURCE_SPACE) to $DEST" >&2
 for id in $IDS; do huly issue get "$id" --json >/dev/null; done
 
-# Phase 2 — capture the destination count BEFORE copying, so Phase 5 can
+# Phase 3 — capture the destination count BEFORE copying, so Phase 7 can
 # verify the delta (not the total).
 DEST_BEFORE=$(huly issue list --project "$DEST" --json | jq 'length')
 
-# Phase 3 — dry-run the first issue (--dry-run prints the would-be tx JSON,
-# makes no server writes). If the dry-run payload looks wrong, stop here.
+# Phase 4 — dry-run the first issue (--dry-run prints the would-be tx JSON,
+# makes no server writes). Inspect the output, then STOP.
 FIRST_ID=$(printf '%s\n' "$IDS" | head -n1)
 issue=$(huly issue get "$FIRST_ID" --json)
 title=$(jq -r .title <<<"$issue")
@@ -261,7 +269,15 @@ huly issue create --project "$DEST" --title "$title" \
                    --priority "$prio" \
                    ${asg:+--assignee "$asg"} --yes --dry-run
 
-# Phase 4 — run the real copy.
+# Phase 5 — CONFIRMATION GATE. Do NOT proceed past this point without an
+# explicit "yes, run the real copy" from the user.
+read -r -p "Dry-run looks right? Type 'yes' to run the real copy (anything else aborts): " CONFIRM
+if [ "$CONFIRM" != "yes" ]; then
+  echo "Aborted before any write. No issues copied." >&2
+  exit 1
+fi
+
+# Phase 6 — run the real copy.
 for id in $IDS; do
   issue=$(huly issue get "$id" --json)
   title=$(jq -r .title <<<"$issue")
@@ -272,7 +288,7 @@ for id in $IDS; do
                      ${asg:+--assignee "$asg"} --yes
 done
 
-# Phase 5 — verify the DESTINATION DELTA equals SOURCE_COUNT, not the total.
+# Phase 7 — verify the DESTINATION DELTA equals SOURCE_COUNT, not the total.
 DEST_AFTER=$(huly issue list --project "$DEST" --json | jq 'length')
 DEST_DELTA=$((DEST_AFTER - DEST_BEFORE))
 if [ "$DEST_DELTA" -ne "$SOURCE_COUNT" ]; then
@@ -280,7 +296,12 @@ if [ "$DEST_DELTA" -ne "$SOURCE_COUNT" ]; then
   exit 1
 fi
 
-# Phase 6 — only after the user has re-confirmed, delete originals.
+# Phase 8 — only after the user has re-confirmed, delete originals.
+read -r -p "Copies verified ($DEST_DELTA == $SOURCE_COUNT). Type 'yes' to delete originals: " CONFIRM2
+if [ "$CONFIRM2" != "yes" ]; then
+  echo "Copies exist; originals left untouched." >&2
+  exit 0
+fi
 # for id in $IDS; do huly issue delete "$id" --yes; done
 ```
 
