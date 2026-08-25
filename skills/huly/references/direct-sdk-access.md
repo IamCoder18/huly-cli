@@ -1,22 +1,49 @@
-# Escape hatches & internals — when the CLI falls short
+# Direct SDK and HTTP access (advanced)
 
-This reference covers: `huly api` (HTTP), `huly ws` (raw WebSocket RPC), and the internal mechanics of ref resolution, output formatting, error codes, and caches. You usually don't need this for everyday work — load it when a command is missing a flag, when you need fulltext search, when you're debugging, or when the CLI's behavior surprises you.
+> **This file is for advanced use only.** The high-level CLI surface (`huly issue …`, `huly document …`, `huly calendar …`, …) handles authentication, ref resolution, cascade awareness, type checking, and error mapping. Two commands bypass all of that and talk to the server directly:
+>
+> - **`huly api <METHOD> <path>`** — raw HTTP passthrough. Any path on the configured workspace API URL, any supported method (`GET | POST | PUT | PATCH | DELETE`), any header (except `Authorization`, which the CLI always overwrites with the resolved token — see below). No validation, no schema check, no ref resolution.
+> - **`huly ws <method> [params]`** — raw WebSocket RPC. Calls SDK methods directly with whatever payload you hand it. No validation, no schema check, no confirmation, no cascade awareness.
+>
+> Treat these like raw SQL: powerful, untyped, unguarded, and irreversible. Most workflows do not need them — prefer the high-level commands. If you find yourself reaching for these often for a pattern the CLI should expose, that's a missing-feature signal: file an issue.
+
+This reference also covers the internals of ref resolution, output formatting, error codes, and caches — load it when a high-level command surprises you, when a flag is missing, or when you need fulltext search / the tx audit log.
 
 ---
 
-## `huly api <METHOD> <path>` — REST escape hatch
+## Before you reach for `huly api` or `huly ws`
 
-Plain HTTP passthrough to the workspace API URL. Auth header is auto-attached from the resolved token.
+Ask yourself in order:
+
+1. **Is there a high-level command for this?** Run `huly <surface> --help` and skim. The CLI covers ~95% of common workflows.
+2. **Is there a `--set key=value` escape on the existing command?** Many `update` verbs accept arbitrary attribute writes via `--set`, which still gets the CLI's ref resolution and error mapping.
+3. **Is the operation a one-off diagnostic** (read the model, query the tx audit log, inspect a permission matrix)? Raw RPC is acceptable for diagnostics — there's no persistent side effect.
+4. **Is the operation a state change the CLI does not expose at all** (e.g. setting `blockTime` on a calendar event, unarchiving a document, reparenting a card)? Raw RPC is the only path; the recipe is documented here so you do it correctly. **Confirm with the user out loud before invoking.**
+5. **Is the operation something the CLI deliberately refuses for safety** (bypassing the duplicate-identifier pre-check, bulk-deleting via raw `removeDoc`, skipping `--yes`)? **Stop. File a feature request, or use the high-level command with `--yes`.** The CLI's refusal is intentional.
+
+The remaining sections of this file assume you've answered "yes, raw RPC is the only path" and have user confirmation.
+
+---
+
+## `huly api <METHOD> <path>` — raw HTTP passthrough
+
+Plain HTTP passthrough to the workspace API URL. The auth header is auto-attached from the resolved token. **The CLI does not validate the path, the method, the body, or any custom headers** — anything you send goes straight to the server.
 
 ```bash
+# Read-only diagnostics (low risk)
 huly api GET /api/v1/version
 huly api GET /config.json
+
+# State-changing calls (high risk — confirm with the user first)
 huly api POST /api/v1/things --body '{"key":"value"}'
-huly api GET /api/v1/things --query foo=bar --query baz=qux
+
+# Custom headers (the CLI will pass them through verbatim)
 huly api GET /api/v1/private --header "Authorization: Bearer …"
 ```
 
 Methods: `GET | POST | PUT | PATCH | DELETE`. Query params and headers accept repeated `k=v`.
+
+> **`Authorization` is not overridable.** The CLI sets `Authorization: Bearer <resolved-token>` after merging your custom headers (`packages/cli/src/raw/api.ts:43-49`), so passing `--header "Authorization: Bearer …"` has no effect — your custom value is silently replaced. All other custom headers pass through verbatim.
 
 Status codes map to exit codes:
 
@@ -26,17 +53,23 @@ Status codes map to exit codes:
 - `4xx` → `Validation` (4) or `Conflict` (6)
 - `5xx` → `Server` (7)
 
-Use this when:
+**Use this only when:**
 
-- You want to hit an undocumented endpoint
-- The CLI command exists but doesn't expose a flag you need (rare)
-- You're hitting a custom plugin route
+- You want to hit a specific endpoint for a diagnostic (read-only).
+- The high-level command exists but doesn't expose the field you need, AND there is no `--set key=value` workaround. (See per-surface reference files.)
+- You're debugging a custom plugin route and need to see the raw response.
+
+**Do NOT use this for:**
+
+- Anything that the high-level command handles with proper validation. The high-level command exists for a reason — re-implementing it via `huly api` loses ref resolution, cascade awareness, and error mapping.
 
 ---
 
-## `huly ws <method> [params]` — WebSocket RPC escape hatch
+## `huly ws <method> [params]` — raw WebSocket RPC
 
-Speaks Huly's binary RPC directly. Method names mirror the SDK's `PlatformClient` interface.
+Speaks Huly's RPC directly. Method names mirror the SDK's `PlatformClient` interface. **The CLI does not validate the method name, the params shape, or any side effects.** Whatever you send is dispatched verbatim.
+
+> **Method availability depends on the server version.** Newer Huly servers expose a richer method whitelist (`findAll`, `findOne`, `queryAll`, `createDoc`, `updateDoc`, `removeDoc`, `tx`, `getModel`, `getHierarchy`, …). Older servers may only allow `findAll`, `tx`, `hello`, and `ping`. If a method is rejected by the server, that is a server-side restriction, not a CLI bug — fall back to `tx` with an explicit transaction payload, or use `huly api` for HTTP-only operations.
 
 **`[params]` is ONE positional argument that must be a JSON-encoded array.** SDK methods with multiple positional parameters (e.g. `findAll(classId, query, options)`) must be wrapped into a single array — passing them as separate CLI positional args will fail with "too many arguments".
 
@@ -79,13 +112,17 @@ huly ws findAll '["core:class:Tx", {"objectId":"<doc-id>"}]' --json \
 - 5s ping interval (disable with `--no-ping`)
 - Default chunked responses are buffered and flushed as JSON arrays
 
-**When to reach for this:**
+**Use this only when:**
 
-- Fulltext search with ES query string operators (`AND`, `OR`, `+`, `-`, `"…"`, `field:value`)
-- Audit-trail queries (`core:class:Tx`)
-- Bulk operations where you want to skip CLI validation
-- Plugin methods the CLI doesn't expose
-- Reading the `Space` permission matrix directly
+- You need a diagnostic read (fulltext search with ES query operators, audit-trail queries against `core:class:Tx`, inspecting the `Space` permission matrix).
+- You need to set a field that the CLI does not expose and there is no `--set key=value` workaround (calendar `blockTime` / `visibility`, document unarchive, card reparenting, etc.). Confirm with the user first.
+- You need to manually construct a transaction the CLI doesn't build for you (custom mixins, batched transactions).
+
+**Do NOT use this for:**
+
+- Bulk-deleting records to "skip CLI validation." The CLI's `--yes` guard exists for a reason. The CLI's pre-checks (duplicate identifier, validation, dry-run) exist for a reason.
+- Bypassing the duplicate-identifier pre-check on `project create`. The CLI pre-check is a defense-in-depth against an identifier collision on self-hosted servers; bypassing it produces two projects with the same identifier and breaks ref resolution.
+- Anything the user has not explicitly asked you to do.
 
 ---
 
@@ -218,6 +255,8 @@ Used by `huly project update`, `huly issue update`, etc.:
 
 `defaultProjectIdentifier` is the internal helper used by `--project TSK-5` ref resolution; `set` / `unset` only exist on `update`.
 
+> **Prefer `--set` over raw `huly ws updateDoc`** whenever the high-level command accepts `--set`. You get the CLI's ref resolution, error mapping, and confirmation flow for free. Reach for `huly ws updateDoc` only when the field is not exposed on the high-level command's flags.
+
 ---
 
 ## Filtering & matching semantics (cheat sheet)
@@ -249,7 +288,7 @@ The CLI deliberately bypasses the SDK's `MarkupContent` upload. Every body field
 - `huly document get <ref> --markdown` round-trips cleanly on CLI-created docs (returns your literal markdown).
 - For web-UI-created docs, `--markdown` calls `fetchMarkup` with a 5s timeout. On timeout, you get the raw markup-ref string (e.g. `markup:abc123…`).
 
-If you need collaborative editing features (mentions as actual nodes, embeds), the CLI will NOT preserve them. Use `huly ws tx` with a manually-constructed `MarkupContent` instead.
+If you need collaborative editing features (mentions as actual nodes, embeds), the CLI will NOT preserve them. Construct a `MarkupContent` transaction via `huly ws tx` — this is the legitimate advanced path, not a workaround.
 
 ---
 
@@ -261,12 +300,12 @@ If you need collaborative editing features (mentions as actual nodes, embeds), t
 - `workspace delete` (plus `--force` for the active workspace)
 - ANY `delete <ref...>` with ≥2 refs
 
-NOT required for:
+NOT required for (the CLI does not prompt, but **the agent should still confirm with the user before invoking**):
 
-- `dm create --person` (auto-creates)
-- `dm send --person` (auto-creates)
-- `action unschedule` with a single `--slot-id`
-- All single-ref deletes
+- `dm create --person` — auto-creates a new DM doc; no `find-or-create`. A misfire spams a duplicate DM.
+- `dm send --person` — auto-creates a new DM doc; no `find-or-create`.
+- `action unschedule` with a single `--slot-id` — removes that one WorkSlot from the calendar; the todo itself is unchanged.
+- All single-ref deletes — irreversible. A misfire deletes the wrong record.
 
 A 100ms sleep between consecutive deletes throttles the server tx stream during bulk operations.
 
@@ -308,9 +347,11 @@ If you see "Model version mismatch", the workspace was upgraded under you. Refre
 
 ---
 
-## Common recipes using escape hatches
+## Common recipes (advanced; confirm with user first)
 
-### Audit who changed a doc
+The recipes below use raw RPC because the high-level CLI does not expose the operation. **Run them only after the user has confirmed the target, the field, and the value.**
+
+### Audit who changed a doc (read-only — generally safe)
 
 ```bash
 huly ws findAll '["core:class:Tx",{"objectId":"<doc-id>","modifiedOn":{"$gte":<start-ms>,"$lte":<end-ms>}}]' \
@@ -318,7 +359,7 @@ huly ws findAll '["core:class:Tx",{"objectId":"<doc-id>","modifiedOn":{"$gte":<s
   | jq '[.[] | {by: .modifiedBy, on: .modifiedOn, ops: .attributes}]'
 ```
 
-### Fulltext search across issues
+### Fulltext search across issues (read-only — generally safe)
 
 ```bash
 # Server-side Elasticsearch query — much more powerful than --description-search
@@ -326,20 +367,24 @@ huly ws queryAll '["tracker:class:Issue", {"$search":"deploy AND pipeline", "spa
   --json
 ```
 
-### Query the permission matrix of a space
+### Query the permission matrix of a space (high-level CLI — generally safe)
 
 ```bash
 huly space permissions <space-ref> --json
 ```
 
-### Get the raw model
+### Get the raw model (read-only — generally safe)
 
 ```bash
 huly ws getModel --json | jq '.classes | length'
 ```
 
-### Trigger a reindex (rare; usually the server self-heals)
+### Trigger a reindex (rare; usually the server self-heals; confirm before running)
 
 ```bash
 huly ws tx '[{"method":"triggerReindex","params":[]}]'
 ```
+
+### Set a field the high-level command does not expose (state-changing — ALWAYS confirm)
+
+Examples include `calendar:blockTime`, `calendar:visibility` set to `freeBusy`/`private`, `document:archived` cleared, `card:parent` reparented, `calendar:ReccuringInstance` removed. Each is a deliberate CLI gap; raw RPC is the only path. Always read the doc first (`huly ws findOne` or the high-level `get`), confirm the change, then write.

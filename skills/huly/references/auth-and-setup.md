@@ -110,16 +110,45 @@ Two sibling files:
 
 ## Why there is NO `huly logout` command
 
-Intentionally. The CLI is designed for long automation runs. An accidental `logout` mid-automation would force every subsequent command to re-`selectWorkspace` for every workspace, breaking idempotency. The only way to "log out" is manual:
+Intentionally. The CLI is designed for long automation runs. An accidental `logout` mid-automation would force every subsequent command to re-`selectWorkspace` for every workspace, breaking idempotency. The only way to "log out" is manual.
+
+> **Manual cleanup (advanced).** You are about to delete local credentials and unset authentication env vars. This is irreversible until you `huly login` again. Confirm with the user before running this in any context other than your own machine.
+>
+> The procedure below is the **complete** reset: it clears the on-disk JWT cache (XDG-aware), the active-workspace / active-account pointers, the per-account bootstrap marker, the dotenv file the CLI loaded (`HULY_ENV_FILE` if set, else `$HOME/.config/huly/.env`), and unsets the auth env vars in the current shell. A partial reset that leaves the dotenv file intact will allow a later process to re-authenticate from that file.
+>
+> **Dotenv path note:** the dotenv loader (`packages/cli/src/auth/env.ts:23`) is **not** XDG-aware — its default is `$HOME/.config/huly/.env`, even when `XDG_CONFIG_HOME` is set. The cached credential files (`credentials.json`, `active-workspace`, `active-account`, `bootstrap.json`) **are** XDG-aware (`configDir()` honors `$XDG_CONFIG_HOME`). The reset handles both paths correctly.
 
 ```bash
-rm -f ~/.config/huly/credentials.json \
-      ~/.config/huly/active-workspace \
-      ~/.config/huly/active-account
+# Advanced — manual credentials reset.
+# Deletes the on-disk token cache (XDG-aware, mode 0600), the active-workspace
+# pointer, the per-account bootstrap marker, the dotenv file the CLI loaded
+# (note: dotenv loader is NOT XDG-aware — default is $HOME/.config/huly/.env),
+# and unsets the auth env vars in the current shell.
+config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/huly"
+env_file="${HULY_ENV_FILE:-$HOME/.config/huly/.env}"
+rm -f "$config_dir/credentials.json" \
+      "$config_dir/active-workspace" \
+      "$config_dir/active-account" \
+      "$config_dir/bootstrap.json" \
+      "$env_file"
 unset HULY_TOKEN HULY_EMAIL HULY_PASSWORD HULY_WORKSPACE
 ```
 
-Then `huly login --headless` to re-auth.
+Then re-export the auth inputs the reset just unset, and re-authenticate. `--headless` reads ONLY env vars and will fail if `HULY_URL` / `HULY_EMAIL` / `HULY_PASSWORD` are missing:
+
+```bash
+# Re-export the auth inputs the reset just unset.
+export HULY_URL=https://huly.example.com
+export HULY_EMAIL=you@example.com
+export HULY_PASSWORD=…     # or: export HULY_TOKEN=eyJ…
+
+# Then re-auth.
+huly login --headless
+```
+
+(Or skip the env setup and run interactive `huly login`.)
+
+If you want a partial reset (only clear one host / email pair, keep the others), edit `credentials.json` by hand — the file is keyed by host then email — and keep the rest of the cache intact. The dotenv file and env vars above are NOT cleared in that case.
 
 ---
 

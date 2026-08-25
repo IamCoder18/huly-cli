@@ -115,7 +115,7 @@ warning to stderr, and — if `HULY_MARKDOWN_FALLBACK_FAIL=1` is set
 prosemirror-JSON directly.
 
 For rich-text round-trip features (mention nodes, embeds) that
-don't survive the JSON round-trip, use the raw escape hatch with a
+don't survive the JSON round-trip, use the raw direct SDK access with a
 direct transaction object. The `params` argument is a JSON array
 containing a single `TxCreateDoc` transaction object.
 
@@ -150,7 +150,7 @@ huly ws tx '[{
 }]'
 ```
 
-See [Escape hatches — WebSocket (`huly ws`)](escape-hatches.md#websocket-huly-ws)
+See [Direct SDK and HTTP access — WebSocket (`huly ws`)](direct-access.md#websocket-huly-ws)
 for the full RPC contract. The `tx` RPC accepts every transaction
 type — `TxCreateDoc`, `TxUpdateDoc`, `TxRemoveDoc`, `TxMixin`,
 `TxApplyIf` — with the same JSON shape as the `core:class:*`

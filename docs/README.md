@@ -53,7 +53,7 @@ root and links here for anything beyond install + quickstart.
 
 ## Advanced
 
-- [Escape hatches](advanced/escape-hatches.md) — `huly api` and
+- [Direct SDK and HTTP access](advanced/direct-access.md) — `huly api` and
   `huly ws` for raw RPCs
 - [CLI architecture](advanced/architecture.md) — source layout,
   connection flow, markup handling

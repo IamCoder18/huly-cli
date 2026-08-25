@@ -101,7 +101,12 @@ huly calendar update <event-id> --location "Room 5"
 huly calendar update <event-id> --attendee bob@example.com
 ```
 
-**Note:** the CLI does NOT expose `--rrule`, `--calendar-id`, `--time-zone`, or `--visibility` as update flags. To change those, use `huly ws updateDoc`.
+**Note:** the CLI does NOT expose `--rrule`, `--calendar-id`, `--time-zone`, or `--visibility` as update flags. **These fields are only settable via raw RPC.** Confirm with the user out loud before invoking `huly ws updateDoc`; the recipe is the only path but bypasses CLI safety checks.
+
+```bash
+# Advanced — confirm with user first
+huly ws updateDoc '["calendar:class:Event", "<space>", "<id>", {"$set":{"visibility":"freeBusy"}}]'
+```
 
 `--start` update writes BOTH `date` AND `startDate` (a bug fix; older versions only wrote `startDate`).
 
@@ -210,7 +215,7 @@ The platform maps `visibility ↔ Google transparency`:
 - Google `transparency:transparent` ↔ Huly `visibility:freeBusy`
 - Huly `private` ↔ Google `private`
 
-The CLI sets `visibility: 'public'` by default. To set `freeBusy` or `private`, use `huly ws updateDoc '["calendar:class:Event", "<space>", "<id>", {"$set":{"visibility":"freeBusy"}}]'`.
+The CLI sets `visibility: 'public'` by default. **To set `freeBusy` or `private`, only raw RPC works** (`huly ws updateDoc`); confirm with the user first — see the `calendar update` notes above.
 
 ---
 
@@ -231,7 +236,8 @@ huly calendar create \
 If the user wants this to block their calendar:
 
 ```bash
-# CLI sets blockTime:false by default; flip via raw update
+# CLI sets blockTime:false by default; flip via raw update.
+# Advanced — confirm with the user first; raw RPC bypasses CLI safety checks.
 huly ws updateDoc '["calendar:class:Event", "calendar:space:Calendar", "<id>", {"$set":{"blockTime":true}}]'
 ```
 
@@ -252,9 +258,11 @@ huly calendar recurring-instances <rec-id> --json | jq 'length'
 
 ### "Skip next Monday's standup"
 
-There is no CLI surface for this. EXDATE is silently ignored. Options:
+> **Advanced — confirm with the user before invoking.** There is no CLI surface for this. EXDATE is silently ignored. The raw-RPC fallback below is irreversible and bypasses CLI safety checks.
 
-- Delete the one instance via `huly ws findAll '["calendar:class:ReccuringInstance",{"recurringEventId":"<id>","originalStartTime":<ms>}]'` and `huly ws tx` with a `removeDoc`.
+Options:
+
+- Delete the one instance via `huly ws findAll '["calendar:class:ReccuringInstance",{"recurringEventId":"<id>","originalStartTime":<ms>}]'` and `huly ws tx` with a `removeDoc`. **Confirm with the user out loud before invoking; there is no CLI confirmation prompt on raw RPC.**
 - Or accept that all instances will exist.
 
 ### "Show me everything happening today"

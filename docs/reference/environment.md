@@ -148,7 +148,7 @@ huly ws findAll '[{"_class":"core.class.Tx"},{"objectId":"<doc-id>","modifiedOn"
 
 Each tx carries `modifiedBy`, `modifiedOn`, `space`, `objectId`,
 and the full operations payload. See
-[Escape hatches — WebSocket (`huly ws`)](../advanced/escape-hatches.md#websocket-huly-ws).
+[Direct SDK and HTTP access — WebSocket (`huly ws`)](../advanced/direct-access.md#websocket-huly-ws).
 
 ---
 

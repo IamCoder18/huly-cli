@@ -1,6 +1,6 @@
 ---
 name: huly
-description: Drive a self-hosted Huly workspace through the `huly` CLI — issues, projects, cards, documents, calendars, channels, DMs, actions/todos, time tracking, notifications, and approvals. Use this skill for project tracking, time management, or anything that required interfacing with Huly.
+description: Drive a self-hosted Huly workspace through the `huly` CLI when the user names a Huly-specific entity or action — tracker issue, project, channel, DM, calendar event, planner action/todo, time entry, notification, or approval. Use it for project tracking, time management, and workspace automation against a self-hosted Huly instance. Do not invoke on unconfirmed intent; if the user is ambiguous about whether to persist, ASK first.
 ---
 
 # huly-cli skill
@@ -61,21 +61,23 @@ Full env-var cheat sheet, the auth-state machine, and precedence rules live in `
 
 ---
 
-## The 7 rules. Read these first.
+## The 8 rules. Read these first.
+
+0. **ASK before persisting.** If the user's request is ambiguous about whether to write to the workspace, ASK before invoking any `create`, `update`, `delete`, `send`, `message`, or `log` subcommand. The CLI never writes without an explicit subcommand; the agent must not invoke those on unconfirmed intent. Trigger phrases like "save", "capture", "write down", or "document a …" do not by themselves authorize a write.
 
 1. **Verify before you mutate.** Use a read action (e.g. `huly project list --json`, `huly action list --json`) to confirm context, workspace, and project, and to gain the context you need for the task. Run `huly <surface> list --json` to discover refs when they aren't given to you explicitly, then `huly issue get <ref> --json` (or the surface's `get`) to inspect the target before changing it. NEVER guess a ref, person, or status name.
 
 2. **Use `--json` for every programmatic read.** Tables are for humans. If you're piping, branching, or capturing an `_id`, use `--json` (or equivalently `--ci`). The CLI also auto-enables JSON when `CI=1`.
 
-3. **Prefer Cards over Documents for new knowledge content.** When the user says "create a doc", "write down...", "save this...", default to `huly card create` — UNLESS they explicitly ask for nested hierarchy, versioned snapshots, controlled-document/e-signature workflow, or training. See `references/cards.md` vs `references/documents.md`.
+3. **Prefer Cards over Documents for new knowledge content — but only after the user confirms a write is wanted.** Cards are the simpler primitive; offer them first for new knowledge content the user wants to save. UNLESS the user explicitly asks for nested hierarchy, versioned snapshots, controlled-document/e-signature workflow, or training. See `references/cards.md` vs `references/documents.md`. When in doubt about _whether_ to persist, ASK.
 
 4. **The Issue ↔ Action state machine is one machine.** Changing an issue's status or assignee auto-creates/closes `ProjectToDo` records. Completing/scheduling/deleting an `action` (todo) can auto-advance or auto-rollback the parent issue's status. This is the most common silent cascade you will hit. See the diagram below.
 
-5. **Don't use destructive verbs without checking first.** Run `huly <surface> get <ref> --json` or the surface's `preview-` verb if it has one, then ask the user before proceeding. Bulk deletes (`<ref...>` with 2+ refs) require `--yes`.
+5. **Don't use destructive verbs without checking first.** Run `huly <surface> get <ref> --json` or the surface's `preview-` verb if it has one, then ask the user before proceeding. Bulk deletes (`<ref...>` with 2+ refs) require `--yes`. Single-ref deletes, `dm create --person`, `dm send --person`, `dm send`, `action unschedule --slot-id`, and any raw `huly ws removeDoc`/`tx` are **irreversible and proceed without a CLI prompt** — confirm out loud with the user before invoking.
 
 6. **Ask, don't guess, when context is missing.** Workspace name, project identifier, person email, exact ISO timestamp — none of these can be inferred. If the user gave you one but not the others, ask.
 
-7. **Reach for `huly ws` only when the CLI falls short.** The CLI covers ~95% of use. Use `huly ws <method>` for raw RPC when a flag is missing, when you need fulltext search, or when you need to query the tx audit log.
+7. **Reach for `huly ws` / `huly api` only as a last resort.** The CLI covers ~95% of use. These are raw, unvalidated passthroughs — treat them like raw SQL. Use them only for diagnostics (audit log, model inspection) or for fields the high-level command deliberately does not expose (with user sign-off). See `references/direct-sdk-access.md` for the full safety checklist.
 
 ---
 
@@ -83,25 +85,25 @@ Full env-var cheat sheet, the auth-state machine, and precedence rules live in `
 
 When the user asks you to do something, pick the right top-level command first. The order below is "from most likely to be correct":
 
-| User intent                                                   | Surface                                                  | Reference                                                                         |
-| ------------------------------------------------------------- | -------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| create / list / update / comment on a tracker item            | `huly issue …`                                           | `references/issues-and-todos.md`                                                  |
-| create / list / update a Planner task / todo                  | `huly action …` (NOT `huly todo` — that doesn't exist)   | `references/issues-and-todos.md`                                                  |
-| log time on an issue                                          | `huly time …`                                            | `references/issues-and-todos.md`                                                  |
-| create a project / tracker bucket                             | `huly project …`                                         | `references/tracker-projects.md`                                                  |
-| create / update a component, milestone, or issue template     | `huly {component,milestone,issue-template} …`            | `references/tracker-projects.md`                                                  |
-| post in a channel; send a DM                                  | `huly {channel,dm} …`                                    | `references/chat-and-collaboration.md`                                            |
-| reply to a message thread                                     | `huly thread …`                                          | `references/chat-and-collaboration.md`                                            |
-| react, pin, save, view mentions                               | `huly activity …`                                        | `references/chat-and-collaboration.md`                                            |
-| create a CARD (default for "doc"/"page"/"note")               | `huly card …`                                            | `references/cards.md`                                                             |
-| create a DOCUMENT (nested wiki, snapshots, controlled)        | `huly document …`                                        | `references/documents.md`                                                         |
-| create a calendar event (one-off or recurring)                | `huly calendar …`                                        | `references/calendar-and-schedule.md`                                             |
-| create an owner-availability schedule                         | `huly schedule …`                                        | `references/calendar-and-schedule.md`                                             |
-| create / inspect a workspace, project type, task type, status | `huly {workspace,project-type,task-type,issue-status} …` | `references/spaces-types-and-relations.md` and `references/workspace-and-user.md` |
-| create / inspect / reply to an approval request               | `huly approval …`                                        | `references/notifications-and-approvals.md`                                       |
-| read / mark / subscribe to inbox notifications                | `huly notification …`                                    | `references/notifications-and-approvals.md`                                       |
-| log in / check identity / look up a user by email             | `huly {login,whoami,user} …`                             | `references/auth-and-setup.md` and `references/workspace-and-user.md`             |
-| something the CLI doesn't expose                              | `huly ws …` or `huly api …`                              | `references/escape-hatches-and-internals.md`                                      |
+| User intent                                                                      | Surface                                                                                       | Reference                                                                         |
+| -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| create / list / update / comment on a tracker item                               | `huly issue …`                                                                                | `references/issues-and-todos.md`                                                  |
+| create / list / update a Planner task / todo                                     | `huly action …` (NOT `huly todo` — that doesn't exist)                                        | `references/issues-and-todos.md`                                                  |
+| log time on an issue                                                             | `huly time …`                                                                                 | `references/issues-and-todos.md`                                                  |
+| create a project / tracker bucket                                                | `huly project …`                                                                              | `references/tracker-projects.md`                                                  |
+| create / update a component, milestone, or issue template                        | `huly {component,milestone,issue-template} …`                                                 | `references/tracker-projects.md`                                                  |
+| post in a channel; send a DM                                                     | `huly {channel,dm} …`                                                                         | `references/chat-and-collaboration.md`                                            |
+| reply to a message thread                                                        | `huly thread …`                                                                               | `references/chat-and-collaboration.md`                                            |
+| react, pin, save, view mentions                                                  | `huly activity …`                                                                             | `references/chat-and-collaboration.md`                                            |
+| create a CARD (default for new knowledge content — only after the user confirms) | `huly card …`                                                                                 | `references/cards.md`                                                             |
+| create a DOCUMENT (nested wiki, snapshots, controlled)                           | `huly document …`                                                                             | `references/documents.md`                                                         |
+| create a calendar event (one-off or recurring)                                   | `huly calendar …`                                                                             | `references/calendar-and-schedule.md`                                             |
+| create an owner-availability schedule                                            | `huly schedule …`                                                                             | `references/calendar-and-schedule.md`                                             |
+| create / inspect a workspace, project type, task type, status                    | `huly {workspace,project-type,task-type,issue-status} …`                                      | `references/spaces-types-and-relations.md` and `references/workspace-and-user.md` |
+| create / inspect / reply to an approval request                                  | `huly approval …`                                                                             | `references/notifications-and-approvals.md`                                       |
+| read / mark / subscribe to inbox notifications                                   | `huly notification …`                                                                         | `references/notifications-and-approvals.md`                                       |
+| log in / check identity / look up a user by email                                | `huly {login,whoami,user} …`                                                                  | `references/auth-and-setup.md` and `references/workspace-and-user.md`             |
+| something the CLI genuinely doesn't expose (advanced; confirm with user first)   | `huly ws …` or `huly api …` (read-only diagnostics, or state changes the CLI does not expose) | `references/direct-sdk-access.md`                                                 |
 
 ---
 
@@ -128,16 +130,7 @@ huly --workspace production issue list
 huly --workspace production issue list --json
 ```
 
-There is **no `huly logout` command**. To clear credentials:
-
-```bash
-rm -f ~/.config/huly/credentials.json \
-      ~/.config/huly/active-workspace \
-      ~/.config/huly/active-account
-unset HULY_TOKEN HULY_EMAIL HULY_PASSWORD HULY_WORKSPACE
-```
-
-All three files are mode 0600. This is intentional — see `references/auth-and-setup.md` for why.
+There is **no `huly logout` command**. Clearing credentials means removing the JWT cache (mode 0600, in `$XDG_CONFIG_HOME`-aware `~/.config/huly/`), the active-workspace / active-account pointers, the per-account bootstrap marker, the dotenv file the CLI loaded (`HULY_ENV_FILE` if set, otherwise `$HOME/.config/huly/.env` — the dotenv loader is **not** XDG-aware, so the dotenv path always derives from `$HOME`, even when `XDG_CONFIG_HOME` is set), and unsetting `HULY_TOKEN` / `HULY_EMAIL` / `HULY_PASSWORD` / `HULY_WORKSPACE` in your shell. **This is irreversible** — re-auth requires `huly login` again. See `references/auth-and-setup.md#why-there-is-no-huly-logout-command` for the exact paths and the safety checklist.
 
 Full env var cheat sheet and the auth-state machine: `references/auth-and-setup.md`.
 
@@ -171,9 +164,9 @@ When you pass a positional `<ref>` (e.g. `huly issue get TSK-1`), the CLI tries 
 
 **Critical:** the cache is invalidated after every write to the same class. Cross-class writes in the same process may see stale refs — restart the process, or run any write to the changed class to force refresh.
 
-For ref-accepting FLAGS (`--assignee`, `--owner`, `--person`), there's a separate algorithm with one critical asymmetry: **`--assignee` has a substring fallback. `--owner` does NOT.** Always pass the full email or full name to `--owner`. (`--calendar` has its own resolver — see `references/escape-hatches-and-internals.md`.)
+For ref-accepting FLAGS (`--assignee`, `--owner`, `--person`), there's a separate algorithm with one critical asymmetry: **`--assignee` has a substring fallback. `--owner` does NOT.** Always pass the full email or full name to `--owner`. (`--calendar` has its own resolver — see `references/direct-sdk-access.md`.)
 
-Full algorithm and edge cases: `references/escape-hatches-and-internals.md`.
+Full algorithm and edge cases: `references/direct-sdk-access.md`.
 
 ---
 
@@ -274,7 +267,14 @@ These are silently stripped. `defaultProjectIdentifier` is an internal helper op
 - `workspace delete` (and `--force` if deleting the active workspace)
 - Any `<resource> delete <ref...>` with ≥2 refs
 
-Single-ref deletes proceed without confirmation. `dm create --person`, `dm send --person`, and `action unschedule --slot-id <single>` are non-destructive in the sense that they don't prompt.
+> **The agent should still confirm out loud with the user before invoking ANY of the following** — the CLI does not prompt for them, but they are irreversible:
+>
+> - Any single-ref `<resource> delete <ref>` (no `--yes` required by the CLI, but a misfire deletes the wrong record).
+> - `dm create --person <email>` and `dm send --person <email>` — auto-create a new DM doc; no `find-or-create`. A misfire spams a duplicate DM. Run `huly dm list --json` first if duplicates matter.
+> - Bare `dm send <dm-ref>` (positional DM ref instead of `--person`) — sends into the existing DM at `<dm-ref>`. A misfire delivers the message to the wrong DM (or fails with NotFound). Resolve with `huly dm list --json` or `huly dm get <dm-ref> --json` first.
+> - `action unschedule <ref> --slot-id <slot>` — removes that one WorkSlot from the calendar; the todo itself is unchanged but the calendar entry disappears.
+> - Any `huly ws removeDoc` / `huly ws tx` containing `TxRemoveDoc` — there is **no CLI confirmation prompt** on raw RPC.
+> - Card `MasterTag` delete via raw RPC — cascades to every Card of that MasterTag.
 
 ---
 
@@ -369,25 +369,24 @@ huly ws findAll '["core:class:Tx",{"objectId":"<doc-id>"}]' --json \
 
 ---
 
-## When the CLI falls short: escape hatches
+## When the CLI doesn't cover what you need: direct SDK and HTTP access
 
-Two escape hatches handle the ~5% the CLI doesn't cover. Use them only when you have to — the CLI handles auth, ref resolution, output formatting, and error mapping for you.
+> **Advanced only.** The two commands below bypass every CLI safety check — ref resolution, type checking, cascade awareness, error mapping, and (for destructive calls) confirmation prompts. Treat them like raw SQL. Most workflows do not need them; this section exists so the rare cases are documented correctly. Always confirm with the user out loud before any state-changing `huly ws` or `huly api` call.
 
 ```bash
-# REST escape hatch
+# Raw HTTP passthrough (no validation, no schema check)
 huly api GET /api/v1/version
 huly api POST /api/v1/foo --body '{"key":"value"}'
 
-# Raw WebSocket RPC (method names mirror the SDK's PlatformClient interface).
-# `huly ws` takes ONE positional [params] arg that must be a JSON-encoded ARRAY —
+# Raw WebSocket RPC (no validation, no confirmation, no cascade awareness)
+# `[params]` is ONE positional arg that must be a JSON-encoded ARRAY —
 # multi-positional SDK signatures have to be wrapped, e.g. findAll(classId, query, options).
 huly ws findAll '["tracker:class:Issue", {"_class":"tracker:class:Issue"}, {}]'
-# Space for a project is resolved via getHierarchy().getDomain(CLASS.Project);
-# use `huly ws getHierarchy` first if you need the literal id.
-huly ws createDoc '["tracker:class:Project", "<project-space>", {"identifier":"NEW","name":"New"}]'
+# Read the full safety checklist before invoking state-changing raw RPC:
+# references/direct-sdk-access.md
 ```
 
-Full list of methods, timeouts, and chunks handling: `references/escape-hatches-and-internals.md`.
+Use them only for read-only diagnostics (audit log, model inspection, permission matrix) or for state changes the high-level CLI deliberately does not expose (with user sign-off). **Never use them to bypass `--yes`, pre-validation, or duplicate-identifier checks.**
 
 ---
 
@@ -400,12 +399,12 @@ If the task is about a specific surface, load the matching reference file **befo
 - Issues, actions/todos, comments, time, the state machine → `references/issues-and-todos.md`
 - Projects, components, milestones, issue templates → `references/tracker-projects.md`
 - Channels, DMs, threads, activity (reactions/pins/saved) → `references/chat-and-collaboration.md`
-- Cards (preferred for new content) → `references/cards.md`
+- Cards (offered for new content the user wants to save) → `references/cards.md`
 - Documents (only when nested/snapshots/controlled needed) → `references/documents.md`
 - Calendar events, recurring events, schedules → `references/calendar-and-schedule.md`
 - Spaces, relations, project types, task types, statuses → `references/spaces-types-and-relations.md`
 - Notifications inbox, approval requests → `references/notifications-and-approvals.md`
-- `huly ws` / `huly api` escape hatches, ref resolver internals, error codes, caches → `references/escape-hatches-and-internals.md`
+- `huly ws` / `huly api` direct SDK access, ref resolver internals, error codes, caches → `references/direct-sdk-access.md`
 
 ---
 

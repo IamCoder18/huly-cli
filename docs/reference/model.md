@@ -7,7 +7,7 @@ description: Huly class IDs and plugin-to-CLI mapping — the canonical referenc
 
 Class IDs and plugin-to-CLI mapping. The CLI's canonical class IDs
 live in `src/transport/identifiers.ts` — that's the reference for
-escape-hatch use ([`huly ws findAll ...`](../advanced/escape-hatches.md#websocket-huly-ws)).
+direct SDK access use ([`huly ws findAll ...`](../advanced/direct-access.md#websocket-huly-ws)).
 
 ## Table of contents
 
@@ -21,7 +21,7 @@ escape-hatch use ([`huly ws findAll ...`](../advanced/escape-hatches.md#websocke
 ## Class ID reference
 
 The platform's class hierarchy. Used as `_class` in JSON, as class
-IDs in escape-hatch calls, and as class filters in queries.
+IDs in direct SDK access calls, and as class filters in queries.
 
 | Plugin         | Class ID pattern       | Examples                                                                                                             |
 | -------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------- |

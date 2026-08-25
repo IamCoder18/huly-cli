@@ -97,11 +97,11 @@ huly document update <ref> --archived                    # archives (cannot unar
 - `--old-text` appears ≥ 2 times without `--replace-all` → `Ambiguous: N occurrences of --old-text — pass --replace-all`.
 - `--old-text` appears ≥ 2 times with `--replace-all` → replaces all.
 
-**`--archived` flag:** presence = true. There is no value (the CLI currently exposes only archive, not unarchive, via this flag). To unarchive, use `huly ws updateDoc`.
+**`--archived` flag:** presence = true. There is no value (the CLI currently exposes only archive, not unarchive, via this flag). **Unarchive is only possible via raw RPC** (`huly ws updateDoc` to clear `archived`); the recipe below is the only path, but it bypasses CLI safety checks. Confirm with the user out loud before invoking.
 
 ### Move / reparent
 
-The CLI's `huly document update` does NOT accept `--parent`. To reparent:
+> **Advanced — confirm with the user before invoking.** The CLI's `huly document update` does NOT accept `--parent`. Reparenting requires raw RPC; the recipe below is the only path.
 
 ```bash
 huly ws updateDoc '["document:class:Document", "<space>", "<doc-id>", {"$set":{"parent":"<new-parent-id>"}}]'
@@ -243,7 +243,7 @@ huly document update <ref> --old-text "acme.com" --new-text "acme.io" --replace-
 huly document list --json | jq -r '.[] | select(.space == null) | ._id'
 ```
 
-Then reparent via `huly ws updateDoc`.
+Then reparent via `huly ws updateDoc` (advanced; confirm with the user first — see "Move / reparent" above).
 
 ### Snapshot history of a doc
 
@@ -268,8 +268,8 @@ huly ws findAll '["core:class:Tx",{"objectId":"<doc-id>"}]' --json \
 
 ## Gotchas
 
-- **`--archived` flag value:** there is no `--archived false`. Pass `--archived` (presence = true) to archive, or use `huly ws updateDoc` to clear. The CLI help text doesn't mention this asymmetry.
-- **`document update` cannot `--parent`.** Reparent via `huly ws`.
+- **`--archived` flag value:** there is no `--archived false`. Pass `--archived` (presence = true) to archive. **Unarchive is only available via raw `huly ws updateDoc` to clear `archived`**; confirm with the user first. The CLI help text doesn't mention this asymmetry.
+- **`document update` cannot `--parent`.** Reparent only via `huly ws`; confirm with the user first (see "Move / reparent" above).
 - **`document update` `--body` vs `--old-text`/`--new-text`** are mutually exclusive. Pick one strategy.
 - **Inline comments cannot be created, replied to, or resolved via the CLI.** Only listed.
 - **Resolving an inline thread DELETES all replies.** Don't write "important" content there.

@@ -1,6 +1,8 @@
-# Cards — the default for new knowledge content
+# Cards — the default for new knowledge content (after user confirmation)
 
-Cards are the knowledge primitive you should reach for FIRST when the user asks to "save", "capture", "write down", "document a …", or create structured records. They organize by MasterTag (a Type/tag with custom attributes), not by Teamspace.
+Cards are one of the two knowledge primitives in Huly. Offer them first when the user has explicitly asked to persist structured, record-like knowledge. They organize by MasterTag (a Type/tag with custom attributes), not by Teamspace.
+
+> **Do not auto-persist on ambiguous prompts.** Phrases like "save", "capture", "write this down", or "document a …" do not by themselves authorize a write. If the user has not confirmed they want content stored in the workspace, ASK before invoking `huly card create`. The same applies to any other `create` / `update` / `delete` subcommand.
 
 ---
 
@@ -15,7 +17,9 @@ Cards are the knowledge primitive you should reach for FIRST when the user asks 
 | The user said "doc"/"page" without further specification | The user mentioned "ControlledDocument", e-signatures, or training |
 | You want kanban-style by Type/Tag                        | You want sidebar-by-teamspace organization                         |
 
-When in doubt, USE CARDS. The CLI surfaces card creation more conveniently, custom attributes are a major capability, and you can always migrate to Documents later if the structure demands it.
+If the user said "create a document" or "make a wiki page" → use Documents.
+
+When in doubt about _whether_ to persist, ASK. When the user has confirmed a write is wanted and you have to pick a primitive, prefer Cards: the CLI surfaces card creation more conveniently, custom attributes are a major capability, and you can always migrate to Documents later if the structure demands it.
 
 ---
 
@@ -102,18 +106,26 @@ each edit. Storage grows by one snapshot per edit, but no longer two.
 
 ### Reparent and move
 
-The CLI's `huly card update` does NOT accept `--parent`. There is no `card move` command. To reparent a card, do it via `huly ws updateDoc` or via the web UI.
+> **Advanced — confirm with the user before invoking.** The CLI's `huly card update` does NOT accept `--parent`. There is no `card move` command. The raw-RPC recipe below moves the card to the target CardSpace's root (it sets `parent: null` — it does NOT attach a target parent). For true reparenting (preserving a parent) use the web UI drag-and-drop, which is the safe path. Run `huly card get <ref> --json` first to confirm the current parent and target space, then ask the user to confirm before continuing.
+
+```bash
+huly ws updateDoc '["card:class:Card", "<new-space>", "<id>", {"$set":{"space":"<new-space>","parent":null}}]'
+```
 
 Cycle detection is server-side: parent walks up; the tx is rolled back on cycle.
 
 ### Delete
 
+> **Single-ref card delete is irreversible.** The CLI does not prompt; the agent must confirm out loud with the user before invoking. Cascade-deletes any sub-cards via server mixin.
+
 ```bash
-huly card delete <ref>                            # single, no --yes
+huly card delete <ref>                            # single, no --yes; CONFIRM WITH USER FIRST
 huly card delete <ref1> <ref2> <ref3> --yes       # bulk, REQUIRED --yes
 ```
 
-A 100ms sleep between deletes throttles the server.
+A 100 ms sleep between deletes throttles the server.
+
+**Cascade-on-delete:** deleting a `MasterTag` (only possible via raw `huly ws removeDoc`; there is no `master-tag delete` on the CLI) cascade-deletes every Card of that MasterTag. **There is no CLI confirmation prompt on raw RPC.** Confirm with the user out loud before invoking any raw-RPC MasterTag deletion.
 
 ---
 
@@ -156,7 +168,7 @@ This is the master-tag `OnCardTag` mixin. The CLI never directly modifies the Ma
 
 ### Deleting a Card Type/MasterTag cascade-deletes all cards of that type
 
-Cannot be undone. There is no `master-tag delete` in the CLI — but if you were to reach for `huly ws removeDoc '["card:class:MasterTag", "<space>", "<id>"]'`, the platform cascade-deletes every card of that type. There is no confirmation prompt via raw RPC.
+> **Irreversible; raw-RPC only.** There is no `master-tag delete` in the CLI. The only path is `huly ws removeDoc '["card:class:MasterTag", "<space>", "<id>"]'`, which bypasses every CLI safety check and has no CLI confirmation prompt. The platform cascade-deletes every Card of that MasterTag. **Always confirm out loud with the user before invoking — and prefer the web UI for this operation.**
 
 ### File Type is undeletable; uploads are permanent
 
@@ -187,7 +199,7 @@ Public = workspace-wide. Private = only you. No CLI exposure; this is a web UI f
 
 ## Common task recipes
 
-### "Save this to the workspace"
+### "Save this to the workspace" (after the user has confirmed)
 
 ```bash
 # 1. Verify a card-space + master-tag exist
@@ -215,11 +227,17 @@ huly card update <ref> --body "…full new body…"
 
 ### "Move this card to another space"
 
-The CLI cannot. Tell the user:
+> **Advanced — confirm with the user before invoking.** Reparenting a card between CardSpaces is not exposed in the CLI. The web UI drag-and-drop is the safe path. The raw-RPC fallback below moves the card to the new space's root (sets `parent: null`); it does not attach a target parent. To attach a specific parent, do it via the web UI.
+
+Tell the user:
 
 > "Reparenting a card between CardSpaces isn't exposed in the CLI. Open the card in the web UI and drag it to the new space."
 
-Or use `huly ws updateDoc '["card:class:Card", "<new-space>", "<id>", {"$set":{"space":"<new-space>","parent":null}}]'`.
+Or, with explicit user confirmation, use raw RPC for a root move:
+
+```bash
+huly ws updateDoc '["card:class:Card", "<new-space>", "<id>", {"$set":{"space":"<new-space>","parent":null}}]'
+```
 
 ### Build a card from structured user input
 
@@ -240,7 +258,7 @@ $FREEFORM"
 
 ## Gotchas
 
-- **MasterTag creation requires the web UI.** Don't try `huly ws createDoc '["card:class:MasterTag", "<space>", {...}]'` unless you're prepared to set the attribute schema manually.
+- **MasterTag creation requires the web UI.** Don't try `huly ws createDoc '["card:class:MasterTag", "<space>", {...}]'` unless you're prepared to set the attribute schema manually — and even then, confirm with the user first.
 - **Default CardSpace `card:space:Default` likely doesn't exist.** Pass `--card-space <name>` explicitly.
 - **Attribute changes on one card propagate to ALL cards of the MasterTag.** This is intended platform behavior; warn users before they think they're "just adding a field to this one card".
 - **`--description` on update is a guard.** It changes the card's short summary field, not the body. If you mean "set the body", use `--body` or `--replace-content`.
